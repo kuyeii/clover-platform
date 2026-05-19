@@ -1,0 +1,20 @@
+# Copy this file to config/config.local.yaml for local overrides.
+# Do not commit config/config.local.yaml or real secrets.
+
+app:
+  env: dev
+
+database:
+  enabled: false
+  url_env: DATABASE_URL
+
+legacy:
+  portal_url_env: PORTAL_URL
+  contract_review_url_env: CONTRACT_REVIEW_URL
+  bid_generator_url_env: BID_GENERATOR_URL
+  rag_qa_url_env: RAG_QA_URL
+  competitor_analysis_url_env: COMPETITOR_ANALYSIS_URL
+
+storage:
+  backend: local
+  base_dir: ./data

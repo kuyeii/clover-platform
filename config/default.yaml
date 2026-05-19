@@ -1,0 +1,18 @@
+app:
+  name: clover-platform
+  env: dev
+
+database:
+  enabled: false
+  note: PostgreSQL will be added in the next phase.
+
+storage:
+  backend: local
+  base_dir: ./data
+
+runtime:
+  ports_file: ./runtime/ports.json
+
+security:
+  auth_mode: legacy
+  note: Authentication will remain unchanged in this phase.

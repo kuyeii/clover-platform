@@ -1,0 +1,5 @@
+workflows:
+  contract_review: {}
+  bid_generator: {}
+  rag_qa: {}
+  competitor_analysis: {}

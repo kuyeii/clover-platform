@@ -1,0 +1,89 @@
+apps:
+  portal:
+    name: 统一入口
+    code: portal
+    module_key: portal
+    description: 四叶草平台统一入口与模块导航。
+    enabled: true
+    legacy_path: legacy/portal-launchpad
+    module_path: modules/portal
+    route_path: /
+    target_api_prefix: /api/v1/portal
+    iframe_enabled: false
+    iframe_url_env:
+    permission_default: true
+    legacy_health_check: /api/health
+    storage_namespace: portal
+    workflow_refs: []
+
+  bid_generator:
+    name: 标书生成
+    code: bid-generator
+    module_key: bid_generator
+    description: 标书生成与相关文档处理模块。
+    enabled: true
+    legacy_path: legacy/bid-generator
+    module_path: modules/bid_generator
+    route_path: /apps/bid-generator
+    target_api_prefix: /api/v1/bid-generator
+    iframe_enabled: true
+    iframe_url_env: BID_GENERATOR_URL
+    permission_default: true
+    legacy_health_check: /health
+    storage_namespace: bid_generator
+    workflow_refs:
+      - bid_generator
+
+  contract_review:
+    name: 合同审查
+    code: contract-review
+    module_key: contract_review
+    description: 合同风险审查与文件处理模块。
+    enabled: true
+    legacy_path: legacy/contract_review
+    module_path: modules/contract_review
+    route_path: /apps/contract-review
+    target_api_prefix: /api/v1/contract-review
+    iframe_enabled: true
+    iframe_url_env: CONTRACT_REVIEW_URL
+    permission_default: true
+    legacy_health_check: /api/health
+    storage_namespace: contract_review
+    workflow_refs:
+      - contract_review
+
+  rag_qa:
+    name: RAG 问答
+    code: rag-web-search
+    module_key: rag_qa
+    description: RAG 知识问答与 Web Search 模块。
+    enabled: true
+    legacy_path: legacy/chat_with_rag_and_websearch
+    module_path: modules/rag_qa
+    route_path: /apps/rag-qa
+    target_api_prefix: /api/v1/rag-qa
+    iframe_enabled: true
+    iframe_url_env: RAG_QA_URL
+    permission_default: true
+    legacy_health_check: /api/v1/health
+    storage_namespace: rag_qa
+    workflow_refs:
+      - rag_qa
+
+  competitor_analysis:
+    name: 竞对分析
+    code: competitor-analysis
+    module_key: competitor_analysis
+    description: 公司竞对分析与报告生成模块。
+    enabled: true
+    legacy_path: legacy/company-competitors-analysis
+    module_path: modules/competitor_analysis
+    route_path: /apps/competitor-analysis
+    target_api_prefix: /api/v1/competitor-analysis
+    iframe_enabled: true
+    iframe_url_env: COMPETITOR_ANALYSIS_URL
+    permission_default: true
+    legacy_health_check: /api/health
+    storage_namespace: competitor_analysis
+    workflow_refs:
+      - competitor_analysis
