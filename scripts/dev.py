@@ -27,9 +27,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _python_bin_for_app(app: dict[str, Any]) -> str:
+    dev = app.get("dev") or {}
+    env_name = str(dev.get("python_bin_env") or "").strip()
+    if env_name and os.getenv(env_name):
+        return str(os.getenv(env_name))
+
+    if bool(dev.get("prefer_local_python", False)):
+        legacy_path = str(app.get("legacy_path") or "")
+        if legacy_path:
+            local_python = REPO_ROOT / legacy_path / ".venv" / "bin" / "python"
+            if local_python.is_file():
+                return str(local_python)
+
+    return sys.executable
+
+
 def _format_value(value: str, app: dict[str, Any], plan: dict[str, Any]) -> str:
     return value.format(
-        python=sys.executable,
+        python=_python_bin_for_app(app),
         port=plan.get("port", ""),
         backend_port=plan.get("backend_port", ""),
         frontend_port=plan.get("frontend_port", ""),
@@ -136,11 +152,20 @@ def build_process_specs(
             backend_cwd = REPO_ROOT / str(dev.get("backend_working_dir") or dev.get("working_dir"))
             specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
             specs.append(ProcessSpec(f"{code}:frontend", frontend_command, frontend_cwd, env))
+        elif str(dev.get("kind") or "") == "frontend_backend":
+            backend_command = _format_value(str(dev.get("backend_command") or ""), app, plan)
+            frontend_command = _format_value(str(dev.get("frontend_command") or ""), app, plan)
+            backend_cwd = REPO_ROOT / str(dev.get("backend_working_dir") or dev.get("working_dir"))
+            frontend_cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))
+            if backend_command:
+                specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
+            if frontend_command:
+                specs.append(ProcessSpec(f"{code}:frontend", frontend_command, frontend_cwd, env))
         else:
             command = _format_value(str(dev.get("frontend_command") or ""), app, plan)
             if command:
                 cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))
-                specs.append(ProcessSpec(code, command, cwd, env))
+                specs.append(ProcessSpec(f"{code}:frontend", command, cwd, env))
 
     return specs
 

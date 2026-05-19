@@ -33,9 +33,10 @@ def main() -> int:
             continue
 
         suffix = "auto" if app["auto_start"] else "manual"
+        service_label = "frontend" if app["kind"] == "frontend_backend" else "iframe"
         print(
-            f"- {app['code']} iframe: preferred={app['frontend']['preferred_port']} "
-            f"actual={app['port']} url={app['iframe_url']} startup={suffix}"
+            f"- {app['code']} {service_label}: preferred={app['frontend']['preferred_port']} "
+            f"actual={app['frontend_port']} url={app['iframe_url']} startup={suffix}"
         )
         if "backend" in app:
             print(

@@ -138,8 +138,10 @@ npm run dev
 开发环境下，`frontend/vite.config.ts` 会把 `/api/*` 代理到 `http://127.0.0.1:8000`。如需改后端地址：
 
 ```bash
-VITE_API_TARGET=http://127.0.0.1:8000 npm run dev
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
+
+在 `clover-platform` 统一启动器中，合同审查仍保持前后端分离独立运行。执行 `python scripts/dev.py` 或 `python scripts/dev.py --only contract-review` 时，启动器会为合同审查后端分配动态端口，并向前端注入 `VITE_API_BASE_URL=http://127.0.0.1:<backend_port>`。单独启动本项目时仍可使用默认 `8000/5173`，旧的 `VITE_API_TARGET` 也继续兼容。
 
 ## 命令行模式
 

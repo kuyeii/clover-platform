@@ -40,18 +40,37 @@ def build_ports_payload(
             }
             continue
 
+        dev = app.get("dev") or {}
+        frontend_url = plan.get("frontend_url") or plan.get("url") or plan.get("iframe_url")
+        health_check = str(dev.get("health_check") or app.get("legacy_health_check") or "")
+
         app_payload = {
             "code": code,
             "name": app.get("name"),
-            "port": plan["port"],
-            "url": plan["url"],
-            "iframe_url": plan["iframe_url"],
             "enabled": bool(app.get("enabled", True)),
-            "auto_start": bool((app.get("dev") or {}).get("enabled", False)),
+            "auto_start": bool(dev.get("enabled", False)),
+            "dev_mode": "auto" if bool(dev.get("enabled", False)) else "manual",
         }
+        if "frontend_port" in plan:
+            app_payload["frontend_port"] = plan["frontend_port"]
+        if "port" in plan:
+            app_payload["port"] = plan["port"]
+        if frontend_url:
+            app_payload["frontend_url"] = frontend_url
+            app_payload["url"] = frontend_url
+            app_payload["iframe_url"] = plan.get("iframe_url") or frontend_url
+        else:
+            app_payload["iframe_url"] = ""
+
         if "backend_port" in plan:
             app_payload["backend_port"] = plan["backend_port"]
             app_payload["backend_url"] = plan["backend_url"]
+            app_payload["health_url"] = (
+                f"{plan['backend_url']}{health_check}" if health_check else plan["backend_url"]
+            )
+        elif frontend_url and health_check:
+            app_payload["health_url"] = f"{frontend_url}{health_check}"
+
         payload_apps[code] = app_payload
 
     return {

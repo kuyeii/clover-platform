@@ -87,6 +87,37 @@ def _reserve_port(
     )
 
 
+def _static_port(
+    *,
+    label: str,
+    preferred_port: int | None,
+    port_range: list[int] | tuple[int, int] | None,
+) -> dict[str, Any] | None:
+    if preferred_port is None or port_range is None:
+        return None
+
+    start, end = _normalize_port_range(port_range)
+    preferred = int(preferred_port)
+    if preferred <= 0:
+        return None
+
+    return {
+        "label": label,
+        "preferred_port": preferred,
+        "port_range": [start, end],
+        "port": preferred,
+        "available": None,
+        "changed": False,
+    }
+
+
+def _dev_value(dev: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in dev:
+            return dev[key]
+    return None
+
+
 def check_port_plan(
     apps_config: dict[str, Any],
     host: str = "127.0.0.1",
@@ -116,13 +147,16 @@ def check_port_plan(
         if not isinstance(dev, dict):
             raise ValueError(f"Invalid dev config for {code}")
 
+        kind = str(dev.get("kind") or "legacy")
+        auto_start = bool(dev.get("enabled", False))
+
         app_plan: dict[str, Any] = {
             "key": app_key,
             "code": code,
             "name": name,
             "enabled": bool(app.get("enabled", True)),
-            "auto_start": bool(dev.get("enabled", False)),
-            "kind": str(dev.get("kind") or "legacy"),
+            "auto_start": auto_start,
+            "kind": kind,
             "iframe_enabled": bool(app.get("iframe_enabled", False)),
         }
 
@@ -152,40 +186,68 @@ def check_port_plan(
                 }
             )
             plan["services"].extend([frontend, backend])
-        else:
-            service = _reserve_port(
-                label=f"{code} iframe",
-                preferred_port=int(dev.get("preferred_port")),
-                port_range=dev.get("port_range"),
+
+        elif kind == "frontend_backend" and auto_start:
+            frontend = _reserve_port(
+                label=f"{code} frontend",
+                preferred_port=int(_dev_value(dev, "frontend_preferred_port", "preferred_port")),
+                port_range=_dev_value(dev, "frontend_port_range", "port_range"),
+                host=host,
+                reserved=reserved,
+            )
+            backend = _reserve_port(
+                label=f"{code} backend",
+                preferred_port=int(dev["backend_preferred_port"]),
+                port_range=dev["backend_port_range"],
                 host=host,
                 reserved=reserved,
             )
             app_plan.update(
                 {
-                    "port": service["port"],
-                    "url": f"http://localhost:{service['port']}",
-                    "iframe_url": f"http://localhost:{service['port']}",
-                    "frontend": service,
+                    "frontend_port": frontend["port"],
+                    "backend_port": backend["port"],
+                    "port": frontend["port"],
+                    "frontend": frontend,
+                    "backend": backend,
+                    "frontend_url": f"http://127.0.0.1:{frontend['port']}",
+                    "backend_url": f"http://127.0.0.1:{backend['port']}",
+                    "url": f"http://127.0.0.1:{frontend['port']}",
+                    "iframe_url": f"http://127.0.0.1:{frontend['port']}",
                 }
             )
-            plan["services"].append(service)
+            plan["services"].extend([frontend, backend])
 
-            if "backend_preferred_port" in dev and "backend_port_range" in dev:
-                backend = _reserve_port(
-                    label=f"{code} backend",
-                    preferred_port=int(dev["backend_preferred_port"]),
-                    port_range=dev["backend_port_range"],
-                    host=host,
-                    reserved=reserved,
+        else:
+            frontend = _static_port(
+                label=f"{code} iframe",
+                preferred_port=_dev_value(dev, "frontend_preferred_port", "preferred_port"),
+                port_range=_dev_value(dev, "frontend_port_range", "port_range"),
+            )
+            backend = _static_port(
+                label=f"{code} backend",
+                preferred_port=dev.get("backend_preferred_port"),
+                port_range=dev.get("backend_port_range"),
+            )
+
+            if frontend:
+                app_plan.update(
+                    {
+                        "frontend_port": frontend["port"],
+                        "port": frontend["port"],
+                        "frontend": frontend,
+                        "frontend_url": f"http://127.0.0.1:{frontend['port']}",
+                        "url": f"http://127.0.0.1:{frontend['port']}",
+                        "iframe_url": f"http://127.0.0.1:{frontend['port']}",
+                    }
                 )
+            if backend:
                 app_plan.update(
                     {
                         "backend_port": backend["port"],
-                        "backend_url": f"http://localhost:{backend['port']}",
+                        "backend_url": f"http://127.0.0.1:{backend['port']}",
                         "backend": backend,
                     }
                 )
-                plan["services"].append(backend)
 
         plan["apps"][code] = app_plan
 

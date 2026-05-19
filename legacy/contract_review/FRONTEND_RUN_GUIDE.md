@@ -29,7 +29,13 @@ npm run dev
 
 默认地址：`http://localhost:5173`
 
-前端已配置代理：`/api/*` 会自动转发到 `http://localhost:8000`。
+前端已配置代理：`/api/*` 会自动转发到 `http://127.0.0.1:8000`。如需单独指定后端地址，可在启动前设置：
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+在 `clover-platform` 统一启动器中，`python scripts/dev.py` 和 `python scripts/dev.py --only contract-review` 会自动注入 `VITE_API_BASE_URL`，使前端代理到本次分配的合同审查后端动态端口。单独运行本项目的方式不变。
 
 ## 3) 使用方式
 

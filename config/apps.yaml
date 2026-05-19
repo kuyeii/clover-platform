@@ -82,19 +82,22 @@ apps:
     workflow_refs:
       - contract_review
     dev:
-      enabled: false
-      kind: manual
-      note: "manual startup required in phase 4.1; frontend/backend split must be validated with existing data paths"
+      enabled: true
+      kind: frontend_backend
       working_dir: legacy/contract_review
       frontend_working_dir: legacy/contract_review/frontend
       backend_working_dir: legacy/contract_review
-      frontend_command: npm run dev -- --host 0.0.0.0 --port {port}
-      backend_command: "{python} -m uvicorn web_api:app --host 0.0.0.0 --port {backend_port} --reload"
-      preferred_port: 18120
-      port_range: [18120, 18129]
-      backend_preferred_port: 18121
-      backend_port_range: [18121, 18129]
+      python_bin_env: CONTRACT_REVIEW_PYTHON_BIN
+      prefer_local_python: true
+      frontend_command: npm run dev -- --host 0.0.0.0 --port {frontend_port}
+      backend_command: "{python} -m uvicorn web_api:app --host 0.0.0.0 --port {backend_port}"
+      frontend_preferred_port: 18120
+      frontend_port_range: [18120, 18124]
+      backend_preferred_port: 18125
+      backend_port_range: [18125, 18129]
+      health_check: /api/health
       env:
+        VITE_API_BASE_URL: "http://127.0.0.1:{backend_port}"
         VITE_API_TARGET: "http://127.0.0.1:{backend_port}"
 
   rag_qa:

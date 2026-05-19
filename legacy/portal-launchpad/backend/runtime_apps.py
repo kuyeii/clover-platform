@@ -45,8 +45,14 @@ def get_runtime_apps_payload() -> dict[str, Any]:
         code = str(app.get("code") or "")
         runtime_app = runtime_apps.get(code) if isinstance(runtime_apps, dict) else None
         if isinstance(runtime_app, dict):
-            iframe_url = str(runtime_app.get("iframe_url") or runtime_app.get("url") or "")
+            iframe_url = str(
+                runtime_app.get("iframe_url")
+                or runtime_app.get("frontend_url")
+                or runtime_app.get("url")
+                or ""
+            )
             backend_url = str(runtime_app.get("backend_url") or "")
+            health_url = str(runtime_app.get("health_url") or "")
             health_check = str(app.get("legacy_health_check") or "")
             apps.append(
                 {
@@ -54,7 +60,8 @@ def get_runtime_apps_payload() -> dict[str, Any]:
                     "name": app.get("name"),
                     "iframeUrl": iframe_url,
                     "url": iframe_url,
-                    "healthUrl": f"{backend_url}{health_check}" if backend_url and health_check else "",
+                    "healthUrl": health_url
+                    or (f"{backend_url}{health_check}" if backend_url and health_check else ""),
                     "enabled": bool(runtime_app.get("enabled", app.get("enabled", True))),
                 }
             )
