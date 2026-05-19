@@ -1,3 +1,5 @@
+# This Docker configuration has not yet been updated for the monorepo
+# PostgreSQL phase. Use monorepo local startup for phase 3 verification.
 FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /app
@@ -15,8 +17,7 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORTAL_API_HOST=0.0.0.0 \
-    PORTAL_API_PORT=5210 \
-    PORTAL_DATA_DIR=/app/backend/data
+    PORTAL_API_PORT=5210
 
 WORKDIR /app
 
@@ -25,8 +26,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend ./backend
 COPY --from=frontend-builder /app/dist ./dist
-
-RUN mkdir -p /app/backend/data
 
 EXPOSE 5210
 

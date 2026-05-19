@@ -2,17 +2,17 @@
 
 四叶草平台整合主仓库。
 
-当前阶段在整合仓库骨架上补充 PostgreSQL 18 统一数据库基础设施，不修改五个 legacy 项目业务逻辑。
+当前阶段已完成 Portal 数据库访问层从 SQLite 到 PostgreSQL 的切换，其他四个业务项目仍保持 legacy 状态。
 
 ## 项目目标
 
-`clover-platform` 用于逐步整合统一入口、合同审查、标书生成、RAG 问答和竞对分析五个既有项目。第一阶段目标是建立 monorepo 基础结构和安全备份线，让五个 legacy 项目继续保持原有启动方式。
+`clover-platform` 用于逐步整合统一入口、合同审查、标书生成、RAG 问答和竞对分析五个既有项目。当前不是五个后端已经合并完成的状态，也没有去掉 iframe；业务迁移会继续分阶段推进。
 
 ## 当前阶段
 
-当前处于第 2 阶段：PostgreSQL 初始化与统一数据库基础设施。
+当前处于第 3 阶段收尾：Portal PostgreSQL 切换已完成。
 
-本阶段只做 PostgreSQL 18 连接配置、健康检查、schema 初始化、core 公共基础表和 Alembic 初始化。不迁移 legacy 业务代码，不调整端口，不切换认证逻辑。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。其他四个业务模块仍保持 legacy 状态，后续分阶段迁移。
 
 ## Legacy 项目
 
@@ -63,7 +63,6 @@ clover-platform/
 
 ## 当前不做的事情
 
-- 不迁移 SQLite。
 - 不合并五个后端。
 - 不去掉 iframe。
 - 不修改认证逻辑。
@@ -72,8 +71,8 @@ clover-platform/
 - 不接 MinIO。
 - 不升级 React / Vite / Tailwind。
 - 不重构业务代码。
-- 不删除 legacy 项目中的任何文件。
-- 不修改五个项目的业务启动逻辑。
+- 不迁移合同审查、标书生成、RAG 问答、竞对分析的数据层。
+- 不修改其他四个 legacy 项目的业务启动逻辑。
 
 ## 第 2 阶段：PostgreSQL 初始化
 
@@ -131,11 +130,11 @@ Alembic 用于正式数据库版本管理。开发阶段可以先执行 `python 
 python scripts/check_db.py
 ```
 
-本阶段不会修改 legacy 业务代码。下一阶段再评估 Portal 数据库从 SQLite 切换到 PostgreSQL。
+本阶段不会修改其他四个 legacy 业务代码。Portal 数据库访问层已经切换到 PostgreSQL。
 
 ## 下一阶段计划
 
-下一阶段再推进统一启动器与动态端口。业务迁移应按模块逐步推进，并保留 iframe fallback。
+第 4 阶段再处理统一启动器与动态端口。第 5 阶段之后再考虑其他业务模块数据库迁移与进一步去 iframe。
 
 ## 第 3 阶段：Portal PostgreSQL
 
@@ -149,7 +148,7 @@ PORTAL_ADMIN_PASSWORD=admin123456
 PORTAL_ADMIN_DISPLAY_NAME=系统管理员
 ```
 
-开发默认密码只用于本地初始化，上线前必须修改。第一次启动 Portal 后端时，如果 `core.users` 中没有管理员，会按上述环境变量创建默认管理员；不会迁移旧 SQLite 数据。
+开发默认密码只用于本地初始化，上线前必须修改。第一次启动 Portal 后端时，如果 `core.users` 中没有管理员，会按上述环境变量创建默认管理员；不迁移旧 SQLite 数据。
 
 启动方式保持原项目习惯：
 
@@ -169,3 +168,7 @@ Portal 当前使用 PostgreSQL 表：
 - `portal.feedback_submissions`
 
 应用权限继续使用 Portal 既有短横线 app id：`bid-generator`、`contract-review`、`competitor-analysis`、`rag-web-search`。没有权限记录时默认允许访问；有记录时以 `core.user_app_permissions.can_access` 为准。
+
+反馈 / 工单 / 功能建议相关接口当前写入 `portal.feedback_submissions`。邮件发送仍按 Portal SMTP 环境变量配置执行。
+
+第 3 阶段主要验证 monorepo 本地方式启动。`legacy/portal-launchpad` 下旧 Dockerfile / docker-compose 尚未更新为最终 monorepo PostgreSQL 部署形态，只能视为历史遗留或待改造文件。统一 Docker 部署会在后续 Docker 阶段处理。

@@ -146,12 +146,15 @@ def connect() -> Iterator[PortalConnection]:
 
 
 def normalize_permissions(role: str, permissions: list[str] | None) -> list[str]:
+    # Keep None and [] distinct: None means default allow, [] means explicit deny all.
     if role == "admin":
+        return list(APP_IDS)
+    if permissions is None:
         return list(APP_IDS)
 
     seen: set[str] = set()
     normalized: list[str] = []
-    for app_id in permissions or APP_IDS:
+    for app_id in permissions:
         if app_id in APP_IDS and app_id not in seen:
             normalized.append(app_id)
             seen.add(app_id)

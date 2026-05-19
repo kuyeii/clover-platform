@@ -15,18 +15,6 @@ if _env_file.is_file():
         pass
 
 DIST_DIR = PROJECT_ROOT / "dist"
-BACKEND_DIR = PROJECT_ROOT / "backend"
-DATA_DIR = Path(os.getenv("PORTAL_DATA_DIR", str(BACKEND_DIR / "data")))
-# Deprecated after phase 3: Portal now uses PostgreSQL via DATABASE_URL.
-# Keep these constants only for backward-compatible imports; runtime code must not
-# create or read SQLite files.
-DB_FILE = Path(os.getenv("PORTAL_DB_FILE", str(DATA_DIR / "portal.db")))
-LEGACY_JSON_FILE = Path(
-    os.getenv(
-        "PORTAL_LEGACY_JSON_FILE",
-        str(PROJECT_ROOT / "server" / "data" / "portal-state.json"),
-    )
-)
 
 API_HOST = os.getenv("PORTAL_API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("PORTAL_API_PORT", os.getenv("PORT", "5210")))
@@ -85,48 +73,3 @@ FEEDBACK_ALLOWED_EXTENSIONS = {
     ".7z",
     ".mp4",
 }
-
-# Deprecated after phase 3: default users are no longer bulk-seeded from code.
-# Portal creates only the configurable default admin when PostgreSQL has no admin.
-DEFAULT_USERS = [
-    {
-        "id": "user-admin",
-        "name": "平台管理员",
-        "account": "admin",
-        "role": "admin",
-        "enabled": True,
-        "appPermissions": APP_IDS,
-        "createdAt": "2026-05-14T00:00:00.000Z",
-        "initialPassword": "admin123",
-    },
-    {
-        "id": "user-bid",
-        "name": "张三",
-        "account": "zhangsan",
-        "role": "operator",
-        "enabled": True,
-        "appPermissions": ["bid-generator", "rag-web-search"],
-        "createdAt": "2026-05-14T00:00:00.000Z",
-        "initialPassword": "123456",
-    },
-    {
-        "id": "user-contract",
-        "name": "李四",
-        "account": "lisi",
-        "role": "operator",
-        "enabled": True,
-        "appPermissions": ["contract-review", "rag-web-search"],
-        "createdAt": "2026-05-14T00:00:00.000Z",
-        "initialPassword": "123456",
-    },
-    {
-        "id": "user-viewer",
-        "name": "王五",
-        "account": "wangwu",
-        "role": "viewer",
-        "enabled": True,
-        "appPermissions": ["rag-web-search"],
-        "createdAt": "2026-05-14T00:00:00.000Z",
-        "initialPassword": "123456",
-    },
-]

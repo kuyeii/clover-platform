@@ -81,7 +81,7 @@ portal-launchpad/
 - 点击模块入口后在门户内部路由 `/apps/:appId` 下以 `iframe` 方式加载目标 URL。
 - 当前导航只保留：`工作台 / 知识库 / 设置`。
 - Portal 保留顶部导航和统一外壳，不接管业务模块内部路由。
-- 当前不做真实登录，不做统一网关代理，不做微前端源码级集成。
+- 当前已启用 Portal session 登录，但不做统一网关代理，不做微前端源码级集成。
 - 四个业务模块仍然隔离运行，通过配置地址打开。
 
 ## 后续扩展方向
@@ -92,18 +92,54 @@ portal-launchpad/
 - 微前端接入
 - 统一平台服务联动
 
-## 用户管理后端
+## Portal PostgreSQL 后端
 
-本项目已内置 FastAPI + SQLite 后端，用户认证、用户管理、应用权限和应用占用状态都通过 `/api/*` 维护。
+Portal 后端当前使用 PostgreSQL，数据库配置来自 `clover-platform` 根目录 `.env` 或环境变量。用户认证、用户管理、应用权限、应用占用状态和反馈提交都通过 `/api/*` 维护。
 
 ### 安装依赖
 
 ```bash
 npm install
+cd ../..
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
+python -m pip install -r legacy/portal-launchpad/requirements.txt
 ```
+
+### 数据库初始化
+
+在 `clover-platform` 根目录执行：
+
+```bash
+python scripts/check_db.py
+python scripts/init_db.py
+python scripts/check_db.py
+```
+
+Portal 使用以下 PostgreSQL 表：
+
+- `core.users`
+- `core.sessions`
+- `core.user_app_permissions`
+- `core.app_usage_sessions`
+- `core.audit_logs`
+- `portal.user_profiles`
+- `portal.feedback_submissions`
+
+当前不迁移旧 SQLite 数据。
+
+### 默认管理员
+
+首次启动 Portal 后端时，如果 `core.users` 中没有管理员，会根据环境变量创建默认管理员：
+
+```bash
+PORTAL_ADMIN_USERNAME=admin
+PORTAL_ADMIN_PASSWORD=admin123456
+PORTAL_ADMIN_DISPLAY_NAME=系统管理员
+```
+
+开发默认值是 `admin / admin123456`。上线前必须通过环境变量修改默认密码。
 
 ### 开发启动
 
@@ -120,7 +156,9 @@ npm run dev
 ### 单独启动后端
 
 ```bash
-python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 5210 --reload
+cd legacy/portal-launchpad
+source ../../.venv/bin/activate
+uvicorn backend.main:app --host 0.0.0.0 --port 5210 --reload
 ```
 
 ### 生产验证
@@ -130,53 +168,26 @@ npm run build
 npm run server
 ```
 
-首次启动后端时会自动生成 SQLite 数据库：`backend/data/portal.db`。默认测试账号：
+### 手动验证
 
-- `admin / admin123`：管理员，拥有全部权限
-- `zhangsan / 123456`：标书审查、RAG 问答
-- `lisi / 123456`：合同审查、RAG 问答
-- `wangwu / 123456`：RAG 问答
+1. 使用默认开发管理员登录：`admin / admin123456`。
+2. 验证 `POST /api/auth/login` 成功，`GET /api/auth/me` 成功，`core.sessions` 有 session 记录。
+3. 创建普通用户，修改显示名，修改密码，启用 / 禁用用户。
+4. 验证应用权限：
+   - 未传 `appPermissions`：默认允许全部业务模块。
+   - 传 `appPermissions: []`：不允许任何业务模块。
+   - 传 `appPermissions: ["contract-review"]`：只允许合同审查。
+5. 验证应用占用：
+   - 进入应用后 `core.app_usage_sessions` 有记录。
+   - heartbeat 更新 `last_seen_at`。
+   - leave 清理占用。
+   - `/ws/app-usage` WebSocket 仍能推送状态。
+6. 反馈 / 工单 / 功能建议相关接口当前写入 `portal.feedback_submissions`，邮件发送仍按 SMTP 配置执行。
 
 更多设计说明见 `docs/user-management-design.md`。
 
-## Docker 部署
+## Docker 当前状态
 
-服务器上不建议用 `npm run dev` 跑生产门户。开发命令会同时启动 Vite 和 FastAPI，并依赖宿主机 Python 已安装 `uvicorn`。生产环境直接使用 Docker：
+第 3 阶段主要验证 monorepo 本地方式启动。Portal 后端现在依赖 `clover-platform` 根目录的 `packages/py_common`，因此 `legacy/portal-launchpad` 下旧 Dockerfile / docker-compose 只能视为历史遗留或待改造文件，不代表最终部署方案。
 
-```bash
-cd 03-entry-portal/portal-launchpad
-docker compose up -d --build
-```
-
-默认访问地址：
-
-```text
-http://<server-ip>:5200
-```
-
-查看日志：
-
-```bash
-docker compose logs -f portal-launchpad
-```
-
-停止服务：
-
-```bash
-docker compose down
-```
-
-Docker 镜像会先构建前端 `dist`，再由 FastAPI 托管静态页面和 `/api/*` 接口。容器内部监听 `5210`，宿主机映射为 `5200`。SQLite 数据持久化在：
-
-```text
-backend/data/
-```
-
-如果服务器 `5200` 端口被占用，修改 `docker-compose.yml`：
-
-```yaml
-ports:
-  - "5201:5210"
-```
-
-然后访问 `http://<server-ip>:5201`。
+Portal 单独 Docker 镜像不是当前阶段交付目标。统一 Docker 部署会在后续 Docker 阶段处理；届时会统一处理 monorepo 依赖、PostgreSQL 环境变量、静态资源构建和容器网络。
