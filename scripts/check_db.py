@@ -16,7 +16,7 @@ def _safe_database_target() -> str:
     try:
         url = make_url(get_settings().resolved_database_url())
     except Exception as exc:
-        return f"unresolved database URL ({exc})"
+        return f"unresolved database URL: {exc}"
     return (
         f"host={url.host}, port={url.port or 5432}, "
         f"db={url.database}, user={url.username}"
@@ -27,7 +27,7 @@ def main() -> int:
     load_dotenv(ROOT / ".env")
     result = check_database_connection()
     if not result["ok"]:
-        print(f"Database connection failed for {_safe_database_target()}", file=sys.stderr)
+        print(f"Failed to connect to PostgreSQL {_safe_database_target()}", file=sys.stderr)
         print(f"Error: {result['error']}", file=sys.stderr)
         return 1
 
@@ -53,6 +53,28 @@ def main() -> int:
         for table in result["missing_core_tables"]:
             print(f"  - core.{table}")
         print("Database connection OK, but core tables are missing. Run: python scripts/init_db.py")
+        return 2
+
+    print("Module meta tables:")
+    for schema in result["module_meta_tables"]:
+        print(f"  - {schema}.module_meta")
+
+    if result["missing_module_meta_tables"]:
+        print("Missing module_meta tables:")
+        for schema in result["missing_module_meta_tables"]:
+            print(f"  - {schema}.module_meta")
+        print("Database connection OK, but module_meta tables are missing. Run: python scripts/init_db.py")
+        return 2
+
+    print("Core indexes:")
+    for index in result["core_indexes"]:
+        print(f"  - core.{index}")
+
+    if result["missing_core_indexes"]:
+        print("Missing core indexes:")
+        for index in result["missing_core_indexes"]:
+            print(f"  - core.{index}")
+        print("Database connection OK, but core indexes are missing. Run: python scripts/init_db.py")
         return 2
 
     if result["missing_schemas"]:

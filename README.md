@@ -109,7 +109,7 @@ python scripts/check_db.py
 python scripts/init_db.py
 ```
 
-该脚本会可重复地创建 `pgcrypto` 扩展、`core` / `portal` / `contract_review` / `bid_generator` / `rag` / `competitor_analysis` schema、core 基础表和各业务 schema 的 `module_meta` 表。
+`scripts/init_db.py` 用于开发阶段快速初始化、幂等检查和本地调试。该脚本会可重复地创建 `pgcrypto` 扩展、`core` / `portal` / `contract_review` / `bid_generator` / `rag` / `competitor_analysis` schema、core 基础表、常用索引和各业务 schema 的 `module_meta` 表。
 
 5. 再次检查：
 
@@ -122,6 +122,8 @@ python scripts/check_db.py
 ```bash
 alembic upgrade head
 ```
+
+Alembic 用于正式数据库版本管理。开发阶段可以先执行 `python scripts/init_db.py`，再执行 `alembic upgrade head`；两者都应保持幂等，不应互相冲突。后续正式模块迁移和表结构演进，应优先通过 Alembic migration 管理。
 
 7. 再次检查：
 

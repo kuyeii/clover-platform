@@ -38,6 +38,9 @@ def main() -> int:
         for schema in result.schemas:
             print(f"Ensured schema: {schema}")
         print("Ensured core tables")
+        print("Ensured core indexes")
+        for index in result.core_indexes:
+            print(f"Ensured index: core.{index}")
         print("Ensured module_meta tables")
         print("Database initialization completed")
         return 0

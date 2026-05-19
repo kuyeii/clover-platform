@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
-from .init_schema import CORE_TABLES, SCHEMAS
+from .ddl import CORE_INDEXES, CORE_TABLES, MODULE_META, SCHEMAS
 from .session import get_engine
 
 
@@ -51,9 +50,40 @@ def check_database_connection() -> dict[str, Any]:
                     {"tables": list(CORE_TABLES)},
                 )
             ]
-    except SQLAlchemyError as exc:
-        return {"ok": False, "error": str(exc)}
+            module_meta_tables = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT table_schema
+                        FROM information_schema.tables
+                        WHERE table_name = 'module_meta'
+                          AND table_schema = ANY(:schemas)
+                        ORDER BY table_schema
+                        """
+                    ),
+                    {"schemas": [schema for schema, _, _ in MODULE_META]},
+                )
+            ]
+            core_indexes = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = 'core'
+                          AND indexname = ANY(:indexes)
+                        ORDER BY indexname
+                        """
+                    ),
+                    {"indexes": list(CORE_INDEXES)},
+                )
+            ]
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "error_type": exc.__class__.__name__}
 
+    module_meta_schemas = tuple(schema for schema, _, _ in MODULE_META)
     return {
         "ok": True,
         "version": server["version"],
@@ -63,4 +93,8 @@ def check_database_connection() -> dict[str, Any]:
         "missing_schemas": sorted(set(SCHEMAS) - set(schemas)),
         "core_tables": tables,
         "missing_core_tables": sorted(set(CORE_TABLES) - set(tables)),
+        "module_meta_tables": module_meta_tables,
+        "missing_module_meta_tables": sorted(set(module_meta_schemas) - set(module_meta_tables)),
+        "core_indexes": core_indexes,
+        "missing_core_indexes": sorted(set(CORE_INDEXES) - set(core_indexes)),
     }

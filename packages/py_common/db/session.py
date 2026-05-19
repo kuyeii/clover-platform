@@ -9,6 +9,7 @@ from packages.py_common.config import get_settings
 
 
 _engine: Engine | None = None
+_session_factory: sessionmaker[Session] | None = None
 
 
 def get_engine() -> Engine:
@@ -27,11 +28,24 @@ def get_engine() -> Engine:
     return _engine
 
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False)
+def get_session_factory() -> sessionmaker[Session]:
+    """Return a sessionmaker bound to the shared engine.
+
+    Future business code should use get_db() or get_session_factory() instead of
+    constructing an unbound SQLAlchemy Session directly.
+    """
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = sessionmaker(
+            bind=get_engine(),
+            autocommit=False,
+            autoflush=False,
+        )
+    return _session_factory
 
 
 def get_db() -> Generator[Session, None, None]:
-    session = SessionLocal(bind=get_engine())
+    session = get_session_factory()()
     try:
         yield session
     except SQLAlchemyError:

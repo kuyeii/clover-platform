@@ -37,10 +37,12 @@ class Settings(BaseSettings):
         ]
         if missing:
             joined = ", ".join(missing)
-            raise ValueError(
-                "Database configuration is incomplete. Set DATABASE_URL or provide "
-                f"all POSTGRES_* values. Missing: {joined}"
-            )
+            if len(missing) == 4:
+                raise ValueError(
+                    "DATABASE_URL is missing and PostgreSQL connection settings are incomplete. "
+                    f"Missing: {joined}"
+                )
+            raise ValueError(f"PostgreSQL connection settings are incomplete. Missing: {joined}")
 
         user = quote_plus(self.postgres_user or "")
         password = quote_plus(self.postgres_password or "")
