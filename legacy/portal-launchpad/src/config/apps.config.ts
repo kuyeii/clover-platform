@@ -53,7 +53,7 @@ export const appsConfig: ToolkitApp[] = [
     ctaLabel: "进入应用",
     backgroundImage: "/app-backgrounds/competitor-analysis.png",
     url: buildRuntimeUrl(18130),
-    healthUrl: buildRuntimeUrl(18131, "/health"),
+    healthUrl: buildRuntimeUrl(18135, "/api/health"),
     status: "running",
     healthStatus: "unknown",
     theme: "orange",

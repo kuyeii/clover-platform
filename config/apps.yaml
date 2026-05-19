@@ -154,19 +154,21 @@ apps:
     workflow_refs:
       - competitor_analysis
     dev:
-      enabled: false
-      kind: manual
-      note: "manual startup required in phase 4.1; existing script starts frontend and Python history server together"
+      enabled: true
+      kind: frontend_backend
       working_dir: legacy/company-competitors-analysis
       frontend_working_dir: legacy/company-competitors-analysis
       backend_working_dir: legacy/company-competitors-analysis
-      frontend_command: npm run dev:frontend -- --host 0.0.0.0 --port {port}
-      backend_command: "{python} backend/server.py"
-      preferred_port: 18130
-      port_range: [18130, 18139]
-      backend_preferred_port: 18131
-      backend_port_range: [18131, 18139]
+      frontend_command: npx vite --host 0.0.0.0 --port {frontend_port}
+      backend_command: "{python} backend/server.py --host 0.0.0.0 --port {backend_port}"
+      frontend_preferred_port: 18130
+      frontend_port_range: [18130, 18134]
+      backend_preferred_port: 18135
+      backend_port_range: [18135, 18139]
+      health_check: /api/health
       env:
+        VITE_API_BASE_URL: "http://127.0.0.1:{backend_port}"
+        VITE_API_TARGET: "http://127.0.0.1:{backend_port}"
         HISTORY_SERVER_PORT: "{backend_port}"
         BACKEND_PORT: "{backend_port}"
-        CORS_ORIGIN: "http://localhost:{port}"
+        CORS_ORIGIN: "http://localhost:{frontend_port}"

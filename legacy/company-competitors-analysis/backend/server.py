@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import ast
+import argparse
 from contextlib import contextmanager
 import mimetypes
 import os
@@ -69,11 +70,27 @@ def load_env_file(file_path: Path) -> None:
             os.environ[key] = value
 
 
+def parse_server_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Start competitor-analysis backend server.")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("HISTORY_SERVER_HOST") or os.environ.get("BACKEND_HOST") or "0.0.0.0",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("HISTORY_SERVER_PORT") or os.environ.get("BACKEND_PORT") or 8788),
+    )
+    args, _ = parser.parse_known_args()
+    return args
+
+
 load_env_file(ROOT_DIR / ".env")
 load_env_file(ROOT_DIR / ".env.local")
 
-PORT = int(os.environ.get("HISTORY_SERVER_PORT") or os.environ.get("BACKEND_PORT") or 8788)
-HOST = os.environ.get("HISTORY_SERVER_HOST") or os.environ.get("BACKEND_HOST") or "0.0.0.0"
+SERVER_ARGS = parse_server_args()
+PORT = SERVER_ARGS.port
+HOST = SERVER_ARGS.host
 MAX_ITEMS = int(os.environ.get("HISTORY_MAX_ITEMS") or 200)
 
 
@@ -2901,6 +2918,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), fmt % args))
 
     def _cors_origin(self) -> str:
+        origin = self.headers.get("Origin") or ""
+        if re.fullmatch(r"https?://(localhost|127\.0\.0\.1):\d+", origin):
+            return origin
         return os.environ.get("CORS_ORIGIN") or "http://localhost:5174"
 
     def _send_json(self, payload: Any, status: int = 200) -> None:

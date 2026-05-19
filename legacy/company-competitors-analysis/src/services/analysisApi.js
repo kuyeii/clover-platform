@@ -1,5 +1,14 @@
+function getApiBase() {
+  const base = import.meta.env.VITE_API_BASE_URL || "";
+  return base.replace(/\/$/, "");
+}
+
+function apiUrl(path) {
+  return `${getApiBase()}${path}`;
+}
+
 export async function requestJson(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options
   });
@@ -26,7 +35,7 @@ export async function runAnalysis(input) {
 }
 
 export async function runAnalysisStream(input, onEvent) {
-  const response = await fetch("/api/analysis/stream", {
+  const response = await fetch(apiUrl("/api/analysis/stream"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"

@@ -176,6 +176,13 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
+后端也支持通过命令行或环境变量指定监听地址：
+
+```bash
+python3 backend/server.py --host 0.0.0.0 --port 8788
+BACKEND_HOST=0.0.0.0 BACKEND_PORT=8788 python3 backend/server.py
+```
+
 Windows 环境如果没有 `python3` 命令，可以使用：
 
 ```bash
@@ -226,6 +233,8 @@ npm run preview
 | `HISTORY_DB_PATH` | `backend/data/history.sqlite3` | SQLite 数据库路径 |
 | `SQLITE_DB_PATH` | - | SQLite 路径兼容变量 |
 | `COMPANY_MEMORY_CACHE_SIZE` | `5000` | 企业名称校验内存缓存上限 |
+
+在 `clover-platform` 根目录使用统一启动器时，竞对分析前端和后端会分别使用 `config/apps.yaml` 中的动态端口范围启动；启动器会向前端注入 `VITE_API_BASE_URL=http://127.0.0.1:<竞对分析后端端口>`，因此 iframe 会打开竞对分析前端端口，前端 API 请求会访问对应的竞对分析后端端口。单独启动本项目时仍可继续使用 `npm run dev` 或分开运行前后端。
 
 ### 通用 Dify 变量
 

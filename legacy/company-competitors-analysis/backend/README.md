@@ -30,6 +30,13 @@ npm run dev
 python3 backend/server.py
 ```
 
+后端支持命令行参数或环境变量覆盖监听地址，命令行参数优先：
+
+```bash
+python3 backend/server.py --host 0.0.0.0 --port 8788
+BACKEND_HOST=0.0.0.0 BACKEND_PORT=8788 python3 backend/server.py
+```
+
 Python 后端只使用标准库，不需要额外依赖。`backend/requirements.txt` 仅作说明。
 
 ## API
