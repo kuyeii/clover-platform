@@ -1,0 +1,63 @@
+# ==================== Python ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# ==================== 虚拟环境 ====================
+.venv/
+venv/
+ENV/
+env/
+
+# ==================== IDE ====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ==================== 系统文件 ====================
+.DS_Store
+Thumbs.db
+
+# ==================== 项目特定 ====================
+# 敏感配置（含 API Key 等）
+config.local.yaml
+.env
+*.env.local
+.codex
+
+# 模型文件（体积大，不入版本控制）
+*.pt
+*.pth
+*.bin
+*.onnx
+*.npy
+*.pkl
+pdf_cache/
+raw_doc_cache/
+projects/
+
+# 输出文件
+output/
+*.docx
+!**/templates/*.docx
+
+# 日志
+*.log
+pipt_logs/
+todo/
+
+# SQLite runtime artifacts
+*.db-wal
+*.db-shm
+
+# Agent artifacts
+agents/
+

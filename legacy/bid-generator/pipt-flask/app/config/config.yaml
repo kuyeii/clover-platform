@@ -1,0 +1,9 @@
+batch_size_max: 32
+batch_size_min: 2
+cooldown_seconds: 3600
+cpu_usage_warning: 80
+memory_usage_warning: 80
+structured_location_num_ratio: 70
+structured_person_num_ratio: 50
+structured_org_num_ratio: 70
+sample_num: 100

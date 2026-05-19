@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt-forge"
+version = "0.1.0"
+description = "ProEngine 提示词工程 — 自动生成高质量系统提示词"
+requires-python = ">=3.11"
+dependencies = [
+    "Jinja2>=3.1.0",
+    "pyyaml>=6.0",
+    "tiktoken>=0.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.3.0",
+]

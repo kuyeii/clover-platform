@@ -1,0 +1,7 @@
+# Conda 环境：仅固定 Python 版本，依赖仍用 pip + requirements.txt 安装（与团队常用做法一致）
+name: chat-backend
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip

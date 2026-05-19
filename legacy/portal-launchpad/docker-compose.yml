@@ -1,0 +1,19 @@
+services:
+  portal-launchpad:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: portal-launchpad
+    restart: unless-stopped
+    ports:
+      - "5200:5210"
+    environment:
+      PORTAL_API_HOST: "0.0.0.0"
+      PORTAL_API_PORT: "5210"
+      PORTAL_DATA_DIR: "/app/backend/data"
+      PORTAL_CORS_ORIGINS: "http://localhost:5200,http://127.0.0.1:5200"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./backend/data:/app/backend/data

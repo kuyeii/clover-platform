@@ -1,0 +1,26 @@
+# pipt-lite (zeshouan-lite 分支) 精简版依赖
+# 仅包含 NER 识别 + 脱敏处理所需的最小依赖集
+
+# === FastAPI 框架 ===
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0
+
+# === NER / NLP ===
+# torch 需根据环境单独安装（CPU 版本）
+# pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+hanlp==2.1.0b57
+transformers==4.34.1
+
+# === 脱敏相关 ===
+gmssl>=3.2.2           # SM4 对称加密
+faker>=22.0            # 假名化
+
+# === 数据处理 ===
+pandas==2.2.3
+numpy==1.26.4
+
+# === 工具 ===
+pyyaml>=6.0
+python-docx>=1.1.0
+docxcompose>=1.4.0

@@ -1,0 +1,386 @@
+# 微数据融合相关配置
+row_anchor: true
+info_types_anchor: ['name','id_number','phone']
+field_groups_anchor: null
+conflict_rules: ['gender', 'nation']
+info_type_mapping_dict:
+  name: 个人基本资料
+  id_number: 个人身份信息
+  phone: 个人基本资料
+  bank: 金融账号信息
+  car_id: 个人资产信息
+  addr: 个人基本资料
+  nation: 个人基本资料
+  gender: 个人基本资料
+  political_status: 个人基本资料
+  email: 个人基本资料
+  ip: 网络身份标识信息
+
+field_risk_profiles:
+  - field: '姓名'
+    field_identifier: 'name'
+    info_type: '个人基本资料'
+    risks:
+      is_direct_identifier: true      # 是否属于直接标识符 (true/false)
+      restricts_autonomy: 1           # 限制个人自主决定权
+      causes_discrimination: 2       # 引发差别性待遇
+      reputational_damage: 2          # 个人名誉受损或精神压力
+      property_damage: 1              # 人身财产受损
+
+  - field: '身份证号'
+    field_identifier: 'ide_number'
+    info_type: '个人身份信息'
+    risks:
+      is_direct_identifier: true
+      restricts_autonomy: 3
+      causes_discrimination: 3
+      reputational_damage: 3
+      property_damage: 3
+
+  - field: '电话号码'
+    field_identifier: 'phone'
+    info_type: '个人基本资料'
+    risks:
+      is_direct_identifier: true
+      restricts_autonomy: 2
+      causes_discrimination: 1
+      reputational_damage: 2
+      property_damage: 3
+
+  - field: '银行账号'
+    field_identifier: 'bank'
+    info_type: '金融账号信息'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 1
+      causes_discrimination: 1
+      reputational_damage: 1
+      property_damage: 3
+
+  - field: '车牌号'
+    field_identifier: 'car_id'
+    info_type: '个人资产信息'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 2
+      causes_discrimination: 1
+      reputational_damage: 2
+      property_damage: 2
+
+  - field: '地址'
+    field_identifier: 'addr'
+    info_type: '个人基本资料'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 1
+      causes_discrimination: 2
+      reputational_damage: 1
+      property_damage: 2
+
+  - field: '民族'
+    field_identifier: 'nation'
+    info_type: '个人基本资料'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 2
+      causes_discrimination: 2
+      reputational_damage: 2
+      property_damage: 1
+
+  - field: '性别'
+    field_identifier: 'gender'
+    info_type: '个人基本资料'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 2
+      causes_discrimination: 2
+      reputational_damage: 2
+      property_damage: 1
+
+  - field: '政治面貌'
+    field_identifier: 'political_status'
+    info_type: '个人基本资料'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 1
+      causes_discrimination: 2
+      reputational_damage: 1
+      property_damage: 1
+
+  - field: '电子邮箱'
+    field_identifier: 'email'
+    info_type: '个人基本资料'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 2
+      causes_discrimination: 1
+      reputational_damage: 2
+      property_damage: 2
+
+  - field: 'IP地址'
+    field_identifier: 'ip'
+    info_type: '网络身份标识信息'
+    risks:
+      is_direct_identifier: false
+      restricts_autonomy: 2
+      causes_discrimination: 1
+      reputational_damage: 2
+      property_damage: 2
+# 应用规则池
+
+rule_pool:
+  # ### 优先级 400+: 关键风险 - 威胁人身与财产安全 ###
+  - priority: 401
+    rule_name: "身份证+银行卡+手机号"
+    description: "精准金融欺诈链条，可用于账户接管和资金盗用。"
+    risk_apply_rule:
+      - [id_number]
+      - [bank]
+      - [phone]
+    affect:
+      property_damage: {mode: increase_to, value: 4}
+      restricts_autonomy: {mode: increase_by, value: 1}
+
+  - priority: 402
+    rule_name: "身份证+地址"
+    description: "物理安全高危，可用于线下追踪、骚扰。"
+    risk_apply_rule:
+      - [id_number]
+      - [addr]
+    affect:
+      restricts_autonomy: {mode: increase_to, value: 4}
+
+  # ### 优先级 300-399: 高危风险 - 强关联与精准画像 ###
+  - priority: 301
+    rule_name: "身份证+银行卡"
+    description: "高危金融风险，是金融欺诈的关键要素组合。"
+    risk_apply_rule:
+      - [id_number]
+      - [bank]
+    affect:
+      property_damage: {mode: increase_to, value: 4}
+
+  - priority: 302
+    rule_name: "身份证+手机号"
+    description: "强实名认证信息，可被用于注册、绑定、验证各类在线服务。"
+    risk_apply_rule:
+      - [id_number]
+      - [phone]
+    affect:
+      reputational_damage: {mode: increase_to, value: 3}
+      property_damage: {mode: increase_by, value: 1}
+
+  - priority: 303
+    rule_name: "姓名+手机号+地址"
+    description: "完整的个人联系信息，常用于人肉搜索和线下骚扰。"
+    risk_apply_rule:
+      - [name]
+      - [phone]
+      - [addr]
+    affect:
+      reputational_damage: {mode: increase_to, value: 3}
+      restricts_autonomy: {mode: increase_to, value: 3}
+
+  - priority: 304
+    rule_name: "身份证+政治面貌"
+    description: "核心身份与政治观点关联，可能导致严重的社会或职业歧视。"
+    risk_apply_rule:
+      - [id_number]
+      - [political_status]
+    affect:
+      causes_discrimination: {mode: increase_to, value: 4}
+
+  - priority: 305
+    rule_name: "身份证+车牌号"
+    description: "个人资产与行动轨迹关联，可用于追踪或资产相关的犯罪。"
+    risk_apply_rule:
+      - [id_number]
+      - [car_id]
+    affect:
+      property_damage: {mode: increase_to, value: 3}
+      restricts_autonomy: {mode: increase_by, value: 1}
+
+  # ### 优先级 200-299: 中等风险 - 较强关联与行为分析 ###
+  - priority: 201
+    rule_name: "姓名+邮箱+IP地址"
+    description: "构成基础的线上身份画像，可用于垃圾邮件和网络钓鱼。"
+    risk_apply_rule:
+      - [name]
+      - [email]
+      - [ip]
+    affect:
+      reputational_damage: {mode: increase_to, value: 2}
+      restricts_autonomy: {mode: increase_by, value: 1}
+
+  - priority: 202
+    rule_name: "姓名+民族+性别"
+    description: "构成基础的人口学画像，可能被用于差别对待或歧视。"
+    risk_apply_rule:
+      - [name]
+      - [nation]
+      - [gender]
+    affect:
+      causes_discrimination: {mode: increase_to, value: 2}
+
+  - priority: 203
+    rule_name: "姓名+手机号"
+    description: "构成基本的网络实名关联，是许多在线服务的基础，泄露后可被用于社会工程。"
+    risk_apply_rule:
+      - [name]
+      - [phone]
+    affect:
+      reputational_damage: {mode: increase_by, value: 1}
+      property_damage: { mode: increase_by, value: 1 }
+
+
+  # ### 优先级 100-199: 广度风险 - 数据聚集效应 ###
+  - priority: 101
+    rule_name: "暴露的敏感字段过多"
+    description: "广度风险-中，数据收集范围较广，已形成较详细的个人档案。"
+    count_based_rule:
+      type: any_sensitive_field
+      min_count: 5
+    affect:
+      restricts_autonomy: {mode: increase_by, value: 1}
+      causes_discrimination: {mode: increase_by, value: 1}
+
+  - priority: 151
+    rule_name: "暴露的敏感字段极多"
+    description: "广度风险-高，数据收集范围非常广泛，已形成极其详尽的个人档案。"
+    count_based_rule:
+      type: any_sensitive_field
+      min_count: 8
+    affect:
+      restricts_autonomy: {mode: increase_to, value: 3}
+      causes_discrimination: {mode: increase_to, value: 3}
+
+#风险评估相关配置
+#0\1\2\3\4\5
+# 0：无，0-1：低；1-2：较低；2-3：中等；3-4：较高；4-5：高
+rules_identity:
+  - [ ['name'], 2 ] # 单个姓名识别揭示身份能力有限
+  - [ ['id_number'], 3 ] # 单个身份证已基本具备唯一揭示真实世界中的个体身份的能力，但是还不能完整揭示
+  - [ ['phone'], 2 ] # 单个手机号识别揭示身份能力有限
+  - [ ['bank'], 1 ] # 单个银行卡号并不能揭示个体身份
+  - [ ['car_id'], 2 ] # 单个车牌号识别揭示身份能力有限
+  - [ ['addr'], 2 ] # 单个车牌号识别揭示身份能力有限
+  - [ ['email'], 2 ] # 单个邮箱识别揭示身份能力有限，在互联网搜索时
+  - [ ['ip'], 2 ] # 单个IP地址并不能揭示个体身份
+  - [ ['name','id_number'], 4 ] # 姓名和身份证两要素，可以大概率唯一确定个体
+  - [ ['name','phone'], 4 ] # 姓名和手机号两要素，可以大概率唯一确定个体
+  - [ ['name','car_id'], 3 ]
+  - [ ['name','addr'], 3 ]
+  - [ ['name','nation'], 3 ]
+  - [ ['name', 'gender'], 3 ]
+  - [ ['name', 'political_status'], 3 ]
+  - [ ['name', 'email'], 3 ]
+  - [ ['name', 'ip'], 3 ]
+  - [ [ 'phone','id_number' ], 4 ] # 手机号和身份证两要素，可以大概率唯一确定个体
+  - [ [ 'phone','car_id' ], 4 ]
+  - [ [ 'phone','bank' ], 4 ] # 手机号和银行卡两要素，可以大概率唯一确定个体
+  - [ [ 'id_number','bank' ], 4 ] # 身份证和银行卡两要素，可以大概率唯一确定个体
+  - [ ['name', 'phone','id_number'], 5 ] # 姓名、手机号、身份证三要素，可以高概率唯一确定个体
+  - [ ['name', 'phone','bank'], 5 ] # 姓名、手机号、银行卡三要素，可以高概率唯一确定个体
+  - [ ['phone', 'id_number','bank'], 5 ] # 银行卡、手机号、身份证三要素，可以高概率唯一确定个体
+
+
+
+rules_contact:
+  - [ ['phone'], 3 ]
+  - [ ['car_id'], 2 ] # 通过挪车
+  - [ ['email'], 3 ]
+  - [ ['ip'], 3 ]
+  - [ ['name','id_number'], 4 ]
+  - [ ['name','addr'], 2 ]
+  - [ ['phone','name'], 4 ]
+  - [ ['email','name' ], 4 ]
+  - [ ['phone','email'], 4 ]
+  - [ ['phone','addr'], 4 ]
+  - [ ['phone','name','addr'], 5 ]
+
+
+rules_treatment:
+  - [ ['id_number'], 2 ]
+  - [ ['bank'], 2 ]
+  - [ ['nation'], 1 ]
+  - [ ['political_status'], 1 ]
+  - [ ['addr'], 1 ]
+  - [ ['gender'], 1 ]
+  - [ ['car_id'], 2 ]
+  - [ ['name','phone'], 3 ]
+  - [ ['name','car_id'], 3 ]
+  - [ ['name','addr'], 2 ]
+  - [ ['name','nation'], 2 ]
+  - [ ['name', 'gender'], 2 ]
+  - [ ['name', 'political_status'], 2 ]
+  - [ ['name', 'email'], 3 ]
+  - [ ['name', 'ip'], 3 ]
+  - [ ['name','id_number'], 4 ]
+  - [ [ 'phone','car_id' ], 3 ]
+  - [ [ 'phone','bank' ], 4 ]
+  - [ [ 'phone','id_number' ], 4 ]
+  - [ [ 'email','id_number' ], 3 ]
+  - [ [ 'id_number','bank' ], 4 ]
+  - [ ['name', 'phone','id_number'], 5 ]
+  - [ ['name', 'phone','bank'], 5 ]
+  - [ ['phone', 'id_number','bank'], 5 ]
+
+combination_rules:
+  - name: '金融欺诈高风险规则'
+    description: '当数据同时包含身份和金融账户信息时，大幅提升财产受损风险'
+    conditions: # 触发条件 (外部AND，内部OR)
+      - tags: ['个人身份信息', '金融账号信息'] # 组1: 包含'个人身份信息' 或 '金融账号信息'
+    actions: # 执行动作
+      - dimension: 'property_damage'   # 影响维度
+        type: 'set'                    # 操作类型: 'set' 或 'increase'
+        value: 4                       # 风险等级值
+      - dimension: 'reputational_damage'
+        type: 'increase'
+        value: 1
+
+  - name: '线下安全风险规则'
+    description: '当身份信息和实时位置信息结合时，定为最高人身财产风险'
+    conditions:
+      - tags: ['个人身份信息'] # 组1: 包含'个人身份信息'
+      - tags: ['个人位置信息'] # 组2: 并且包含'个人位置信息'
+    actions:
+      - dimension: 'property_damage'
+        type: 'set'
+        value: 4
+
+# 微数据关联评估个人信息链条可信度的相关配置
+
+INTRINSIC_FIELDS:  # 固有属性列表
+  - id_number
+  - gender
+  - nation
+
+FIELD_WEIGHTS:
+  name: 2.0         # 姓名字段的权重
+  id_number: 3.0     # 身份证号字段的权重 (较高，因为通常唯一性强)
+  phone: 2.5         # 电话号码字段的权重
+  email: 1.0         # 电子邮箱字段的权重
+  bank: 1.0
+  car_id: 0.5
+  addr: 0.5       # 地址字段的权重 (较低，因为可能有多种写法或变化)
+  ip: 0.5
+  nation: 0.5
+  gender: 0.5
+  political_status: 0.5
+
+
+# Penalty Rates: 可信度计算中的各项惩罚系数
+INTRINSIC_FIELD_CONFLICT_PENALTY_RATE: 0.4   # 固有属性字段内部冲突的惩罚率
+NON_INTRINSIC_FIELD_CONFLICT_PENALTY_RATE: 0.05 # 非固有属性字段内部冲突的惩罚率
+MATCHING_ANCHOR_PENALTY_RATE: 0.05             # 匹配锚点质量不高时的惩罚率 (例如，用于匹配的锚点字段很多，但实际内容一致的少)
+MISSING_FIELD_PENALTY_RATE: 0.02               # 链条中记录在重要字段上缺失值时的惩罚率
+
+# Reward Bonuses: 特定锚点字段匹配成功时的奖励额度
+# 当InfoLinker中的ANCHOR_FIELDS（例如id_number, phone, name）在两条记录间成功匹配时，
+# 如果这些字段也在这里列出，则会给予相应的奖励分数。
+REWARD_FIELD_BONUS_AMOUNTS:
+  id_number: 0.5  # 如果 id_number 作为锚点字段匹配成功，额外奖励分数
+  email: 0.3
+  phone: 0.5
+  name: 0.2
+  car_id: 0.3

@@ -1,0 +1,3 @@
+- 基于思诚相关的识别代码修改得到。
+- 相关正则表达式来自于assets.constant
+- 相关规则校验来自于utils.type_judgment

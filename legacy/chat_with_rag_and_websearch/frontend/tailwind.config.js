@@ -1,0 +1,28 @@
+import typography from "@tailwindcss/typography";
+
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        sidebar: "#F7FAFE",
+        brand: {
+          50: "#EEF8FF",
+          100: "#D9EFFF",
+          500: "#1698D6",
+          600: "#0F86C2",
+          700: "#0B6FA4",
+          900: "#0F172A",
+        },
+        ink: "#111827",
+        mist: "#F5F9FE",
+      },
+      boxShadow: {
+        soft: "0 18px 50px rgba(15, 23, 42, 0.08)",
+        glow: "0 18px 42px rgba(22, 152, 214, 0.18)",
+      },
+    },
+  },
+  plugins: [typography],
+};

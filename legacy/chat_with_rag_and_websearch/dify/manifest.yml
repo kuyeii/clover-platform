@@ -1,0 +1,83 @@
+schema_version: 1
+
+app:
+  id: rag-web-search
+  normalized_id: app-rag-web-search
+  name: RAG 联网问答
+  source_path: 00-pre-integration/chat_with_rag_and_websearch
+  stage: pre-integration
+  owner: TODO
+  description: 通过 Dify 工作流提供流式 RAG 问答，并按输入控制是否启用联网搜索。
+
+dify:
+  endpoint_env: DIFY_API_BASE_URL
+  console_url_env: DIFY_CONSOLE_URL
+  import_token_env: DIFY_IMPORT_TOKEN
+  runtime_token_policy: env_only
+  legacy_source_path: dify_workflows_dsl
+
+model_policy:
+  default_profile: rag-answer-chat
+  node_overrides:
+    rag-web-search:
+      RAG: rag-answer-chat
+      RAG +联网: rag-web-search-chat
+  rewrite:
+    enabled: true
+    target: workflows.generated
+    preserve_unknown_completion_params: true
+
+workflows:
+  - id: rag-web-search
+    name: streaming_simple_RAG+联网问答
+    description: 根据问题、历史和联网开关执行流式 RAG 或联网问答。
+    dsl: ./workflows/streaming_simple_RAG+联网问答.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - RAG
+      - RAG +联网
+    runtime:
+      api_key_env: UPSTREAM_BEARER_TOKEN
+      url_env: UPSTREAM_URL
+      user_env: WORKFLOW_REMOTE_USER
+      response_mode: streaming
+      caller:
+        - backend
+    datasets:
+      - rag-default-dataset
+
+datasets:
+  - id: rag-default-dataset
+    name: 默认 RAG 知识库
+    id_env: DIFY_DEFAULT_DATASET_ID
+    api_key_env: DIFY_DATASET_API_KEY
+    required: false
+    local_source: data
+    description: 后端知识库管理接口默认操作的 Dify Dataset。
+
+env:
+  required:
+    - UPSTREAM_URL
+    - UPSTREAM_BEARER_TOKEN
+  optional:
+    - DIFY_CONSOLE_URL
+    - DIFY_IMPORT_TOKEN
+    - DIFY_API_BASE_URL
+    - UPSTREAM_TIMEOUT_SECONDS
+    - WORKFLOW_REMOTE_USER
+    - WORKFLOW_QUESTION_INPUT_KEY
+    - WORKFLOW_ALLOW_SEARCH_INPUT_KEY
+    - WORKFLOW_HISTORY_INPUT_KEY
+    - DIFY_DATASET_API_KEY
+    - DIFY_DEFAULT_DATASET_ID
+
+validation:
+  no_real_secrets: true
+  dsl_files_must_exist: true
+  workflow_api_key_env_must_be_declared: true
+  dataset_env_must_be_declared: true
+
+notes:
+  - 旧目录 dify_workflows_dsl 暂时保留，当前 manifest 以 dify/workflows 为新规范入口。
+  - DSL 中存在检索/rerank 模型配置，当前 rewrite 工具只改写 LLM 节点，不处理 rerank 模型。

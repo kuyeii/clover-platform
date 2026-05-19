@@ -1,0 +1,9 @@
+[project]
+name = "chat-backend"
+version = "0.0.1"
+description = "FastAPI backend for LLM chat (RAG / web search integration)."
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

@@ -1,0 +1,183 @@
+schema_version: 1
+
+app:
+  id: bid-generator
+  normalized_id: app-bid-generator
+  name: 标书生成
+  source_path: 00-pre-integration/bid-generator
+  stage: pre-integration
+  owner: TODO
+  description: 基于当前已清理保留的 Dify 工作流，完成大纲生成、正文生成、改写、响应类正文生成、图表生成和文档分析。
+
+dify:
+  endpoint_env: DIFY_API_URL
+  console_url_env: DIFY_CONSOLE_URL
+  import_token_env: DIFY_IMPORT_TOKEN
+  runtime_token_policy: env_only
+  legacy_source_path: dify-bridge/dify-workflows
+
+model_policy:
+  default_profile: bid-standard-chat
+  workflow_overrides:
+    diagram-generator: diagram-chat
+    doc-analysis: doc-analysis-chat
+  rewrite:
+    enabled: true
+    target: workflows.generated
+    preserve_unknown_completion_params: true
+
+workflows:
+  - id: structure-generator
+    name: ProEngine_Structure_Generate
+    description: 根据招标需求和解析结果生成标书大纲。
+    dsl: ./workflows/ProEngine_Structure_Generate.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - LLM大纲生成
+      - LLM大纲润色
+    runtime:
+      api_key_env: DIFY_WORKFLOW_STRUCTURE_GENERATOR
+      response_mode: blocking
+      caller:
+        - backend
+    datasets:
+      - bid-knowledge-base
+
+  - id: content-writer
+    name: ProEngine_Content_Writer
+    description: 按章节生成标书正文内容。
+    dsl: ./workflows/ProEngine_Content_Writer.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - LLM WITH SEARXNG
+      - 快速占位符修复
+      - LLM WITHOUT SEARXNG
+    runtime:
+      api_key_env: DIFY_WORKFLOW_CONTENT_WRITER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets:
+      - bid-knowledge-base
+
+  - id: content-group-writer
+    name: ProEngine_Content_Group_Writer
+    description: 以 H2 分组批量生成正文内容。
+    dsl: ./workflows/ProEngine_Content_Group_Writer.yml
+    status: deployed
+    required: false
+    expected_llm_nodes:
+      - LLM WITH SEARXNG
+      - LLM WITHOUT SEARXNG
+      - 快速占位符修复
+    runtime:
+      api_key_env: DIFY_WORKFLOW_CONTENT_GROUP_WRITER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets:
+      - bid-knowledge-base
+
+  - id: content-rewrite
+    name: ProEngine_Content_Rewrite
+    description: 对单章节初稿执行审查和改写。
+    dsl: ./workflows/ProEngine_Content_Rewrite.yml
+    status: deployed
+    required: false
+    expected_llm_nodes:
+      - LLM REVIEW
+      - LLM REWRITE
+      - 快速占位符修复
+    runtime:
+      api_key_env: DIFY_WORKFLOW_CONTENT_REWRITE
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: response-content-writer
+    name: ProEngine_Response_Content_Writer
+    description: 生成响应类章节正文。
+    dsl: ./workflows/ProEngine_Response_Content_Writer.yml
+    status: deployed
+    required: false
+    expected_llm_nodes:
+      - LLM RESPONSE WRITER
+      - 快速占位符修复
+    runtime:
+      api_key_env: DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets:
+      - bid-knowledge-base
+
+  - id: diagram-generator
+    name: ProEngine_Diagram_Generator
+    description: 生成图表或图示相关内容。
+    dsl: ./workflows/ProEngine_Diagram_Generator.yml
+    status: deployed
+    required: false
+    expected_llm_nodes:
+      - LLM 规划布局
+      - LLM SVG 渲染
+    runtime:
+      api_key_env: DIFY_WORKFLOW_DIAGRAM_GENERATOR
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: doc-analysis
+    name: ProEngine_DocAnalysis
+    description: 执行文档分析工作流。
+    dsl: ./workflows/ProEngine_DocAnalysis.yml
+    status: deployed
+    required: false
+    expected_llm_nodes:
+      - LLM 单节点提取
+      - LLM 提取
+    runtime:
+      api_key_env: DIFY_WORKFLOW_DOC_ANALYSIS
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+datasets:
+  - id: bid-knowledge-base
+    name: 标书知识库
+    id_env: DIFY_BID_BASE_ID
+    api_key_env: DIFY_DATASET_API_KEY
+    required: false
+    local_source: data/knowledge_base
+    description: 标书素材、企业能力和历史方案知识库。
+
+env:
+  required:
+    - DIFY_API_URL
+    - DIFY_WORKFLOW_STRUCTURE_GENERATOR
+    - DIFY_WORKFLOW_CONTENT_WRITER
+  optional:
+    - DIFY_CONSOLE_URL
+    - DIFY_IMPORT_TOKEN
+    - DIFY_WORKFLOW_CONTENT_GROUP_WRITER
+    - DIFY_WORKFLOW_CONTENT_REWRITE
+    - DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER
+    - DIFY_WORKFLOW_DIAGRAM_GENERATOR
+    - DIFY_WORKFLOW_DOC_ANALYSIS
+    - DIFY_BID_BASE_ID
+    - DIFY_DATASET_API_KEY
+
+validation:
+  no_real_secrets: true
+  dsl_files_must_exist: true
+  workflow_api_key_env_must_be_declared: true
+  dataset_env_must_be_declared: true
+
+notes:
+  - 当前 manifest 仅登记已清理保留在 dify/workflows 下的 7 个 DSL，已移除不存在的历史 workflow 条目。
+  - 旧目录 dify-bridge/dify-workflows 暂时保留，但不再作为当前 manifest 的工作流事实来源。
+  - expected_llm_nodes 用于自动检测 DSL 内关键 LLM 节点是否被删除或改名。

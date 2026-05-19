@@ -12,6 +12,9 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 node_modules/
 dist/
 build/
@@ -19,6 +22,8 @@ build/
 *.tsbuildinfo
 .DS_Store
 __MACOSX/
+.idea/
+.vscode/
 *.log
 logs/
 *.db

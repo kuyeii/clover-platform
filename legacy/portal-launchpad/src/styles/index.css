@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+
+  * {
+    @apply border-slate-200;
+  }
+}

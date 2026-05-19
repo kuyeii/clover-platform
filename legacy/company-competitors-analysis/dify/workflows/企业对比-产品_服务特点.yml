@@ -1,0 +1,292 @@
+app:
+  description: 完整版耗时过长，拆分
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: 企业对比-产品/服务特点
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/tongyi:0.1.43@c56cb5159e37b2719559550518312773bb08e11baaf5b791cccf472d272b5438
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1774315293799-source-17757172051310-target
+      source: '1774315293799'
+      sourceHandle: source
+      target: '17757172051310'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 17757172051310-source-1775633576967-target
+      source: '17757172051310'
+      sourceHandle: source
+      target: '1775633576967'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: target_company_name
+          max_length: 40
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: target_company_name
+        - default: ''
+          hint: ''
+          label: target_company_intro
+          max_length: 2048
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: target_company_intro
+        - default: ''
+          hint: ''
+          label: competitor
+          max_length: 40
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: competitor
+        - default: ''
+          hint: ''
+          label: competitor_intro
+          max_length: 2048
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: competitor_intro
+        - default: ''
+          hint: ''
+          label: target_company_status
+          options: []
+          placeholder: ''
+          required: true
+          type: json_object
+          variable: target_company_status
+        - default: ''
+          hint: ''
+          label: competitor_status
+          options: []
+          placeholder: ''
+          required: true
+          type: json_object
+          variable: competitor_status
+      height: 240
+      id: '1774315293799'
+      position:
+        x: -1275.6340031665486
+        y: 68.60894292611482
+      positionAbsolute:
+        x: -1275.6340031665486
+        y: 68.60894292611482
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 243
+    - data:
+        outputs:
+        - value_selector:
+          - '17757172051310'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 输出 3
+        type: end
+      height: 89
+      id: '1775633576967'
+      position:
+        x: -612.4925380009454
+        y: 89.60894292611482
+      positionAbsolute:
+        x: -612.4925380009454
+        y: 89.60894292611482
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 243
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        isInIteration: true
+        isInLoop: false
+        iteration_id: '1774422613953'
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: kimi-k2.5
+          provider: langgenius/tongyi/tongyi
+        prompt_config:
+          jinja2_variables:
+          - value_selector:
+            - '1774315293799'
+            - target_company_name
+            variable: target_company_name
+          - value_selector:
+            - '1774315293799'
+            - target_company_intro
+            variable: target_company_intro
+          - value_selector:
+            - '1774315293799'
+            - target_company_status
+            variable: target_company_status
+          - value_selector:
+            - '1774315293799'
+            - competitor
+            variable: competitor
+          - value_selector:
+            - '1774315293799'
+            - competitor_intro
+            variable: competitor_intro
+          - value_selector:
+            - '1774315293799'
+            - competitor_status
+            variable: competitor_status
+        prompt_template:
+        - id: 7dd237a6-bd09-4917-a21a-1bd24671a64b
+          role: system
+          text: '# 目标
+
+            基于用户给出的目标企业信息与竞争对手企业信息，作为专业的商业分析顾问，就双方产品/服务的特点，进行对比与分析总结
+
+
+            # 分析流程
+
+            1、首先对于用户输入的企业信息，依次逐项进行对比分析；
+
+            2、完成各项信息的分析后，总结目标企业的优势与劣势。
+
+
+            # 要求
+
+            - 除基础常识外，仅基于用户输入信息进行回答，不要带入自身对企业的认识；
+
+            - 根据用户输入的企业信息项依次进行横向对比，确保覆盖用户提供的所有信息项，不得遗漏任何输入信息；
+
+            - 重点分析：双方企业的差异点，包括：分析目标企业的优势点，以及优势点是否可持续；竞争企业的优势点，以及这种优势是否可能被缩小或反超；目标企业的主要劣势点，竞争对手对目标企业较为直接的威胁；
+
+            - 上述重点分析中的一项/某几项如果无法基于用户提供的材料提炼得到，则可以不在输出结果中提及，严禁强行胡编乱造；
+
+            - 进行具体分析时保持客观公正；
+
+            - 不需要在回答中给出相关建议，仅基于获取的材料进行整理与客观陈述。'
+        - edition_type: jinja2
+          id: 9bb402a6-9e97-48a9-8783-dee1027c7fcf
+          jinja2_text: '目标分析企业：{{ target_company_name }}
+
+            目标分析企业简介： {{ target_company_intro }}
+
+            目标分析企业产品/服务信息： {{ target_company_status.product }}
+
+            竞争对手：{{ competitor }}
+
+            竞争对手简介：{{ competitor_intro }}
+
+            竞争对手产品/服务信息： {{ competitor_status.product }}
+
+            '
+          role: user
+          text: ''
+        selected: true
+        title: 产品对比
+        type: llm
+        vision:
+          enabled: false
+      height: 89
+      id: '17757172051310'
+      position:
+        x: -941.3938408637634
+        y: 89.6348653085133
+      positionAbsolute:
+        x: -941.3938408637634
+        y: 89.6348653085133
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 243
+      zIndex: 1002
+    viewport:
+      x: 2700.624342180521
+      y: 122.1981351971043
+      zoom: 1.9244638319971346
+  rag_pipeline_variables: []

@@ -1,0 +1,23 @@
+## 技术方案撰写指引
+
+请根据以下技术要求，逐项撰写详细的技术响应方案。每一项技术要求都必须有对应的响应内容。
+
+{% if technical_requirements %}
+### 招标文件技术要求清单
+
+{% for req in technical_requirements %}
+#### {{ loop.index }}. {{ req.title | default('技术要求 ' + loop.index|string) }}
+
+{{ req.content | default('（详见招标文件）') }}
+
+**要求**: 请针对上述要求，撰写具体的技术实现方案，包括：
+- 技术路线与方法论
+- 关键技术指标响应
+- 实施步骤与计划
+- 质量保障措施
+
+---
+{% endfor %}
+{% else %}
+> 未从招标文件中提取到明确的技术要求，请基于项目整体需求撰写技术方案。
+{% endif %}

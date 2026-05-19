@@ -1,0 +1,11 @@
+node_modules/
+.env
+.venv/
+.idea/
+.codex/
+dist/
+*.tsbuildinfo
+backend/data/
+server/data/
+*.pyc
+__pycache__/

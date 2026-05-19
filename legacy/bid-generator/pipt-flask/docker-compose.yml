@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # MySQL数据库
+  mysql:
+    image: mysql:5.7
+    container_name: Zheshouan-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      [
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_unicode_ci"
+      ]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3308:3306"
+    networks:
+      - app-network
+
+  # Redis数据库
+  redis:
+    image: redis:alpine
+    container_name: Zheshouan-redis
+    restart: always
+    ports:
+      - "6378:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+
+  # Flask后端服务
+  backend:
+    build: ./backend
+    container_name: Zheshouan-backend
+    restart: always
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      - FLASK_APP=starter:app
+      - FLASK_ENV=production
+      - MYSQL_USER=${MYSQL_USER}           # 对应.env中的MYSQL_USER（app_user）
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}   # 对应.env中的MYSQL_PASSWORD（必填）
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - SQLALCHEMY_DATABASE_URI=mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}?charset=utf8mb4
+      - RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    command: ["sh", "docker-deploy.sh"]
+    networks:
+      - app-network
+
+  # Vue前端服务
+  frontend:
+    build: ./frontend
+    container_name: Zheshouan-frontend
+    restart: always
+    ports:
+      - "8068:80"
+    depends_on:
+      - backend  # 依赖后端API
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:

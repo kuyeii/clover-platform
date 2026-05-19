@@ -1,0 +1,370 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: 输入校验-企业有效性
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/tongyi:0.1.43@c56cb5159e37b2719559550518312773bb08e11baaf5b791cccf472d272b5438
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1774340978810-false-1774319216300-target
+      source: '1774340978810'
+      sourceHandle: 'false'
+      target: '1774319216300'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1774340978810-dc4b7c5e-346e-4cd2-82c8-29a0a607e597-1777376852059-target
+      source: '1774340978810'
+      sourceHandle: dc4b7c5e-346e-4cd2-82c8-29a0a607e597
+      target: '1777376852059'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1774315293799-source-1777378086602-target
+      source: '1774315293799'
+      sourceHandle: source
+      target: '1777378086602'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: if-else
+      id: 1777378086602-source-1774340978810-target
+      source: '1777378086602'
+      sourceHandle: source
+      target: '1774340978810'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1774340978810-true-1777431245397-target
+      source: '1774340978810'
+      sourceHandle: 'true'
+      target: '1777431245397'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: target_company_name
+          max_length: 40
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: target_company_name
+      height: 109
+      id: '1774315293799'
+      position:
+        x: 34.06470148082366
+        y: 88
+      positionAbsolute:
+        x: 34.06470148082366
+        y: 88
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: 返回无效说明
+        outputs:
+        - value_selector:
+          - '1777378086602'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 用户输出企业无效
+        type: end
+      height: 116
+      id: '1774319216300'
+      position:
+        x: 1044
+        y: 0
+      positionAbsolute:
+        x: 1044
+        y: 0
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: da6e74b5-d559-4cbc-9cd6-fdf88d353ce9
+            value: 企业名称
+            varType: string
+            variable_selector:
+            - '1777378086602'
+            - text
+          - comparison_operator: contains
+            id: 59c09530-3599-4dd5-aee6-e34c5d9eb31c
+            value: 企业介绍
+            varType: string
+            variable_selector:
+            - '1777378086602'
+            - text
+          - comparison_operator: contains
+            id: 9f34d782-3482-40a8-9803-c143c69de486
+            value: 企业主营业务
+            varType: string
+            variable_selector:
+            - '1777378086602'
+            - text
+          id: 'true'
+          logical_operator: and
+        - case_id: dc4b7c5e-346e-4cd2-82c8-29a0a607e597
+          conditions:
+          - comparison_operator: contains
+            id: c521a702-9c96-448e-9722-1c0287aa3b8c
+            value: 搜索结果
+            varType: string
+            variable_selector:
+            - '1777378086602'
+            - text
+          - comparison_operator: contains
+            id: e340cdef-dd4b-4d02-8152-02d9477967de
+            value: 候选企业
+            varType: string
+            variable_selector:
+            - '1777378086602'
+            - text
+          - comparison_operator: contains
+            id: ab77ff06-73f5-415c-b60a-27e83702660e
+            value: 说明
+            varType: string
+            variable_selector:
+            - '1777378086602'
+            - text
+          id: dc4b7c5e-346e-4cd2-82c8-29a0a607e597
+          logical_operator: and
+        selected: false
+        title: 企业合法性判别
+        type: if-else
+      height: 276
+      id: '1774340978810'
+      position:
+        x: 683
+        y: 15
+      positionAbsolute:
+        x: 683
+        y: 15
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: 返回 候选列表 与情况说明
+        outputs:
+        - value_selector:
+          - '1777378086602'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 用户输入指向多个企业
+        type: end
+      height: 116
+      id: '1777376852059'
+      position:
+        x: 1044
+        y: 167
+      positionAbsolute:
+        x: 1044
+        y: 167
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            enable_search: true
+            temperature: 0.7
+          mode: chat
+          name: qwen3.5-plus
+          provider: langgenius/tongyi/tongyi
+        prompt_template:
+        - id: 9dd93db2-3e93-40b1-9174-d860f10c7c48
+          role: system
+          text: "## 任务目标\n判定用户输入是否对应“当前真实存续的企业主体名称或其唯一稳定指代名称”，并在满足条件时输出标准企业名称及相关信息。\n\
+            \n你可以根据需要自行决定是否使用联网搜索，但必须遵守：\n- 若信息存在不确定性或歧义 → 必须通过联网搜索进行验证\n- 最终结论必须基于“可验证的信息”，避免主观猜测或幻觉\n\
+            \n---\n\n## 搜索使用策略（如需联网）\n\n当需要联网时，必须在一次搜索中尽可能覆盖多种表达形式，包括：\n\n1. 原始输入\
+            \  \n2. “<输入> 公司 全称”  \n3. “<输入> 是什么公司”  \n4. “<输入> 对应公司”  \n5. “<输入>\
+            \ 公司 有哪些”  \n6. 可能的正式名称扩展（如：有限公司 / 股份有限公司）  \n\n---\n\n## 判定原则\n\n###\
+            \ 1. 企业名称本体（优先级最高）\n若存在与输入高度一致的正式企业名称 → 判定为有效（必要时验证其真实存在性）\n\n---\n\n\
+            ### 2. 唯一指代名称（必须同时满足）\n\n仅当以下条件全部满足时，允许判定为企业：\n\n1）唯一指向某一企业  \n2）被媒体/百科高频用作企业代称\
+            \  \n3）与企业强绑定（品牌/平台级）  \n4）存在可验证证据支持该映射关系（优先参考权威来源或多来源一致性）\n\n---\n\n\
+            ### 3. 歧义输入防偏置规则（强制）\n\n当用户输入可能对应多个企业时，必须严格禁止基于以下因素进行选择：\n\n- 企业知名度更高\
+            \  \n- 搜索结果更多  \n- 信息更丰富  \n- 更常见或规模更大  \n\n必须满足：\n\n\U0001F449 只有在“存在明确证据可唯一指向某一企业”时，才允许判定为该企业\
+            \  \n\n否则必须输出“无法精确匹配”，不得进行主观选择  \n\n---\n\n## 新增处理规则\n\n### 情况1：简称或常用名称（补全）\n\
+            \n若输入为企业简称或常用称呼，且唯一指向某企业：\n\n→ 输出该企业“正式名称”（需有可验证依据支持）\n\n---\n\n### 情况2：名称轻微偏差（修正）\n\
+            \n若输入与正式名称存在以下差异，但仍唯一可确定：\n\n- 有限公司 / 股份有限公司差异  \n- 轻微措辞差异  \n\n→ 输出修正后的“标准企业名称”（需有依据支持）\n\
+            \n---\n\n### 情况3：多企业匹配（禁止强行判断）\n\n若满足以下任一情况，必须判定为“无法精确匹配”：\n\n- 搜索结果中存在多个名称相似或相同企业\
+            \  \n- 输入为通用词/简称，可能指代多个主体  \n- 无法找到“唯一指向该企业”的明确证据  \n\n---\n\n## 严禁行为\n\
+            \n- 禁止通过“产品 → 公司”推断  \n- 禁止通过“行业 → 公司”推断  \n- 禁止模糊补全企业名称  \n- 禁止在缺乏证据时进行猜测性判断\
+            \  \n\n---\n\n## 无效判定范围\n\n以下情况必须判定为无效：\n\n- 产品名称  \n- 非唯一品牌  \n- 行业/技术概念\
+            \  \n- 模糊描述  \n- 已注销或不存在企业  \n\n---\n\n## 执行流程\n\n1）基于已有知识进行初步判断  \n2）若存在不确定性或歧义\
+            \ → 联网搜索验证（按多查询策略）  \n3）归纳信息时必须判断：\n\n- 是否存在“唯一指向证据”  \n- 是否存在“多个候选企业”\
+            \  \n\n若存在多个候选且缺乏唯一证据：\n\n→ 必须输出“无法精确匹配”，不得选择最知名企业  \n\n4）按优先级判断：\n\n\
+            - 完全匹配 → 有效  \n- 唯一简称映射 → 有效（补全名称）  \n- 名称轻微错误 → 有效（修正名称）  \n- 多企业匹配 →\
+            \ 无法精确匹配  \n- 其他情况 → 无效  \n\n---\n\n## 输出格式（必须严格遵守）\n\n必须输出为 JSON 字符串（可被\
+            \ json.loads 解析）  \n禁止输出任何额外说明或 Markdown  \n\n---\n\n### 情况A：无效企业\n\n\
+            {\n  \"搜索结果\": \"用户输入企业无效\",\n  \"无效说明\": \"具体原因\"\n}\n\n---\n\n### 情况B：唯一匹配企业（含补全/修正）\n\
+            \n{\n  \"企业名称\": \"标准企业全称\",\n  \"企业介绍\": \"简要介绍（基于可验证信息）\",\n  \"企业主营业务\"\
+            : \"抽象后的业务领域（1-2个）\"\n}\n\n---\n\n## 企业主营业务生成规则（关键约束）\n\n### 1. 抽象层级要求（强制）\n\
+            \n必须进行业务抽象与归纳，输出“业务领域级别”的描述，而不是具体产品或功能列表。\n\n示例：\n\n- 网络安全产品与服务  \n- 工业自动化控制系统\
+            \  \n- 新能源汽车制造  \n- 跨境电商平台运营  \n- 医疗影像设备研发  \n\n---\n\n### 2. 严禁输出内容\n\
+            \n禁止出现：\n\n- 多个并列功能堆叠（A系统、B平台、C服务…）  \n- 技术能力罗列（云计算、大数据、AI等）  \n- 解决方案拼接描述\
+            \  \n- “等”“及相关服务”等泛化表达  \n\n---\n\n### 3. 信息提取优先级\n\n优先参考以下表达进行抽象：\n\n\
+            - “专注于…”  \n- “主要从事…”  \n- “核心业务是…”  \n- “主营…”  \n- “聚焦于…”  \n\n必须进行归纳，不得逐条摘抄\
+            \  \n\n---\n\n### 4. 输出数量限制\n\n- 最多 1～2 个业务方向  \n- 多业务必须合并为更高层级概念  \n\n\
+            ---\n\n### 5. 行业归一原则\n\n若业务分散，必须选择：\n\n\U0001F449 最核心 / 最具代表性 / 市场认知最强\
+            \ 的业务方向  \n\n不得平均罗列  \n\n---\n\n### 6. 稳定分类要求\n\n输出必须具备行业通用性，可用于企业对比与竞争分析\
+            \  \n\n禁止使用：\n\n- 企业自造概念  \n- 营销术语  \n- 非标准行业描述  \n\n---\n\n### 情况C：无法精确匹配\n\
+            \n{\n  \"搜索结果\": \"无法精确匹配企业\",\n  \"候选企业\": [\"企业A全称\", \"企业B全称\"],\n\
+            \  \"说明\": \"存在多个可能匹配的企业，且缺乏足够证据唯一确定\"\n}"
+        - id: 3301ab79-95f7-4d86-ad2a-b0f97eecf01e
+          role: user
+          text: 待查询企业名：{{#1774315293799.target_company_name#}}
+        selected: false
+        title: LLM
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: '1777378086602'
+      position:
+        x: 342
+        y: 109
+      positionAbsolute:
+        x: 342
+        y: 109
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: 返回1）正式的企业名称，2）企业简介；3）企业主营业务
+        outputs:
+        - value_selector:
+          - '1777378086602'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 用户输入指向单个确定企业
+        type: end
+      height: 132
+      id: '1777431245397'
+      position:
+        x: 1044
+        y: 334
+      positionAbsolute:
+        x: 1044
+        y: 334
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 107.61201538823434
+      y: 240.74446880282727
+      zoom: 0.9393888279929318
+  rag_pipeline_variables: []

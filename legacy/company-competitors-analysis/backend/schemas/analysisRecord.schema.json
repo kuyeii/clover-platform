@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AnalysisHistoryRecord",
+  "type": "object",
+  "required": ["id", "createdAt", "queryTime", "input", "stateSnapshot", "apiRaw"],
+  "properties": {
+    "id": { "type": "string" },
+    "createdAt": { "type": "string" },
+    "queryTime": { "type": "string" },
+    "input": {
+      "type": "object",
+      "properties": {
+        "targetCompanyName": { "type": "string" },
+        "province": { "type": "string" },
+        "competitorCompanyName": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "stateSnapshot": { "type": "object", "additionalProperties": true },
+    "apiRaw": {
+      "type": "object",
+      "properties": {
+        "api1": {},
+        "api2": {},
+        "api3": {},
+        "api4": {}
+      },
+      "additionalProperties": true
+    },
+    "meta": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": true
+}
+

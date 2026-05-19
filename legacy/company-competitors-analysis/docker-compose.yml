@@ -1,0 +1,17 @@
+services:
+  competitor-analysis:
+    build: .
+    container_name: competitor-analysis
+    ports:
+      - "8788:8788"
+    env_file:
+      - .env.local
+    environment:
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8788
+      CORS_ORIGIN: http://localhost:8788
+      STATIC_DIR: /app/dist
+      HISTORY_DB_PATH: /app/backend/data/history.sqlite3
+    volumes:
+      - ./backend/data:/app/backend/data
+    restart: unless-stopped

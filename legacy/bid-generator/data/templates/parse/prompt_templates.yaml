@@ -1,0 +1,24 @@
+templates:
+  - id: "software"
+    name: "政务软件开发类"
+    description: "适用于政府管理软件、数据中台、信息化系统等纯软件开发项目"
+    keywords: ["软件", "系统", "平台", "中台", "信息化", "应用", "数据", "小程序", "APP"]
+    files:
+      technical: "technical_software.md.j2"
+      scoring: "scoring_software.md.j2"
+      
+  - id: "hardware"
+    name: "硬件及系统集成类"
+    description: "适用于服务器采购、网络设备安装、安防监控系统等"
+    keywords: ["硬件", "服务器", "网络", "设备", "安防", "监控", "摄像头", "机房", "集成", "交换机", "防火墙"]
+    files:
+      technical: "technical_hardware.md.j2"
+      scoring: "scoring_hardware.md.j2"
+      
+  - id: "default"
+    name: "通用默认模板"
+    description: "无法归类时的默认兜底模板"
+    keywords: []
+    files:
+      technical: "technical.md.j2"
+      scoring: "scoring.md.j2"

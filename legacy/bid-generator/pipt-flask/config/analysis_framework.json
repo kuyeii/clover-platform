@@ -1,0 +1,88 @@
+{
+  "version": "2.0",
+  "description": "招标文件 V2 解析框架",
+  "systemPrompt": "你是一位资深的招投标文件分析专家。你的任务不是泛泛总结，而是为后续的技术方案生成与投标文件编排提供可执行的结构化结果。\n\n必须遵守以下规则：\n1. 忠实原文，禁止编造。\n2. 保留原文中的金额、时间、分值、份数、比例等精确信息。\n3. 未提及就明确写“未提及”。\n4. 除明确要求 JSON 的节点外，其余节点只输出该节点要求的纯文本/XML，不要额外解释。\n5. 对评分项要尽量判断它属于技术部分、商务部分还是混合项。若无法确定，用 mixed。\n6. 对附件目录只提取投标人最终需要提交的附件/函件/表单，不要误抽正文目录。",
+  "framework": [
+    {
+      "id": "project_info",
+      "label": "项目信息",
+      "children": [
+        {
+          "id": "proj_overview",
+          "label": "项目解读",
+          "numbered": true,
+          "format": "xml-list",
+          "extractionPrompt": "请通读招标文件全文，提取对投标策略和后续技术方案最有价值的项目背景信息。每个独立要点用 <要点> 标签输出，禁止加标题、禁止加序号。\n\n重点覆盖：项目背景与采购目的、项目核心范围、关键交付物、工期与里程碑、预算或限价、交付地点、关键约束、影响实施方案的特殊要求。\n\n格式示例：\n<要点>项目预算最高限价为 37 万元。</要点>\n<要点>合同签订后 60 个日历日内完成全部咨询工作。</要点>"
+        },
+        {
+          "id": "proj_basic",
+          "label": "项目基础信息",
+          "numbered": false,
+          "format": "xml-fields",
+          "extractionPrompt": "请从招标文件中精确提取以下字段，并按 XML 标签逐行输出。未提及则填“未提及”。\n\n必须输出标签：\n<项目名称></项目名称>\n<招标编号></招标编号>\n<采购方式></采购方式>\n<采购人></采购人>\n<代理机构></代理机构>\n<投标截止时间></投标截止时间>\n<开标时间></开标时间>\n<开标地点></开标地点>\n<投标有效期></投标有效期>\n<最高限价></最高限价>\n<是否接受联合体></是否接受联合体>\n<是否允许分包></是否允许分包>\n<工期要求></工期要求>\n<主要交付物></主要交付物>"
+        },
+        {
+          "id": "scoring_details",
+          "label": "项目评分细则",
+          "numbered": false,
+          "format": "json",
+          "extractionPrompt": "请从招标文件的评分标准/评审办法中提取评分项，严格输出 JSON，不要输出 JSON 之外的任何内容。\n\n输出格式必须如下：\n{\n  \"total\": 100,\n  \"items\": [\n    {\n      \"name\": \"评分项名称\",\n      \"max_score\": 10,\n      \"criteria\": \"评分规则原文，保留完整条件与公式\",\n      \"score_tag\": \"tech | biz | mixed\",\n      \"is_response_item\": false,\n      \"response_reason\": \"\"\n    }\n  ]\n}\n\n规则：\n1. score_tag 表示该评分项更偏向技术部分、商务部分还是混合项。\n2. 技术方案、实施方案、架构设计、项目团队技术能力等优先标记为 tech。\n3. 企业资质、业绩、商务条款响应、报价、售后承诺、付款条款等优先标记为 biz。\n4. 明显跨技术与商务的综合项标记为 mixed。\n5. is_response_item 仅在“评分项本身明确是响应情况/符合性偏离/逐条响应情况”时填 true；普通“服务响应方案/售后响应”等不得标记为 true。\n6. response_reason 仅在 is_response_item=true 时填写简短原因，否则置空字符串。\n7. 若原文没有评分表，返回 {\"total\": 0, \"items\": []}。"
+        }
+      ]
+    },
+    {
+      "id": "technical_targets",
+      "label": "项目技术目标",
+      "children": [
+        {
+          "id": "resp_tech",
+          "label": "技术目标与范围",
+          "numbered": true,
+          "format": "xml-list",
+          "extractionPrompt": "请从采购需求/技术要求/服务要求中提取项目的核心技术目标、服务范围、建设或实施目标。每个独立条款用 <要点> 标签输出，不要加标题与序号。\n\n重点保留：目标导向、能力目标、范围边界、总体服务要求、成果目标、验收目标。"
+        },
+        {
+          "id": "resp_param",
+          "label": "参数与指标要求",
+          "numbered": true,
+          "format": "xml-list",
+          "extractionPrompt": "请提取项目中可量化、可对照的技术参数、性能指标、配置要求、团队数量要求、交付数量要求。每个独立指标用 <要点> 标签输出。强制性要求可在标签上加 type=\"mandatory\"。"
+        },
+        {
+          "id": "resp_substance",
+          "label": "实施与交付硬约束",
+          "numbered": true,
+          "format": "xml-list",
+          "extractionPrompt": "请提取与实施落地强相关的硬约束，包括工期、交付节奏、里程碑、驻场要求、培训要求、知识产权、保密要求、验收条件等。每个独立条款用 <要点> 标签输出。"
+        }
+      ]
+    },
+    {
+      "id": "bid_structure",
+      "label": "投标文件结构",
+      "children": [
+        {
+          "id": "structure_attachments",
+          "label": "附件部分",
+          "numbered": true,
+          "format": "xml-list",
+          "extractionPrompt": "请提取招标文件中投标人最终需要提交的附件、函件、声明、表格、一览表等附件 heading。必须优先以“投标文件格式 / 附件 / 格式文件 / 响应文件组成”章节中的原始标题为准。\n\n输出要求：\n1. 每个附件标题单独一行，用 <要点>标题</要点> 输出。\n2. 标题中去掉“格式文件一/附件1/第X号格式”等前缀，但保留正文标题主干。\n3. 不要输出正文目录、评审办法目录、合同条款目录。\n4. 若文档存在 [Pxxxx] 定位标记，请在正文末尾追加 <BID_ATTACHMENTS> JSON 数组；若没有定位标记，定位字段允许为空字符串。\n\n<BID_ATTACHMENTS> 数组格式：\n[\n  {\"name\": \"投标函\", \"start_locator\": \"P0001\", \"end_locator\": \"P0010\", \"description\": \"\"}\n]\n\n若未识别到附件目录，输出 <BID_ATTACHMENTS>[]</BID_ATTACHMENTS>。"
+        },
+        {
+          "id": "structure_business",
+          "label": "商务部分",
+          "numbered": true,
+          "format": "derived-list",
+          "description": "由后端依据评分细则 score_tag=biz 本地派生，不请求 Dify"
+        },
+        {
+          "id": "structure_technical",
+          "label": "技术部分",
+          "numbered": true,
+          "format": "derived-list",
+          "description": "由后端依据评分细则 score_tag=tech/mixed 本地派生，不请求 Dify"
+        }
+      ]
+    }
+  ]
+}

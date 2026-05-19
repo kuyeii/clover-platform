@@ -1,0 +1,209 @@
+schema_version: 1
+
+app:
+  id: company-competitors-analysis
+  normalized_id: app-competitor-analysis
+  name: 企业竞品分析
+  source_path: 00-pre-integration/company-competitors-analysis
+  stage: pre-integration
+  owner: TODO
+  description: 调用 Dify 工作流完成企业有效性校验、竞对发现、企业详情分析、对比报告生成和竞品评分。
+
+dify:
+  endpoint_env: WORKFLOW_URL
+  console_url_env: DIFY_CONSOLE_URL
+  import_token_env: DIFY_IMPORT_TOKEN
+  runtime_token_policy: env_only
+  legacy_source_path: dify_workflows_dsl
+
+model_policy:
+  default_profile: competitor-standard-chat
+  workflow_overrides:
+    competitor-discovery: competitor-search-chat
+    company-name-validation: competitor-search-chat
+  node_overrides:
+    compare-report-summary:
+      总结对比: competitor-standard-chat
+      对比分析结果完善: competitor-search-chat
+  rewrite:
+    enabled: true
+    target: workflows.generated
+    preserve_unknown_completion_params: true
+
+workflows:
+  - id: competitor-discovery
+    name: 竞对搜索&初步分析
+    description: 根据目标企业搜索并初步分析竞争对手候选。
+    dsl: ./workflows/竞对搜索&初步分析.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - 质检
+    runtime:
+      api_key_env: WORKFLOW_API_KEY
+      url_env: WORKFLOW_URL
+      user_env: WORKFLOW_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: company-name-validation
+    name: 输入校验-企业有效性
+    description: 校验用户输入企业名称是否有效，并返回候选企业信息。
+    dsl: ./workflows/输入校验-企业有效性.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - LLM
+    runtime:
+      api_key_env: COMPANY_NAME_VALIDATION_API_KEY
+      url_env: COMPANY_NAME_VALIDATION_URL
+      user_env: COMPANY_NAME_VALIDATION_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: company-detail
+    name: 企业分析工具v4
+    description: 生成目标企业或竞对企业的详细画像。
+    dsl: ./workflows/企业分析工具v4.yml
+    status: deployed
+    required: true
+    runtime:
+      api_key_env: COMPANY_DETAIL_API_KEY
+      url_env: COMPANY_DETAIL_URL
+      user_env: COMPANY_DETAIL_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: compare-report-product
+    name: 企业对比-产品/服务特点
+    description: 对比目标企业与竞对的产品和服务特点。
+    dsl: ./workflows/企业对比-产品_服务特点.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - 产品对比
+    runtime:
+      api_key_env: COMPARE_REPORT_PRODUCT_API_KEY
+      url_env: COMPARE_REPORT_PRODUCT_URL
+      user_env: COMPARE_REPORT_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: compare-report-tech
+    name: 企业对比-技术力对比
+    description: 对比目标企业与竞对的技术能力。
+    dsl: ./workflows/企业对比-技术力对比.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - 技术力对比
+    runtime:
+      api_key_env: COMPARE_REPORT_TECH_API_KEY
+      url_env: COMPARE_REPORT_TECH_URL
+      user_env: COMPARE_REPORT_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: compare-report-lately
+    name: 企业对比-近期动态对比
+    description: 对比目标企业与竞对的近期动态。
+    dsl: ./workflows/企业对比-近期动态对比.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - 近期动态分析对比
+    runtime:
+      api_key_env: COMPARE_REPORT_LATELY_API_KEY
+      url_env: COMPARE_REPORT_LATELY_URL
+      user_env: COMPARE_REPORT_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: compare-report-summary
+    name: 企业对比-汇总
+    description: 汇总产品、技术和动态对比结果，生成最终对比分析。
+    dsl: ./workflows/企业对比-汇总.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - 总结对比
+      - 对比分析结果完善
+    runtime:
+      api_key_env: COMPARE_REPORT_SUMMARY_API_KEY
+      url_env: COMPARE_REPORT_SUMMARY_URL
+      user_env: COMPARE_REPORT_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: score
+    name: 竞争对手打打分
+    description: 对竞争对手进行维度化评分。
+    dsl: ./workflows/竞争对手打打分.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - LLM
+    runtime:
+      api_key_env: SCORE_API_KEY
+      url_env: SCORE_URL
+      user_env: SCORE_USER
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+datasets: []
+
+env:
+  required:
+    - WORKFLOW_URL
+    - WORKFLOW_API_KEY
+    - COMPANY_NAME_VALIDATION_API_KEY
+    - COMPANY_DETAIL_API_KEY
+    - COMPARE_REPORT_PRODUCT_API_KEY
+    - COMPARE_REPORT_TECH_API_KEY
+    - COMPARE_REPORT_LATELY_API_KEY
+    - COMPARE_REPORT_SUMMARY_API_KEY
+    - SCORE_API_KEY
+  optional:
+    - DIFY_CONSOLE_URL
+    - DIFY_IMPORT_TOKEN
+    - WORKFLOW_USER
+    - COMPANY_NAME_VALIDATION_URL
+    - COMPANY_NAME_VALIDATION_USER
+    - COMPANY_DETAIL_URL
+    - COMPANY_DETAIL_USER
+    - COMPARE_REPORT_URL
+    - COMPARE_REPORT_API_KEY
+    - COMPARE_REPORT_USER
+    - COMPARE_REPORT_PRODUCT_URL
+    - COMPARE_REPORT_TECH_URL
+    - COMPARE_REPORT_LATELY_URL
+    - COMPARE_REPORT_SUMMARY_URL
+    - SCORE_URL
+    - SCORE_USER
+
+validation:
+  no_real_secrets: true
+  dsl_files_must_exist: true
+  workflow_api_key_env_must_be_declared: true
+  dataset_env_must_be_declared: true
+
+notes:
+  - 旧目录 dify_workflows_dsl 暂时保留，当前 manifest 以 dify/workflows 为新规范入口。
+  - 企业分析工具v4 DSL 当前未发现 LLM 节点，rewrite 预览会输出 warning，不影响其他工作流改写。
+  - 后端仍兼容部分旧 VITE_* 环境变量；manifest 仅登记生产部署建议使用的非 VITE_ 密钥变量。

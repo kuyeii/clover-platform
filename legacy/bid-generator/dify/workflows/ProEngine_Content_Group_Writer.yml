@@ -1,0 +1,1320 @@
+app:
+  description: 'H2 分组正文生成：一次生成单个 H2 下多个 H3 子章节，支持知识检索与可选联网搜索，输出结构化 sections'
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: ProEngine_Content_Group_Writer
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/searxng:0.0.7@fce43eac17ce659811cfa35bef8858d06f78bb832eff5d0317dab34982991eca
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.35@bb81bce2b7e04af8178eb2fb36cc6e1eb75aadbc98d31bc2c858b4648ba63c26
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions: [.JPG, .JPEG, .PNG, .GIF, .WEBP, .SVG]
+      allowed_file_types: [image]
+      allowed_file_upload_methods: [local_file, remote_url]
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods: [local_file, remote_url]
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: knowledge-retrieval
+      id: start-source-knowledge-target
+      source: start_node
+      sourceHandle: source
+      target: knowledge_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: if-else
+      id: knowledge-source-if-target
+      source: knowledge_node
+      sourceHandle: source
+      target: if_requires_search
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: tool
+      id: if-true-search-target
+      source: if_requires_search
+      sourceHandle: 'true'
+      target: tool_search
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: if-false-llm-target
+      source: if_requires_search
+      sourceHandle: 'false'
+      target: llm_without_search
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: tool
+        targetType: llm
+      id: search-source-llm-target
+      source: tool_search
+      sourceHandle: source
+      target: llm_with_search
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: llm-with-source-code-target
+      source: llm_with_search
+      sourceHandle: source
+      target: code_normalize
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: llm-without-source-code-target
+      source: llm_without_search
+      sourceHandle: source
+      target: code_normalize
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: code-normalize-source-placeholder-scan-target
+      source: code_normalize
+      sourceHandle: source
+      target: placeholder_scan
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: placeholder-scan-source-if-target
+      source: placeholder_scan
+      sourceHandle: source
+      target: if_placeholder_issues
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: if-placeholder-true-repair-target
+      source: if_placeholder_issues
+      sourceHandle: 'true'
+      target: placeholder_repair_llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: if-placeholder-false-end-target
+      source: if_placeholder_issues
+      sourceHandle: 'false'
+      target: end_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: placeholder-repair-source-apply-target
+      source: placeholder_repair_llm
+      sourceHandle: source
+      target: apply_placeholder_repair
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: apply-placeholder-repair-source-end-target
+      source: apply_placeholder_repair
+      sourceHandle: source
+      target: end_repaired
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: group_id
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: group_id
+        - default: ''
+          hint: ''
+          label: group_title
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: group_title
+        - default: ''
+          hint: ''
+          label: expected_total_words
+          options: []
+          placeholder: ''
+          required: true
+          type: number
+          variable: expected_total_words
+        - default: ''
+          hint: ''
+          label: project_summary
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: project_summary
+        - default: ''
+          hint: ''
+          label: global_outline
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: global_outline
+        - default: ''
+          hint: ''
+          label: placeholder_hint
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: placeholder_hint
+        - default: ''
+          hint: ''
+          label: requires_search
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: requires_search
+        - default: ''
+          hint: ''
+          label: group_analysis_context
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: group_analysis_context
+        - default: ''
+          hint: ''
+          label: search_query
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: search_query
+        - default: ''
+          hint: ''
+          label: children_json
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: children_json
+      height: 384
+      id: start_node
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        dataset_ids:
+        - bM5tMc1Yud/3cz9buJ5nQdEdjWR/6BatvPqrWs7YGQJLP/6BpIaKZiUr0I47IKbg
+        multiple_retrieval_config:
+          reranking_enable: false
+          reranking_mode: reranking_model
+          top_k: 4
+        query_attachment_selector: []
+        query_variable_selector:
+        - start_node
+        - group_title
+        retrieval_mode: multiple
+        selected: false
+        title: 知识检索
+        type: knowledge-retrieval
+      height: 90
+      id: knowledge_node
+      position:
+        x: 382
+        y: 303
+      positionAbsolute:
+        x: 382
+        y: 303
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: is
+            id: requires-search-true
+            value: 'true'
+            varType: string
+            variable_selector:
+            - start_node
+            - requires_search
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 条件分支
+        type: if-else
+      height: 124
+      id: if_requires_search
+      position:
+        x: 684
+        y: 303
+      positionAbsolute:
+        x: 684
+        y: 303
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        is_team_authorization: true
+        paramSchemas:
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: Enter your search query
+            ja_JP: Enter your search query
+            pt_BR: Enter your search query
+            zh_Hans: 输入搜索关键词
+          label:
+            en_US: Query string
+            ja_JP: Query string
+            pt_BR: Query string
+            zh_Hans: 查询语句
+          llm_description: Key words for searching
+          max: null
+          min: null
+          name: query
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: general
+          form: form
+          human_description:
+            en_US: Search the web using SearXNG, a privacy-respecting metasearch engine
+            ja_JP: Search the web using SearXNG, a privacy-respecting metasearch engine
+            pt_BR: Search the web using SearXNG, a privacy-respecting metasearch engine
+            zh_Hans: 使用注重隐私的元搜索引擎 SearXNG 搜索网页
+          label:
+            en_US: search type
+            ja_JP: search type
+            pt_BR: search type
+            zh_Hans: 搜索类型
+          llm_description: ''
+          max: null
+          min: null
+          name: search_type
+          options:
+          - icon: ''
+            label:
+              en_US: General
+              ja_JP: General
+              pt_BR: General
+              zh_Hans: 综合
+            value: general
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: select
+        params:
+          query: ''
+          search_type: ''
+        plugin_id: langgenius/searxng
+        plugin_unique_identifier: langgenius/searxng:0.0.7@fce43eac17ce659811cfa35bef8858d06f78bb832eff5d0317dab34982991eca
+        provider_icon: /console/api/workspaces/current/plugin/icon
+        provider_id: langgenius/searxng/searxng
+        provider_name: langgenius/searxng/searxng
+        provider_type: builtin
+        selected: false
+        title: SearXNG 搜索
+        tool_configurations:
+          search_type:
+            type: constant
+            value: general
+        tool_description: SearXNG 是一个免费的互联网元搜索引擎，它从多个搜索服务中聚合搜索结果。
+        tool_label: SearXNG 搜索
+        tool_name: searxng_search
+        tool_node_version: '2'
+        tool_parameters:
+          query:
+            type: mixed
+            value: '{{#start_node.search_query#}}'
+        type: tool
+      height: 114
+      id: tool_search
+      position:
+        x: 986
+        y: 178
+      positionAbsolute:
+        x: 986
+        y: 178
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - knowledge_node
+          - result
+        model:
+          completion_params:
+            enable_thinking: false
+            temperature: 0.2
+            top_p: 0.8
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: group-sys-search
+          role: system
+          text: |
+            你是一名专业的招投标技术文件撰写专家。
+
+            你的任务是围绕当前 H2 章节“{{#start_node.group_title#}}”，一次性生成其下所有 H3 子章节正文。输出必须覆盖 `children_json` 中给出的每一个子章节，且必须按原样回传 `section_id`。
+
+            项目背景与投标策略：
+            {{#start_node.project_summary#}}
+
+            本组章节定位：
+            {{#start_node.global_outline#}}
+
+            本组共享解析依据：
+            {{#start_node.group_analysis_context#}}
+
+            占位符约束：
+            {{#start_node.placeholder_hint#}}
+
+            你必须严格遵守以下规则：
+            - 只生成 `children_json` 中存在的子章节，不得新增、合并、删除。
+            - 每个子章节正文只写自己的内容，不得把其他子章节的正文混入本节。
+            - 禁止输出任何以 # 开头的 Markdown 标题行。
+            - 禁止重复输出 H2 标题、目录编号或“第X章/1.1/1.1.1”类层级标题。
+            - 文中的 {{__PIPT_*__}} 和 {{__BIDDER_*__}} 占位符必须原样保留。
+            - 严禁把占位符改写成 {{PIPT_1}}、{{BIDDER_ORG}}、{PIPT_1} 或任何非双下划线包裹格式。
+            - 若依据不足，只能写实施机制、控制措施、验证方法，禁止编造参数、型号、标准编号、厂家事实。
+            - 网络搜索结果只能作为术语补充和行业背景补充，不得喧宾夺主，不得引用与项目无关的信息。
+            - JSON 必须合法：`content` / `feedback` / `group_feedback` 中的换行写成 `\\n`，若正文里出现英文双引号必须转义为 `\\"`。
+
+            输出格式必须是纯 JSON，不得输出解释文字，不得输出代码块，不得输出 Markdown。
+            顶层格式必须是：
+            {
+              "sections": [
+                {
+                  "section_id": "children_json 中的原始 id",
+                  "section_title": "children_json 中的原始标题",
+                  "content": "该子章节 Markdown 正文",
+                  "quality_score": 8,
+                  "feedback": ""
+                }
+              ],
+              "group_feedback": "可选，总体说明；没有可留空"
+            }
+        - id: group-user-search
+          role: user
+          text: |
+            联网搜索结果（行业参考）：
+            {{#tool_search.text#}}
+
+            知识库检索内容（务必参考）：
+            {{#context#}}
+
+            children_json：
+            {{#start_node.children_json#}}
+
+            请直接输出 JSON 结果。
+        selected: false
+        structured_output:
+          schema: {}
+        structured_output_enabled: false
+        title: LLM WITH SEARXNG
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm_with_search
+      position:
+        x: 1288
+        y: 178
+      positionAbsolute:
+        x: 1288
+        y: 178
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - knowledge_node
+          - result
+        model:
+          completion_params:
+            enable_thinking: false
+            temperature: 0.2
+            top_p: 0.8
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: group-sys-no-search
+          role: system
+          text: |
+            你是一名专业的招投标技术文件撰写专家。
+
+            你的任务是围绕当前 H2 章节“{{#start_node.group_title#}}”，一次性生成其下所有 H3 子章节正文。输出必须覆盖 `children_json` 中给出的每一个子章节，且必须按原样回传 `section_id`。
+
+            项目背景与投标策略：
+            {{#start_node.project_summary#}}
+
+            本组章节定位：
+            {{#start_node.global_outline#}}
+
+            本组共享解析依据：
+            {{#start_node.group_analysis_context#}}
+
+            占位符约束：
+            {{#start_node.placeholder_hint#}}
+
+            你必须严格遵守以下规则：
+            - 只生成 `children_json` 中存在的子章节，不得新增、合并、删除。
+            - 每个子章节正文只写自己的内容，不得把其他子章节的正文混入本节。
+            - 禁止输出任何以 # 开头的 Markdown 标题行。
+            - 禁止重复输出 H2 标题、目录编号或“第X章/1.1/1.1.1”类层级标题。
+            - 文中的 {{__PIPT_*__}} 和 {{__BIDDER_*__}} 占位符必须原样保留。
+            - 严禁把占位符改写成 {{PIPT_1}}、{{BIDDER_ORG}}、{PIPT_1} 或任何非双下划线包裹格式。
+            - 若依据不足，只能写实施机制、控制措施、验证方法，禁止编造参数、型号、标准编号、厂家事实。
+            - 仅依据解析依据与知识库内容写作，不得自行扩展外部事实。
+            - JSON 必须合法：`content` / `feedback` / `group_feedback` 中的换行写成 `\\n`，若正文里出现英文双引号必须转义为 `\\"`。
+
+            输出格式必须是纯 JSON，不得输出解释文字，不得输出代码块，不得输出 Markdown。
+            顶层格式必须是：
+            {
+              "sections": [
+                {
+                  "section_id": "children_json 中的原始 id",
+                  "section_title": "children_json 中的原始标题",
+                  "content": "该子章节 Markdown 正文",
+                  "quality_score": 8,
+                  "feedback": ""
+                }
+              ],
+              "group_feedback": "可选，总体说明；没有可留空"
+            }
+        - id: group-user-no-search
+          role: user
+          text: |
+            知识库检索内容（务必参考）：
+            {{#context#}}
+
+            children_json：
+            {{#start_node.children_json#}}
+
+            请直接输出 JSON 结果。
+        selected: false
+        structured_output:
+          schema: {}
+        structured_output_enabled: false
+        title: LLM WITHOUT SEARXNG
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm_without_search
+      position:
+        x: 986
+        y: 428
+      positionAbsolute:
+        x: 986
+        y: 428
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: |
+          import ast
+          import json
+          import re
+
+          def _strip_fence(text: str) -> str:
+              out = str(text or "").strip()
+              out = re.sub(r'<think>.*?</think>', '', out, flags=re.DOTALL).strip()
+              out = re.sub(r'^\s*```(?:json)?\s*', '', out, flags=re.IGNORECASE)
+              out = re.sub(r'\s*```\s*$', '', out, flags=re.IGNORECASE)
+              return out.strip()
+
+          def _extract_balanced_block(text: str, start_idx: int, left: str, right: str) -> str:
+              if start_idx < 0 or start_idx >= len(text) or text[start_idx] != left:
+                  return ""
+              depth = 0
+              in_string = False
+              escaped = False
+              for idx in range(start_idx, len(text)):
+                  ch = text[idx]
+                  if in_string:
+                      if escaped:
+                          escaped = False
+                      elif ch == '\\':
+                          escaped = True
+                      elif ch == '"':
+                          in_string = False
+                      continue
+                  if ch == '"':
+                      in_string = True
+                      continue
+                  if ch == left:
+                      depth += 1
+                  elif ch == right:
+                      depth -= 1
+                      if depth == 0:
+                          return text[start_idx:idx + 1]
+              return ""
+
+          def _find_named_array_block(text: str, field_name: str) -> str:
+              match = re.search(r'"%s"\s*:\s*\[' % re.escape(field_name), text)
+              if not match:
+                  return ""
+              start_idx = text.find("[", match.start())
+              return _extract_balanced_block(text, start_idx, "[", "]")
+
+          def _split_top_level_objects(array_block: str) -> list:
+              blocks = []
+              depth = 0
+              start_idx = -1
+              in_string = False
+              escaped = False
+              for idx, ch in enumerate(str(array_block or "")):
+                  if in_string:
+                      if escaped:
+                          escaped = False
+                      elif ch == '\\':
+                          escaped = True
+                      elif ch == '"':
+                          in_string = False
+                      continue
+                  if ch == '"':
+                      in_string = True
+                      continue
+                  if ch == '{':
+                      if depth == 0:
+                          start_idx = idx
+                      depth += 1
+                  elif ch == '}':
+                      depth -= 1
+                      if depth == 0 and start_idx >= 0:
+                          blocks.append(array_block[start_idx:idx + 1])
+                          start_idx = -1
+              return blocks
+
+          def _decode_jsonish_string(value: str) -> str:
+              raw = str(value or "")
+              if not raw:
+                  return ""
+              try:
+                  return json.loads('"%s"' % raw.replace('"', '\\"'))
+              except Exception:
+                  pass
+              text = raw.replace(r'\"', '"')
+              text = text.replace(r'\n', '\n').replace(r'\r', '\r').replace(r'\t', '\t')
+              return text.replace(r'\\', '\\')
+
+          def _extract_json_like_string(text: str, field_name: str) -> str:
+              match = re.search(r'"%s"\s*:\s*"' % re.escape(field_name), text)
+              if not match:
+                  return ""
+              idx = match.end()
+              chars = []
+              escaped = False
+              while idx < len(text):
+                  ch = text[idx]
+                  if escaped:
+                      chars.append(ch)
+                      escaped = False
+                      idx += 1
+                      continue
+                  if ch == '\\':
+                      chars.append(ch)
+                      escaped = True
+                      idx += 1
+                      continue
+                  if ch == '"':
+                      tail = text[idx + 1:].lstrip()
+                      if not tail or tail[0] in ",}]":
+                          return _decode_jsonish_string("".join(chars)).strip()
+                  chars.append(ch)
+                  idx += 1
+              return _decode_jsonish_string("".join(chars)).strip()
+
+          def _extract_json_like_number(text: str, field_name: str):
+              match = re.search(r'"%s"\s*:\s*(-?\d+(?:\.\d+)?)' % re.escape(field_name), text)
+              return match.group(1).strip() if match else None
+
+          def _recover_sections_payload(raw: str):
+              text = _strip_fence(raw)
+              if not text:
+                  return {}, ""
+
+              group_feedback = _extract_json_like_string(text, "group_feedback")
+              array_block = _find_named_array_block(text, "sections") or _find_named_array_block(text, "items")
+              if not array_block:
+                  stripped = text.strip()
+                  if stripped.startswith("["):
+                      array_block = _extract_balanced_block(stripped, 0, "[", "]")
+              if not array_block:
+                  return {}, group_feedback
+
+              rows = []
+              for block in _split_top_level_objects(array_block):
+                  item = {}
+                  try:
+                      item = json.loads(block)
+                  except Exception:
+                      try:
+                          item = ast.literal_eval(block)
+                      except Exception:
+                          section_id = _extract_json_like_string(block, "section_id") or _extract_json_like_string(block, "id")
+                          section_title = _extract_json_like_string(block, "section_title") or _extract_json_like_string(block, "title")
+                          content = _extract_json_like_string(block, "content") or _extract_json_like_string(block, "text")
+                          if not section_id or not content:
+                              continue
+                          item = {
+                              "section_id": section_id,
+                              "section_title": section_title,
+                              "content": content,
+                          }
+                          quality_score = _extract_json_like_number(block, "quality_score")
+                          if quality_score is not None:
+                              item["quality_score"] = quality_score
+                          feedback = _extract_json_like_string(block, "feedback")
+                          if feedback:
+                              item["feedback"] = feedback
+                  if isinstance(item, dict):
+                      rows.append(item)
+
+              if rows:
+                  return {"sections": rows, "group_feedback": group_feedback}, group_feedback
+              return {}, group_feedback
+
+          def _load_jsonish(text: str):
+              raw = _strip_fence(text)
+              if not raw:
+                  return {}
+              try:
+                  return json.loads(raw)
+              except Exception:
+                  pass
+              match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', raw)
+              if match:
+                  snippet = match.group(1)
+                  try:
+                      return json.loads(snippet)
+                  except Exception:
+                      try:
+                          return ast.literal_eval(snippet)
+                      except Exception:
+                          pass
+              try:
+                  return ast.literal_eval(raw)
+              except Exception:
+                  payload, _ = _recover_sections_payload(raw)
+                  return payload
+
+          def _normalize_sections(obj):
+              if isinstance(obj, dict):
+                  rows = obj.get("sections") or obj.get("items") or []
+                  group_feedback = str(obj.get("group_feedback") or "")
+              elif isinstance(obj, list):
+                  rows = obj
+                  group_feedback = ""
+              else:
+                  rows = []
+                  group_feedback = ""
+
+              normalized = []
+              if isinstance(rows, list):
+                  for item in rows:
+                      if not isinstance(item, dict):
+                          continue
+                      section_id = str(item.get("section_id") or item.get("id") or "").strip()
+                      section_title = str(item.get("section_title") or item.get("title") or "").strip()
+                      content = str(item.get("content") or item.get("text") or "").strip()
+                      if not section_id or not content:
+                          continue
+                      row = {
+                          "section_id": section_id,
+                          "section_title": section_title,
+                          "content": content,
+                      }
+                      if item.get("quality_score") is not None:
+                          row["quality_score"] = item.get("quality_score")
+                      if item.get("feedback") is not None:
+                          row["feedback"] = str(item.get("feedback") or "")
+                      normalized.append(row)
+              return normalized, group_feedback
+
+          def _pick_better_result(text_with_search: str, text_without_search: str):
+              candidates = []
+              for raw in (text_with_search, text_without_search):
+                  parsed = _load_jsonish(raw)
+                  sections, group_feedback = _normalize_sections(parsed)
+                  candidates.append((sections, group_feedback))
+              candidates.sort(key=lambda item: len(item[0]), reverse=True)
+              return candidates[0]
+
+          def main(text_with_search: str, text_without_search: str) -> dict:
+              sections, group_feedback = _pick_better_result(text_with_search, text_without_search)
+              return {
+                  "sections": json.dumps(sections, ensure_ascii=False),
+                  "group_feedback": group_feedback,
+              }
+        code_language: python3
+        outputs:
+          sections:
+            children: null
+            type: string
+          group_feedback:
+            children: null
+            type: string
+        selected: false
+        title: 输出清洗
+        type: code
+        variables:
+        - value_selector:
+          - llm_with_search
+          - text
+          value_type: string
+          variable: text_with_search
+        - value_selector:
+          - llm_without_search
+          - text
+          value_type: string
+          variable: text_without_search
+      height: 52
+      id: code_normalize
+      position:
+        x: 1590
+        y: 303
+      positionAbsolute:
+        x: 1590
+        y: 303
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: |
+          import json
+          import re
+
+          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+
+          def _load_sections(raw):
+              try:
+                  data = json.loads(str(raw or "[]"))
+                  return data if isinstance(data, list) else []
+              except Exception:
+                  return []
+
+          def _find_issues(text):
+              issues = []
+              for match in SUSPECT_RE.finditer(str(text or "")):
+                  token = match.group(0)
+                  if not LEGAL_RE.fullmatch(token) and token not in issues:
+                      issues.append(token)
+              return issues
+
+          def main(sections: str, group_feedback: str, placeholder_hint: str) -> dict:
+              rows = _load_sections(sections)
+              issues = []
+              for row in rows:
+                  if not isinstance(row, dict):
+                      continue
+                  section_id = str(row.get("section_id") or row.get("id") or "")
+                  for token in _find_issues(row.get("content") or row.get("text") or ""):
+                      issues.append({"section_id": section_id, "token": token})
+
+              allowed = []
+              for token in LEGAL_RE.findall(str(placeholder_hint or "")):
+                  if token not in allowed:
+                      allowed.append(token)
+
+              return {
+                  "sections": sections,
+                  "group_feedback": group_feedback or "",
+                  "has_placeholder_issues": bool(issues),
+                  "placeholder_issues": json.dumps(issues, ensure_ascii=False),
+                  "allowed_placeholders_json": json.dumps(allowed, ensure_ascii=False),
+                  "placeholder_validation_failed": bool(issues),
+                  "placeholder_repair_report": "[]",
+              }
+        code_language: python3
+        outputs:
+          sections:
+            children: null
+            type: string
+          group_feedback:
+            children: null
+            type: string
+          has_placeholder_issues:
+            children: null
+            type: boolean
+          placeholder_issues:
+            children: null
+            type: string
+          allowed_placeholders_json:
+            children: null
+            type: string
+          placeholder_validation_failed:
+            children: null
+            type: boolean
+          placeholder_repair_report:
+            children: null
+            type: string
+        selected: false
+        title: 占位符扫描
+        type: code
+        variables:
+        - value_selector:
+          - code_normalize
+          - sections
+          value_type: string
+          variable: sections
+        - value_selector:
+          - code_normalize
+          - group_feedback
+          value_type: string
+          variable: group_feedback
+        - value_selector:
+          - start_node
+          - placeholder_hint
+          value_type: string
+          variable: placeholder_hint
+      height: 52
+      id: placeholder_scan
+      position:
+        x: 1892
+        y: 303
+      positionAbsolute:
+        x: 1892
+        y: 303
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: is
+            id: placeholder-issues-true
+            value: true
+            varType: boolean
+            variable_selector:
+            - placeholder_scan
+            - has_placeholder_issues
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 是否需要占位符修复
+        type: if-else
+      height: 124
+      id: if_placeholder_issues
+      position:
+        x: 2194
+        y: 303
+      positionAbsolute:
+        x: 2194
+        y: 303
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            enable_thinking: false
+            temperature: 0
+            top_p: 0.1
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: placeholder-repair-system
+          role: system
+          text: |
+            你是占位符格式校验器，只能输出 JSON，不得解释。
+
+            任务：根据问题清单，为每个畸形占位符给出最小替换方案。
+            允许格式只有：
+            - {{__PIPT_类型_序号__}}
+            - {{__BIDDER_KEY__}}
+
+            规则：
+            - 只处理问题清单中的 token。
+            - 只能修复占位符格式，不得改写任何正文。
+            - 能确定的修复为合法占位符；不能确定时不要给 replacement。
+            - {{BIDDER_ORG}} 应修复为 {{__BIDDER_ORG__}}。
+            - {{PIPT_name_1}} 应修复为 {{__PIPT_name_1__}}。
+            - {{PIPT_1}} 缺少类型，无法可靠修复，必须跳过。
+
+            输出格式：
+            {"replacements":[{"from":"原 token","to":"合法占位符","reason":"简短原因"}]}
+        - id: placeholder-repair-user
+          role: user
+          text: |
+            问题清单：
+            {{#placeholder_scan.placeholder_issues#}}
+
+            已知合法占位符：
+            {{#placeholder_scan.allowed_placeholders_json#}}
+
+            sections 原文：
+            {{#placeholder_scan.sections#}}
+        selected: false
+        structured_output:
+          schema: {}
+        structured_output_enabled: false
+        title: 快速占位符修复
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: placeholder_repair_llm
+      position:
+        x: 2496
+        y: 178
+      positionAbsolute:
+        x: 2496
+        y: 178
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: |
+          import json
+          import re
+
+          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+
+          def _load_json(raw, fallback):
+              text = str(raw or "").strip()
+              text = re.sub(r"^\s*```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+              text = re.sub(r"\s*```\s*$", "", text, flags=re.IGNORECASE)
+              try:
+                  return json.loads(text)
+              except Exception:
+                  match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", text)
+                  if match:
+                      try:
+                          return json.loads(match.group(1))
+                      except Exception:
+                          return fallback
+              return fallback
+
+          def _find_issues_in_sections(rows):
+              issues = []
+              for row in rows:
+                  if not isinstance(row, dict):
+                      continue
+                  section_id = str(row.get("section_id") or row.get("id") or "")
+                  content = str(row.get("content") or row.get("text") or "")
+                  for match in SUSPECT_RE.finditer(content):
+                      token = match.group(0)
+                      if not LEGAL_RE.fullmatch(token):
+                          issues.append({"section_id": section_id, "token": token})
+              return issues
+
+          def main(sections: str, group_feedback: str, repair_text: str, placeholder_issues: str) -> dict:
+              rows = _load_json(sections, [])
+              if not isinstance(rows, list):
+                  rows = []
+              issue_rows = _load_json(placeholder_issues, [])
+              issue_tokens = {str(row.get("token") or "") for row in issue_rows if isinstance(row, dict)}
+              repair_payload = _load_json(repair_text, {})
+              replacements = repair_payload.get("replacements") if isinstance(repair_payload, dict) else []
+              applied = []
+
+              for repl in replacements or []:
+                  if not isinstance(repl, dict):
+                      continue
+                  src = str(repl.get("from") or "")
+                  dst = str(repl.get("to") or "")
+                  if not src or src not in issue_tokens or not LEGAL_RE.fullmatch(dst):
+                      continue
+                  for row in rows:
+                      if not isinstance(row, dict):
+                          continue
+                      content = str(row.get("content") or "")
+                      if src in content:
+                          row["content"] = content.replace(src, dst)
+                          applied.append({"from": src, "to": dst, "reason": str(repl.get("reason") or "")})
+
+              remaining = _find_issues_in_sections(rows)
+              return {
+                  "sections": json.dumps(rows, ensure_ascii=False),
+                  "group_feedback": group_feedback or "",
+                  "placeholder_issues": json.dumps(remaining, ensure_ascii=False),
+                  "placeholder_validation_failed": bool(remaining),
+                  "placeholder_repair_report": json.dumps(applied, ensure_ascii=False),
+              }
+        code_language: python3
+        outputs:
+          sections:
+            children: null
+            type: string
+          group_feedback:
+            children: null
+            type: string
+          placeholder_issues:
+            children: null
+            type: string
+          placeholder_validation_failed:
+            children: null
+            type: boolean
+          placeholder_repair_report:
+            children: null
+            type: string
+        selected: false
+        title: 应用占位符修复
+        type: code
+        variables:
+        - value_selector:
+          - placeholder_scan
+          - sections
+          value_type: string
+          variable: sections
+        - value_selector:
+          - placeholder_scan
+          - group_feedback
+          value_type: string
+          variable: group_feedback
+        - value_selector:
+          - placeholder_repair_llm
+          - text
+          value_type: string
+          variable: repair_text
+        - value_selector:
+          - placeholder_scan
+          - placeholder_issues
+          value_type: string
+          variable: placeholder_issues
+      height: 52
+      id: apply_placeholder_repair
+      position:
+        x: 2798
+        y: 178
+      positionAbsolute:
+        x: 2798
+        y: 178
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - placeholder_scan
+          - sections
+          value_type: string
+          variable: sections
+        - value_selector:
+          - placeholder_scan
+          - group_feedback
+          value_type: string
+          variable: group_feedback
+        - value_selector:
+          - placeholder_scan
+          - placeholder_issues
+          value_type: string
+          variable: placeholder_issues
+        - value_selector:
+          - placeholder_scan
+          - placeholder_validation_failed
+          value_type: boolean
+          variable: placeholder_validation_failed
+        - value_selector:
+          - placeholder_scan
+          - placeholder_repair_report
+          value_type: string
+          variable: placeholder_repair_report
+        selected: false
+        title: 输出
+        type: end
+      height: 120
+      id: end_node
+      position:
+        x: 2496
+        y: 428
+      positionAbsolute:
+        x: 2496
+        y: 428
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - apply_placeholder_repair
+          - sections
+          value_type: string
+          variable: sections
+        - value_selector:
+          - apply_placeholder_repair
+          - group_feedback
+          value_type: string
+          variable: group_feedback
+        - value_selector:
+          - apply_placeholder_repair
+          - placeholder_issues
+          value_type: string
+          variable: placeholder_issues
+        - value_selector:
+          - apply_placeholder_repair
+          - placeholder_validation_failed
+          value_type: boolean
+          variable: placeholder_validation_failed
+        - value_selector:
+          - apply_placeholder_repair
+          - placeholder_repair_report
+          value_type: string
+          variable: placeholder_repair_report
+        selected: false
+        title: 输出（占位符已校验）
+        type: end
+      height: 120
+      id: end_repaired
+      position:
+        x: 3100
+        y: 178
+      positionAbsolute:
+        x: 3100
+        y: 178
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 60
+      y: -23
+      zoom: 1
+  rag_pipeline_variables: []

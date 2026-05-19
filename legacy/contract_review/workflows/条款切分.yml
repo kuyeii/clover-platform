@@ -1,0 +1,331 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: 条款切分
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.36@a45e8cc9bfc9e37ab58c3ee31248bc43792a6653fc011e2433129e2942fbbc27
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1773026821169-source-1773301366859-target
+      selected: false
+      source: '1773026821169'
+      sourceHandle: source
+      target: '1773301366859'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1773301366859-source-1773026964363-target
+      source: '1773301366859'
+      sourceHandle: source
+      target: '1773026964363'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: segment_id
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: segment_id
+        - default: ''
+          hint: ''
+          label: segment_title
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: segment_title
+        - default: ''
+          hint: ''
+          label: segment_text
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: segment_text
+      height: 161
+      id: '1773026821169'
+      position:
+        x: 25.71749279726083
+        y: 278.4075817198935
+      positionAbsolute:
+        x: 25.71749279726083
+        y: 278.4075817198935
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1773301366859'
+          - text
+          value_type: string
+          variable: clauses
+        selected: false
+        title: 输出
+        type: end
+      height: 88
+      id: '1773026964363'
+      position:
+        x: 871.7599122033712
+        y: 299.4075817198935
+      positionAbsolute:
+        x: 871.7599122033712
+        y: 299.4075817198935
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.1
+          mode: chat
+          name: kimi-k2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: f449b0d5-5979-4858-980b-181ec5aaf587
+          role: system
+          text: "你是一个合同条款结构抽取器。你的任务仅限于：从输入的合同片段中抽取结构化条款。你不是摘要器、不是风险识别器、不是法律解释器，也不是改写器。\n\
+            \n你的首要目标是：抽取优先、少改写、可回溯、保守输出。\n\n必须严格遵守以下规则：\n\n1. 只做条款结构抽取，不做风险分析，不做法律评价，不补充输入中不存在的义务、责任、期限、条件或法律效果。\n\
+            2. clause_text 必须尽量保留输入原文，不得改写为摘要、解释、风险结论或更完整的法律表述，不得将clause_id和clause_title的内容写入clause_text当中。\n\
+            3. source_excerpt 必须尽量保留输入原文片段，不得写成总结句；若无法提供更短且准确的原文片段，可直接令 source_excerpt\
+            \ 等于 clause_text。\n4. clause_title 只有在输入中能明确定位到标题时才填写；若无法确认，必须输出空字符串，不得自行概括标题。\n\
+            5. 不要为了格式统一而补写、修复、重写或推测条款编号。编号不清晰时，宁可留空或降低 numbering_confidence，也不要擅自生成更完整编号。\n\
+            6. clause_kind 仅允许以下三种：\n   - contract_clause：正式合同条款，包含义务、责任、条件、期限、费用、违约、知识产权、保密、争议解决等约定\n\
+            \   - placeholder_clause：正文实质为空，仅包含空白、下划线、标点、占位符或无有效内容\n   - note_clause：明显属于备注、说明、填写提示、模板指引、旁注，而非正式合同约定\n\
+            6.1 如果条款正文包含明显“关键字段占位/缺失”的情形（例如“__日内 / 天内 / 金额__元 / 比例% / 日期____年__月__日”等），即使条款其余内容存在，也应标记为\
+            \ placeholder_clause，并在 source_excerpt 中保留原文占位形态，不要补全。\n7. 当信息不足或无法确认时，必须优先选择更保守的输出，而不是补全、推断或美化。\n\
+            8. numbering_confidence 和 title_confidence 必须在 0 到 1 之间。\n9. 除 JSON 外，不要输出任何解释、说明、markdown\
+            \ 或代码块。\n\n输出前请逐条自检：\n- 是否有任何 clause_title 是我概括出来而不是原文明确存在的\n- 是否有任何 source_excerpt\
+            \ 不是原文片段\n- 是否有任何 placeholder_clause 实际上包含有效义务内容\n- 是否有任何 confidence 明显虚高"
+        - id: d0945998-ca67-4e40-b79d-e51cd673689b
+          role: user
+          text: '请将以下合同片段拆分为结构化条款数组。
+
+
+            输入字段：
+
+            - segment_id: {{#1773026821169.segment_id#}}
+
+            - segment_title: {{#1773026821169.segment_title#}}
+
+            - segment_text:{{#1773026821169.segment_text#}}
+
+
+            请仅输出 JSON，格式如下：
+
+
+            [
+
+            {
+
+            "clause_id": "",
+
+            "clause_title": "",
+
+            "clause_text": "",
+
+            "segment_id": "",
+
+            "segment_title": "",
+
+            "clause_kind": "<contract_clause|placeholder_clause|note_clause>",
+
+            "source_excerpt": "",
+
+            "numbering_confidence": 0,
+
+            "title_confidence": 0
+
+            }
+
+            ]
+
+
+            注意：clause_kind 不得照抄示例，必须根据原文判断三选一。
+
+
+            拆分规则：
+
+            1. 若输入中存在清晰编号层级（如 3.1、3.2、(1)、1.1），优先按编号拆分。
+
+            2. 若没有清晰子编号，但文本明显属于同一个完整义务单元，则保持为一个 clause。
+
+            3. 不要为了拆得更细而把一个完整义务句强行拆开。
+
+            4. 不要把多个独立编号条款合并成一个 clause。
+
+            5. 若文本更像备注、说明、模板提示、填写指引，而不是正式合同约定，则标记为 note_clause。
+
+            6. 若正文实质为空，仅包含空白、下划线、标点或占位内容，则标记为 placeholder_clause。
+
+            7. 正常正式合同条款标记为 contract_clause。
+
+
+            字段填写规则：
+
+            1. clause_id：尽量抽取原文编号；若无法可靠确认，输出空字符串。
+
+            2. clause_title：只有输入中明确存在标题时才填写；否则输出空字符串。
+
+            3. clause_text：尽量保留原文，不要改写为摘要或解释。
+
+            4. segment_id：保持与输入一致。
+
+            5. segment_title：保持与输入一致。
+
+            6. source_excerpt：必须是输入中的原文片段；若无法给出更短且准确的摘录，可直接等于 clause_text。
+
+            6.1 若条款存在关键字段缺失/占位（如“内”缺少天数、“__元/ __%/ __日”缺值），即便条款其余部分有内容，也应标记为 placeholder_clause，并将
+            numbering_confidence/title_confidence 设为合理值（不要虚高）。
+
+            6.2 示例：
+
+            - 输入：“2. 一次性付款……内，在乙方提供……发票后全额支付。”（缺少具体天数）
+
+            -> clause_kind 应为 placeholder_clause
+
+            - 输入：“2. 一次性付款 合同签订后10日内……”
+
+            -> clause_kind 应为 contract_clause
+
+            7. numbering_confidence：
+
+            - 0.9 ~ 1.0：原文编号清晰可见，几乎无需推断
+
+            - 0.6 ~ 0.89：编号大体清晰，但格式或层级存在轻微不确定
+
+            - 0.1 ~ 0.59：编号依赖明显推断
+
+            - 0：没有编号
+
+            8. title_confidence：
+
+            - 0.9 ~ 1.0：标题在原文中明确可见
+
+            - 0.4 ~ 0.89：标题与原文接近，但边界略不确定
+
+            - 0 ~ 0.39：没有明确标题或仅是弱推断
+
+
+            禁止事项：
+
+            - 不要把原文改写成总结
+
+            - 不要补充输入中不存在的法律义务或责任
+
+            - 不要自行生成概括性标题
+
+            - 不要修复或脑补编号
+
+            - 不要输出任何 JSON 之外的内容'
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: true
+        structured_output_enabled: false
+        title: 条款切分v1
+        type: llm
+        vision:
+          enabled: false
+      height: 117
+      id: '1773301366859'
+      position:
+        x: 467.90427678199273
+        y: 325
+      positionAbsolute:
+        x: 467.90427678199273
+        y: 325
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 132.6522621987383
+      y: 55.074629162793315
+      zoom: 0.8122283423105
+  rag_pipeline_variables: []

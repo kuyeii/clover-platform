@@ -1,0 +1,365 @@
+app:
+  description: '招标文件解析工作流 — 全文传入，支持分组多节点批量提取，输出 JSON 格式；支持 single_node 模式单独重提取'
+  icon: 📄
+  icon_background: '#E4FBCC'
+  mode: workflow
+  name: ProEngine_DocAnalysis
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.35@bb81bce2b7e04af8178eb2fb36cc6e1eb75aadbc98d31bc2c858b4648ba63c26
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    # Start → 条件分支
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: if-else
+      id: start-to-branch
+      source: start_node
+      sourceHandle: source
+      target: mode_branch
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # 分支 true (single_node) → 单节点 LLM
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: branch-true-to-single
+      source: mode_branch
+      sourceHandle: 'true'
+      target: llm_single_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # 分支 false (full) → 全量 LLM
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: branch-false-to-full
+      source: mode_branch
+      sourceHandle: 'false'
+      target: llm_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # 单节点 LLM → End (single)
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: single-to-end
+      source: llm_single_node
+      sourceHandle: source
+      target: end_single
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # 全量 LLM → End (full)
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: llm-to-end
+      source: llm_node
+      sourceHandle: source
+      target: end_full
+      targetHandle: target
+      type: custom
+      zIndex: 0
+
+    nodes:
+    # ── 开始节点 ──
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: 'systemPrompt 基础提示词'
+          label: system_prompt
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: system_prompt
+        - default: ''
+          hint: '完整的脱敏招标文件文本'
+          label: raw_document
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: raw_document
+        - default: ''
+          hint: '本次提取的节点标签（用于记录/调试）'
+          label: node_label
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: node_label
+        - default: 'full'
+          hint: '运行模式：full=全量批量提取（默认），single_node=单节点重提取'
+          label: mode
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: mode
+        - default: ''
+          hint: '单节点模式下该节点的提取 Prompt（full 模式下忽略）'
+          label: extraction_prompt
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: extraction_prompt
+      height: 220
+      id: start_node
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+
+    # ── 条件分支：mode is single_node ──
+    - data:
+        conditions:
+        - comparison_operator: 'is'
+          id: cond-mode
+          value: 'single_node'
+          variable_selector:
+          - start_node
+          - mode
+        logical_operator: and
+        selected: false
+        title: 模式判断
+        type: if-else
+      height: 88
+      id: mode_branch
+      position:
+        x: 380
+        y: 282
+      positionAbsolute:
+        x: 380
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+
+    # ── 单节点 LLM（轻量）──
+    - data:
+        context:
+          enabled: false
+        model:
+          completion_params:
+            temperature: 0.05
+            top_p: 0.7
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: single-sys-001
+          role: system
+          text: "{{#start_node.system_prompt#}}"
+        - id: single-user-001
+          role: user
+          text: |
+            以下是招标文件内容：
+
+            ---
+            {{#start_node.raw_document#}}
+            ---
+
+            ## 当前提取任务：{{#start_node.node_label#}}
+
+            请严格按照 SYSTEM 中已经注入的当前任务说明执行，下面这段 extraction_prompt 只是当前节点任务定义的展开：
+
+            {{#start_node.extraction_prompt#}}
+
+            输出规则：
+            1) 只输出当前节点最终内容，不要额外解释，不要补充任务外信息。
+            2) 如果当前节点任务本身要求输出 JSON（如评分细则），则直接输出该 JSON 内容本体，字段规则必须完整保留。
+            3) 若当前任务为 structure_attachments（附件结构）相关，在正文末尾追加：
+               <BID_ATTACHMENTS>[{"name":"章节名称","start_locator":"P0001或空字符串","end_locator":"P0020或空字符串","description":""}]</BID_ATTACHMENTS>
+            4) 附件结构提取时，正文主体只保留 heading 标题列表或要点列表；不要输出解释。
+            5) 非 structure_attachments 任务不要输出 <BID_ATTACHMENTS>。
+        selected: false
+        title: LLM 单节点提取
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm_single_node
+      position:
+        x: 680
+        y: 120
+      positionAbsolute:
+        x: 680
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+
+    # ── 全量 LLM 提取节点（保持原有逻辑）──
+    - data:
+        context:
+          enabled: false
+        model:
+          completion_params:
+            temperature: 0.05
+            top_p: 0.7
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt-001
+          role: system
+          text: "{{#start_node.system_prompt#}}"
+        - id: user-prompt-001
+          role: user
+          text: |
+            以下是完整的招标文件内容：
+
+            ---
+            {{#start_node.raw_document#}}
+            ---
+
+            请严格按照 SYSTEM 中的提取指令，从上述文档中逐项提取所有要求信息。
+
+            **输出格式要求（必须严格遵守）**：
+            - 直接输出 JSON 对象，不要包含任何 Markdown 代码块标记（不要 ```json）
+            - JSON 格式：{ "node_id_1": "content_1", "node_id_2": "content_2", ... }
+            - content 值使用 Markdown 格式字符串（加粗、列表、换行均以 \n 转义）
+            - 如文档未提及某项，content 填 "**未提及**"
+            - 不要输出 JSON 之外的任何内容，不要加解释
+
+            《附件结构提取（仅 structure_attachments 节点必须执行）》
+            在 JSON 主体之外，在最后追加 <BID_ATTACHMENTS> 标签包裹的 JSON 数组。
+            从文档的"投标文件组成"/"投标文件编制目录"/"商务篇所需文件"等部分，
+            识别所有需要填写的附件/函件，并根据文中 [Pxxx] 定位符确定起止段落编号。
+            输出格式示例：
+            <BID_ATTACHMENTS>[{"name":"投标函","start_locator":"P0001","end_locator":"P0020","description":"核心商务函件"},{"name":"法人授权书","start_locator":"P0021","end_locator":"P0045"}]</BID_ATTACHMENTS>
+            若文档未包含明确投标文件目录，输出 <BID_ATTACHMENTS>[]</BID_ATTACHMENTS>。
+        selected: false
+        title: LLM 提取
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm_node
+      position:
+        x: 680
+        y: 440
+      positionAbsolute:
+        x: 680
+        y: 440
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+
+    # ── 输出节点（单节点分支专用）──
+    - data:
+        outputs:
+        - value_selector:
+          - llm_single_node
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 输出（单节点）
+        type: end
+      height: 88
+      id: end_single
+      position:
+        x: 980
+        y: 120
+      positionAbsolute:
+        x: 980
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+
+    # ── 输出节点（全量分支专用），包含 bid_attachment_list 提取 ──
+    - data:
+        outputs:
+        - value_selector:
+          - llm_node
+          - text
+          value_type: string
+          variable: text
+        - value_selector:
+          - llm_node
+          - text
+          value_type: string
+          variable: bid_attachment_list
+        selected: false
+        title: 输出（全量）
+        type: end
+      height: 110
+      id: end_full
+      position:
+        x: 980
+        y: 440
+      positionAbsolute:
+        x: 980
+        y: 440
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.85
+  rag_pipeline_variables: []

@@ -1,0 +1,81 @@
+[tool.poetry]
+name = "app"
+version = "0.5"
+description = "Zeshouan CMS"
+authors = ["sicheng <scyao@nanhulab.ac.cn>","haisu <hschen@nanhulab.ac.cn>", "sunan", "dongwei"]
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.11"
+Flask = "2.0.3"
+Flask_JWT_Extended = "4.3.1"
+pyjwt = "2.7.0"
+Flask_SQLAlchemy = "2.5.1"
+WTForms = "3.0.1"
+tablib = "3.2.0"
+spectree = "0.7.6"
+SQLAlchemy = "1.4.46"
+pydantic = {extras = ["email"], version = "1.9.2"}
+pillow = "9.3.0"
+flask-cors = "3.0.10"
+gunicorn = "20.1.0"
+gevent = "21.8.0"
+flask-socketio = "5.1.1"
+blinker = "1.4"
+python-dotenv = "0.19.2"
+gevent-websocket = "0.10.1"
+celery = "5.4.0"
+gmssl = "3.2.2"
+pymysql = "1.0.2"
+pandas = "2.0.3"
+eventlet = "0.39.0"
+redis = "5.2.1"
+transformers = "4.34.1"
+hanlp = "2.1.0b57"
+exrex = "0.12.0"
+Faker = "25.2.0"
+openpyxl = "3.1.5"
+scipy = "*"
+text2vec = "*"
+xlrd = ">=2.0.1"
+psycopg2 = "*"
+Werkzeug = "2.1.2"
+psutil = "7.0.0"
+
+[[tool.poetry.source]]
+name = "tsinghua"
+url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
+priority = "primary"
+
+[tool.poetry.group.dev.dependencies]
+flask-sqlacodegen = "1.1.8"
+black = "22.3.0"
+isort = "5.10.1"
+watchdog = "2.1.6"
+coverage = "6.3.2"
+pytest = "6.2.5"
+pre-commit = "2.17.0"
+pytest-ordering = "0.6"
+flake8 = "4.0.1"
+mypy = "0.950"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+multi_line_output = 3
+force_grid_wrap = 0
+line_length = 120
+use_parentheses = true
+include_trailing_comma = true
+
+[tool.black]
+line_length = 120
+
+[tool.mypy]
+files = ["starter.py"]
+ignore_missing_imports = true
+
+[tool.pytest]
+testpaths = ["tests"]

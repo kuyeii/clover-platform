@@ -1,0 +1,704 @@
+app:
+  description: '响应情况专用正文生成：单章直生，不联网，不使用知识库，仅依赖解析报告上下文'
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: ProEngine_Response_Content_Writer
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.35@bb81bce2b7e04af8178eb2fb36cc6e1eb75aadbc98d31bc2c858b4648ba63c26
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions: [.JPG, .JPEG, .PNG, .GIF, .WEBP, .SVG]
+      allowed_file_types: [image]
+      allowed_file_upload_methods: [local_file, remote_url]
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods: [local_file, remote_url]
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: start-source-llm-target
+      source: start_node
+      sourceHandle: source
+      target: llm_response
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: llm-source-code-target
+      source: llm_response
+      sourceHandle: source
+      target: code_clean
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: code-source-placeholder-scan-target
+      source: code_clean
+      sourceHandle: source
+      target: placeholder_scan
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: placeholder-scan-source-if-target
+      source: placeholder_scan
+      sourceHandle: source
+      target: if_placeholder_issues
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: if-placeholder-true-repair-target
+      source: if_placeholder_issues
+      sourceHandle: 'true'
+      target: placeholder_repair_llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: if-placeholder-false-end-target
+      source: if_placeholder_issues
+      sourceHandle: 'false'
+      target: end_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: placeholder-repair-source-apply-target
+      source: placeholder_repair_llm
+      sourceHandle: source
+      target: apply_placeholder_repair
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: apply-placeholder-repair-source-end-target
+      source: apply_placeholder_repair
+      sourceHandle: source
+      target: end_repaired
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: project_summary
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: project_summary
+        - default: ''
+          hint: ''
+          label: section_title
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: section_title
+        - default: ''
+          hint: ''
+          label: writing_hint
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: writing_hint
+        - default: ''
+          hint: ''
+          label: expected_words
+          options: []
+          placeholder: ''
+          required: true
+          type: number
+          variable: expected_words
+        - default: ''
+          hint: ''
+          label: placeholder_hint
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: placeholder_hint
+        - default: ''
+          hint: ''
+          label: global_outline
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: global_outline
+        - default: ''
+          hint: ''
+          label: keywords
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: keywords
+      height: 260
+      id: start_node
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            enable_thinking: false
+            temperature: 0.2
+            top_p: 0.8
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: response-sys-001
+          role: system
+          text: |
+            你是一名专业的招投标技术文件撰写专家。
+
+            你的任务是为标书中的“{{#start_node.section_title#}}”章节直接撰写完整正文。该章节是单章直生章节，不存在下级 H3，正文必须围绕采购需求逐条响应、关键条款偏离控制说明、符合性风险与闭环措施展开。
+
+            项目背景与投标策略：
+            {{#start_node.project_summary#}}
+
+            写作要求：
+            1. 目标字数约 {{#start_node.expected_words#}} 字，允许 ±5% 浮动，且绝对不得超过目标字数的 110%
+            2. 写作引导：{{#start_node.writing_hint#}}
+            3. 语言风格：正式、专业、审慎，强调“完全响应、闭环落实、风险可控”
+            4. 上下文仅来自解析报告摘要，禁止引用外部资料、禁止联网事实扩展、禁止行业泛论
+
+            全局大纲：
+            {{#start_node.global_outline#}}
+
+            ⚠️ 严格约束：
+            - 当前章节是独立 H2 正文节点，不是 H3，也不存在任何下级 H3。
+            - 禁止输出任何以 # 开头的 Markdown 标题行。
+            - 禁止重复输出本章标题行，禁止自造“H1/H2/H3 层级标题”。
+            - 禁止生成“一、二、三、”“（一）”“1.1”“1.”这类结构化小标题或编号式小节。
+            - 正文必须直接写成连续段落，可自然使用“首先、其次、最后”等连接词，但不得形成层级编号。
+            - 严禁生成“法定代表人授权书”“承诺函”“报价单”等商务附件内容。
+            - 严禁出现“根据网络资料”“结合公开资料”等措辞。
+
+            {{#start_node.placeholder_hint#}}
+
+            【占位符引用铁律】
+            - 文中的 {{__PIPT_*__}} 格式占位符来自脱敏处理，必须原样保留，绝不修改。
+            - 严禁把占位符简写成 {{PIPT_1}}、{{BIDDER_ORG}}、{PIPT_1} 或任何非双下划线包裹形式。
+            - 如果上下文传入了投标人信息占位符，仅在正文自然出现“投标单位”“法定代表人”“项目负责人”等主体时才允许引用。
+
+            【正文组织建议】
+            - 可按“总体响应原则 -> 逐项响应策略 -> 偏离控制 -> 风险闭环 -> 结论承诺”的顺序展开。
+            - 必须紧贴解析报告给出的技术目标、参数要求、实质性条款和评分细则，不得空泛堆砌。
+            - 若上下文未提供明确偏离项，应写“完全响应的控制机制与校核方法”，不要臆造偏离事实。
+
+            直接输出正文，不要输出解释，不要输出 JSON，不要输出代码块。
+        - id: response-user-001
+          role: user
+          text: |
+            以下内容是从招标文件解析报告中提炼出的本章节关键依据，请据此直接写正文：
+
+            {{#start_node.writing_hint#}}
+
+            关键词：{{#start_node.keywords#}}
+        selected: false
+        structured_output:
+          schema: {}
+        structured_output_enabled: false
+        title: LLM RESPONSE WRITER
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm_response
+      position:
+        x: 382
+        y: 282
+      positionAbsolute:
+        x: 382
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: |
+          import re
+
+          def main(text: str) -> dict:
+              output = str(text or "").strip()
+              output = re.sub(r'<think>.*?</think>', '', output, flags=re.DOTALL).strip()
+              output = re.sub(r'^\s*```(?:markdown|md)?\s*', '', output, flags=re.IGNORECASE)
+              output = re.sub(r'\s*```\s*$', '', output, flags=re.IGNORECASE)
+              output = re.sub(r'^\s*(?:[一二三四五六七八九十]+、|（[一二三四五六七八九十]+）|\([一二三四五六七八九十]+\)|\d+(?:\.\d+){1,3}|\d+\.)\s*', '', output, flags=re.MULTILINE)
+              output = re.sub(r'\n{3,}', '\n\n', output).strip()
+              return {"text": output}
+        code_language: python3
+        outputs:
+          text:
+            children: null
+            type: string
+        selected: false
+        title: 输出清洗
+        type: code
+        variables:
+        - value_selector:
+          - llm_response
+          - text
+          value_type: string
+          variable: text
+      height: 52
+      id: code_clean
+      position:
+        x: 684
+        y: 282
+      positionAbsolute:
+        x: 684
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: |
+          import json
+          import re
+
+          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+
+          def _find_issues(text):
+              issues = []
+              for match in SUSPECT_RE.finditer(str(text or "")):
+                  token = match.group(0)
+                  if not LEGAL_RE.fullmatch(token) and token not in issues:
+                      issues.append(token)
+              return issues
+
+          def main(text: str, placeholder_hint: str) -> dict:
+              issues = _find_issues(text)
+              allowed = []
+              for token in LEGAL_RE.findall(str(placeholder_hint or "")):
+                  if token not in allowed:
+                      allowed.append(token)
+
+              return {
+                  "text": str(text or "").strip(),
+                  "has_placeholder_issues": bool(issues),
+                  "placeholder_issues": json.dumps(issues, ensure_ascii=False),
+                  "allowed_placeholders_json": json.dumps(allowed, ensure_ascii=False),
+                  "placeholder_validation_failed": bool(issues),
+                  "placeholder_repair_report": "[]",
+              }
+        code_language: python3
+        outputs:
+          text:
+            children: null
+            type: string
+          has_placeholder_issues:
+            children: null
+            type: boolean
+          placeholder_issues:
+            children: null
+            type: string
+          allowed_placeholders_json:
+            children: null
+            type: string
+          placeholder_validation_failed:
+            children: null
+            type: boolean
+          placeholder_repair_report:
+            children: null
+            type: string
+        selected: false
+        title: 占位符扫描
+        type: code
+        variables:
+        - value_selector:
+          - code_clean
+          - text
+          value_type: string
+          variable: text
+        - value_selector:
+          - start_node
+          - placeholder_hint
+          value_type: string
+          variable: placeholder_hint
+      height: 52
+      id: placeholder_scan
+      position:
+        x: 986
+        y: 282
+      positionAbsolute:
+        x: 986
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: is
+            id: placeholder-issues-true
+            value: true
+            varType: boolean
+            variable_selector:
+            - placeholder_scan
+            - has_placeholder_issues
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 是否需要占位符修复
+        type: if-else
+      height: 124
+      id: if_placeholder_issues
+      position:
+        x: 1288
+        y: 282
+      positionAbsolute:
+        x: 1288
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            enable_thinking: false
+            temperature: 0
+            top_p: 0.1
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: placeholder-repair-system
+          role: system
+          text: |
+            你是占位符格式校验器，只能输出 JSON，不得解释。
+
+            任务：根据问题清单，为每个畸形占位符给出最小替换方案。
+            允许格式只有：
+            - {{__PIPT_类型_序号__}}
+            - {{__BIDDER_KEY__}}
+
+            规则：
+            - 只处理问题清单中的 token。
+            - 只能修复占位符格式，不得改写任何正文。
+            - 能确定的修复为合法占位符；不能确定时不要给 replacement。
+            - {{BIDDER_ORG}} 应修复为 {{__BIDDER_ORG__}}。
+            - {{PIPT_name_1}} 应修复为 {{__PIPT_name_1__}}。
+            - {{PIPT_1}} 缺少类型，无法可靠修复，必须跳过。
+
+            输出格式：
+            {"replacements":[{"from":"原 token","to":"合法占位符","reason":"简短原因"}]}
+        - id: placeholder-repair-user
+          role: user
+          text: |
+            问题清单：
+            {{#placeholder_scan.placeholder_issues#}}
+
+            已知合法占位符：
+            {{#placeholder_scan.allowed_placeholders_json#}}
+
+            正文原文：
+            {{#placeholder_scan.text#}}
+        selected: false
+        structured_output:
+          schema: {}
+        structured_output_enabled: false
+        title: 快速占位符修复
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: placeholder_repair_llm
+      position:
+        x: 1590
+        y: 157
+      positionAbsolute:
+        x: 1590
+        y: 157
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: |
+          import json
+          import re
+
+          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+
+          def _load_json(raw, fallback):
+              text = str(raw or "").strip()
+              text = re.sub(r"^\s*```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+              text = re.sub(r"\s*```\s*$", "", text, flags=re.IGNORECASE)
+              try:
+                  return json.loads(text)
+              except Exception:
+                  match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", text)
+                  if match:
+                      try:
+                          return json.loads(match.group(1))
+                      except Exception:
+                          return fallback
+              return fallback
+
+          def _find_issues(text):
+              issues = []
+              for match in SUSPECT_RE.finditer(str(text or "")):
+                  token = match.group(0)
+                  if not LEGAL_RE.fullmatch(token):
+                      issues.append(token)
+              return issues
+
+          def main(text: str, repair_text: str, placeholder_issues: str) -> dict:
+              issue_tokens = set(_load_json(placeholder_issues, []))
+              repair_payload = _load_json(repair_text, {})
+              replacements = repair_payload.get("replacements") if isinstance(repair_payload, dict) else []
+              rewritten = str(text or "")
+              applied = []
+
+              for repl in replacements or []:
+                  if not isinstance(repl, dict):
+                      continue
+                  src = str(repl.get("from") or "")
+                  dst = str(repl.get("to") or "")
+                  if not src or src not in issue_tokens or not LEGAL_RE.fullmatch(dst):
+                      continue
+                  if src in rewritten:
+                      rewritten = rewritten.replace(src, dst)
+                      applied.append({"from": src, "to": dst, "reason": str(repl.get("reason") or "")})
+
+              remaining = _find_issues(rewritten)
+              return {
+                  "text": rewritten.strip(),
+                  "placeholder_issues": json.dumps(remaining, ensure_ascii=False),
+                  "placeholder_validation_failed": bool(remaining),
+                  "placeholder_repair_report": json.dumps(applied, ensure_ascii=False),
+              }
+        code_language: python3
+        outputs:
+          text:
+            children: null
+            type: string
+          placeholder_issues:
+            children: null
+            type: string
+          placeholder_validation_failed:
+            children: null
+            type: boolean
+          placeholder_repair_report:
+            children: null
+            type: string
+        selected: false
+        title: 应用占位符修复
+        type: code
+        variables:
+        - value_selector:
+          - placeholder_scan
+          - text
+          value_type: string
+          variable: text
+        - value_selector:
+          - placeholder_repair_llm
+          - text
+          value_type: string
+          variable: repair_text
+        - value_selector:
+          - placeholder_scan
+          - placeholder_issues
+          value_type: string
+          variable: placeholder_issues
+      height: 52
+      id: apply_placeholder_repair
+      position:
+        x: 1892
+        y: 157
+      positionAbsolute:
+        x: 1892
+        y: 157
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - placeholder_scan
+          - text
+          value_type: string
+          variable: text
+        - value_selector:
+          - placeholder_scan
+          - placeholder_issues
+          value_type: string
+          variable: placeholder_issues
+        - value_selector:
+          - placeholder_scan
+          - placeholder_validation_failed
+          value_type: boolean
+          variable: placeholder_validation_failed
+        - value_selector:
+          - placeholder_scan
+          - placeholder_repair_report
+          value_type: string
+          variable: placeholder_repair_report
+        selected: false
+        title: 输出
+        type: end
+      height: 144
+      id: end_node
+      position:
+        x: 1590
+        y: 407
+      positionAbsolute:
+        x: 1590
+        y: 407
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - apply_placeholder_repair
+          - text
+          value_type: string
+          variable: text
+        - value_selector:
+          - apply_placeholder_repair
+          - placeholder_issues
+          value_type: string
+          variable: placeholder_issues
+        - value_selector:
+          - apply_placeholder_repair
+          - placeholder_validation_failed
+          value_type: boolean
+          variable: placeholder_validation_failed
+        - value_selector:
+          - apply_placeholder_repair
+          - placeholder_repair_report
+          value_type: string
+          variable: placeholder_repair_report
+        selected: false
+        title: 输出（占位符已校验）
+        type: end
+      height: 144
+      id: end_repaired
+      position:
+        x: 2194
+        y: 157
+      positionAbsolute:
+        x: 2194
+        y: 157
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 60
+      y: -23
+      zoom: 1
+  rag_pipeline_variables: []

@@ -1,0 +1,16 @@
+node_modules
+.venv
+.git
+.codex
+.idea
+dist
+backend/data
+server/data
+__pycache__
+*.pyc
+*.tsbuildinfo
+.env
+.env.*
+npm-debug.log*
+Dockerfile
+docker-compose.yml
