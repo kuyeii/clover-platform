@@ -1,10 +1,11 @@
 import { LockKeyhole, TriangleAlert } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { getAppById } from "../config/apps.config";
 import { useAuth } from "../contexts/AuthContext";
+import { useRuntimeApps } from "../contexts/RuntimeAppsContext";
 
 export function EmbeddedAppPage() {
   const { appId = "" } = useParams();
+  const { getAppById } = useRuntimeApps();
   const app = getAppById(appId);
   const { canAccessApp } = useAuth();
 

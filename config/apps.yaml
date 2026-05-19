@@ -15,6 +15,21 @@ apps:
     legacy_health_check: /api/health
     storage_namespace: portal
     workflow_refs: []
+    dev:
+      enabled: true
+      kind: portal
+      working_dir: legacy/portal-launchpad
+      frontend_working_dir: legacy/portal-launchpad
+      backend_working_dir: legacy/portal-launchpad
+      frontend_command: npx vite --host 0.0.0.0 --port {frontend_port}
+      backend_command: "{python} -m uvicorn backend.main:app --host 0.0.0.0 --port {backend_port} --reload"
+      frontend_preferred_port: 5200
+      backend_preferred_port: 5210
+      frontend_port_range: [5200, 5209]
+      backend_port_range: [5210, 5219]
+      env:
+        PORTAL_API_PORT: "{backend_port}"
+        PORTAL_FRONTEND_PORT: "{frontend_port}"
 
   bid_generator:
     name: 标书生成
@@ -33,6 +48,21 @@ apps:
     storage_namespace: bid_generator
     workflow_refs:
       - bid_generator
+    dev:
+      enabled: false
+      kind: manual
+      note: "manual startup required in phase 4.1; frontend-web + pipt-flask chain needs separate validation"
+      working_dir: legacy/bid-generator
+      frontend_working_dir: legacy/bid-generator/frontend-web
+      backend_working_dir: legacy/bid-generator/pipt-flask
+      frontend_command: npm run dev -- --host 0.0.0.0 --port {port}
+      backend_command: "{python} -m uvicorn app:app --host 0.0.0.0 --port {backend_port} --reload"
+      preferred_port: 18110
+      port_range: [18110, 18119]
+      backend_preferred_port: 18111
+      backend_port_range: [18111, 18119]
+      env:
+        VITE_API_BASE_URL: "http://localhost:{backend_port}/api"
 
   contract_review:
     name: 合同审查
@@ -51,6 +81,21 @@ apps:
     storage_namespace: contract_review
     workflow_refs:
       - contract_review
+    dev:
+      enabled: false
+      kind: manual
+      note: "manual startup required in phase 4.1; frontend/backend split must be validated with existing data paths"
+      working_dir: legacy/contract_review
+      frontend_working_dir: legacy/contract_review/frontend
+      backend_working_dir: legacy/contract_review
+      frontend_command: npm run dev -- --host 0.0.0.0 --port {port}
+      backend_command: "{python} -m uvicorn web_api:app --host 0.0.0.0 --port {backend_port} --reload"
+      preferred_port: 18120
+      port_range: [18120, 18129]
+      backend_preferred_port: 18121
+      backend_port_range: [18121, 18129]
+      env:
+        VITE_API_TARGET: "http://127.0.0.1:{backend_port}"
 
   rag_qa:
     name: RAG 问答
@@ -69,6 +114,22 @@ apps:
     storage_namespace: rag_qa
     workflow_refs:
       - rag_qa
+    dev:
+      enabled: false
+      kind: manual
+      note: "manual startup required in phase 4.1; frontend/backend split must be validated with current env files"
+      working_dir: legacy/chat_with_rag_and_websearch
+      frontend_working_dir: legacy/chat_with_rag_and_websearch/frontend
+      backend_working_dir: legacy/chat_with_rag_and_websearch/backend
+      frontend_command: npm run dev -- --host 0.0.0.0 --port {port}
+      backend_command: "{python} run.py"
+      preferred_port: 18140
+      port_range: [18140, 18149]
+      backend_preferred_port: 18141
+      backend_port_range: [18141, 18149]
+      env:
+        APP_PORT: "{backend_port}"
+        VITE_API_BASE_URL: "http://127.0.0.1:{backend_port}"
 
   competitor_analysis:
     name: 竞对分析
@@ -87,3 +148,20 @@ apps:
     storage_namespace: competitor_analysis
     workflow_refs:
       - competitor_analysis
+    dev:
+      enabled: false
+      kind: manual
+      note: "manual startup required in phase 4.1; existing script starts frontend and Python history server together"
+      working_dir: legacy/company-competitors-analysis
+      frontend_working_dir: legacy/company-competitors-analysis
+      backend_working_dir: legacy/company-competitors-analysis
+      frontend_command: npm run dev:frontend -- --host 0.0.0.0 --port {port}
+      backend_command: "{python} backend/server.py"
+      preferred_port: 18130
+      port_range: [18130, 18139]
+      backend_preferred_port: 18131
+      backend_port_range: [18131, 18139]
+      env:
+        HISTORY_SERVER_PORT: "{backend_port}"
+        BACKEND_PORT: "{backend_port}"
+        CORS_ORIGIN: "http://localhost:{port}"

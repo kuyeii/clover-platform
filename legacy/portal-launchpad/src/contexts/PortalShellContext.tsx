@@ -1,8 +1,8 @@
 import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 import { matchPath, useLocation } from "react-router-dom";
-import { getAppById } from "../config/apps.config";
 import { ToolkitApp } from "../types/app";
 import { useAuth } from "./AuthContext";
+import { useRuntimeApps } from "./RuntimeAppsContext";
 
 interface PortalShellContextValue {
   activeModule: ToolkitApp | null;
@@ -21,6 +21,7 @@ interface PortalShellProviderProps {
 export function PortalShellProvider({ children }: PortalShellProviderProps) {
   const location = useLocation();
   const { canAccessApp } = useAuth();
+  const { getAppById } = useRuntimeApps();
   const moduleRouteMatch = matchPath("/apps/:appId", location.pathname);
   const routeAppId = moduleRouteMatch?.params.appId;
   const [activeModule, setActiveModule] = useState<ToolkitApp | null>(null);

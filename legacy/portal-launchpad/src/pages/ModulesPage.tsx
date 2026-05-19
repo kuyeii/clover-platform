@@ -1,8 +1,10 @@
-import { appsConfig } from "../config/apps.config";
 import { AppStatusBadge } from "../components/AppStatusBadge";
 import { HealthIndicator } from "../components/HealthIndicator";
+import { useRuntimeApps } from "../contexts/RuntimeAppsContext";
 
 export function ModulesPage() {
+  const { apps } = useRuntimeApps();
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-panel">
@@ -30,7 +32,7 @@ export function ModulesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {appsConfig.map((app) => (
+              {apps.map((app) => (
                 <tr key={app.id} className="align-top">
                   <td className="px-4 py-4">
                     <div className="space-y-1">

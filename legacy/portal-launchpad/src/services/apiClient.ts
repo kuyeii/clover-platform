@@ -222,6 +222,19 @@ export async function fetchUsageSummaries() {
   );
 }
 
+export interface RuntimeAppConfig {
+  code: ToolkitApp["id"];
+  name: string;
+  iframeUrl: string;
+  url?: string;
+  healthUrl?: string;
+  enabled: boolean;
+}
+
+export async function fetchRuntimeApps() {
+  return apiFetch<{ apps: RuntimeAppConfig[] }>("/api/runtime/apps").then((data) => data.apps);
+}
+
 export async function enterApp(appId: ToolkitApp["id"], confirmedConflict = false) {
   return apiFetch<{ summaries: AppUsageSummary[] }>(
     `/api/app-usage/${encodeURIComponent(appId)}/enter`,

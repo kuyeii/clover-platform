@@ -1,16 +1,33 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-_env_file = PROJECT_ROOT / ".env"
-if _env_file.is_file():
+def _find_monorepo_root(start: Path) -> Path:
+    for candidate in (start, *start.parents):
+        if (
+            (candidate / "config" / "apps.yaml").is_file()
+            and (candidate / "packages" / "py_common").is_dir()
+            and (candidate / "legacy" / "portal-launchpad").is_dir()
+        ):
+            return candidate
+    return PROJECT_ROOT
+
+
+MONOREPO_ROOT = _find_monorepo_root(PROJECT_ROOT)
+if str(MONOREPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(MONOREPO_ROOT))
+
+for _env_file in (MONOREPO_ROOT / ".env", PROJECT_ROOT / ".env"):
+    if not _env_file.is_file():
+        continue
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(_env_file)
+        load_dotenv(_env_file, override=False)
     except ImportError:
         pass
 

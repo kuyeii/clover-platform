@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已完成 Portal 数据库访问层从 SQLite 到 PostgreSQL 的切换，其他四个业务项目仍保持 legacy 状态。
+当前阶段已进入统一开发启动器与动态端口阶段。Portal 已切换到 PostgreSQL，其他四个业务项目仍保持 legacy 状态。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 3 阶段收尾：Portal PostgreSQL 切换已完成。
+当前处于第 4 阶段：统一启动器与动态端口。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。其他四个业务模块仍保持 legacy 状态，后续分阶段迁移。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段只处理开发启动、端口发现和 runtime iframe URL，不合并后端，不去掉 iframe，不迁移其他四个业务数据库。
 
 ## Legacy 项目
 
@@ -145,10 +145,6 @@ python scripts/check_db.py
 
 本阶段不会修改其他四个 legacy 业务代码。Portal 数据库访问层已经切换到 PostgreSQL。
 
-## 下一阶段计划
-
-第 4 阶段再处理统一启动器与动态端口。第 5 阶段之后再考虑其他业务模块数据库迁移与进一步去 iframe。
-
 ## 第 3 阶段：Portal PostgreSQL
 
 Portal 后端位于 `legacy/portal-launchpad`。本阶段只把 Portal 数据库访问层切换到 PostgreSQL，前端页面、iframe 集成、认证 token 形态和其他四个 legacy 项目不变。
@@ -223,3 +219,49 @@ Portal 当前使用 PostgreSQL 表：
 反馈 / 工单 / 功能建议相关接口当前写入 `portal.feedback_submissions`。邮件发送仍按 Portal SMTP 环境变量配置执行。
 
 第 3 阶段主要验证 monorepo 本地方式启动。`legacy/portal-launchpad` 下旧 Dockerfile / docker-compose 尚未更新为最终 monorepo PostgreSQL 部署形态，只能视为历史遗留或待改造文件。统一 Docker 部署会在后续 Docker 阶段处理。
+
+## 第 4 阶段：统一开发启动器与动态端口
+
+动态端口只用于开发环境。生产或准生产部署不建议使用动态端口，应按 Docker 部署规范使用固定容器端口和网络。
+
+端口规划和 legacy 模块启动配置集中在 `config/apps.yaml`。端口检测逻辑在 `packages/py_common/ports.py`，进程管理在 `packages/py_common/process_manager.py`，runtime 文件读写在 `packages/py_common/runtime.py`。
+
+开发检查端口：
+
+```bash
+python scripts/check_ports.py
+```
+
+只生成 runtime 端口文件：
+
+```bash
+python scripts/dev.py --write-ports-only
+```
+
+只启动 Portal 前后端：
+
+```bash
+python scripts/dev.py --no-business
+```
+
+默认命令会启动配置中 `dev.enabled: true` 的模块。当前基础版只自动启动 Portal；合同审查、标书生成、RAG 问答、竞对分析已经生成动态端口和 runtime URL，但仍标记为 manual，需在第 4.1 阶段逐个验证后再打开自动启动。
+
+`runtime/ports.json` 由启动器生成，不提交 Git。它记录 Portal 前后端端口，以及四个 iframe 模块的开发 URL。Portal 后端通过 `GET /api/runtime/apps` 读取该文件并只返回前端需要的 `code`、`name`、`iframeUrl`、`enabled` 等字段，不返回 dev command、env 或任何密钥。
+
+Portal 前端启动后会请求 `/api/runtime/apps`。接口可用时，用返回的 `iframeUrl` 覆盖 `src/config/apps.config.ts` 中的静态 URL；接口失败或 `runtime/ports.json` 不存在时，继续使用静态配置兜底。
+
+当前仍未去 iframe，仍未合并五个后端，仍未迁移合同审查、标书生成、RAG 问答、竞对分析的数据层。如果某个业务模块未自动启动，需要手动启动并确保端口与 `runtime/ports.json` 一致。
+
+`scripts/dev.py` 当前支持：
+
+```bash
+python scripts/dev.py
+python scripts/dev.py --no-business
+python scripts/dev.py --write-ports-only
+python scripts/dev.py --only portal
+python scripts/dev.py --skip bid-generator
+```
+
+## 下一阶段计划
+
+第 4.1 阶段逐个补齐四个业务模块自动启动命令和必要的启动配置适配。第 5 阶段之后再考虑其他业务模块数据库迁移与进一步去 iframe。

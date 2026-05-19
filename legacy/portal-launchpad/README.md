@@ -14,6 +14,19 @@
 
 ## 本地启动
 
+推荐通过 monorepo 统一启动器启动 Portal：
+
+```bash
+cd clover-platform
+source .venv/bin/activate
+python scripts/check_ports.py
+python scripts/dev.py --no-business
+```
+
+启动器会生成 `runtime/ports.json`，并把 Portal 前后端端口写入该文件。动态端口只用于开发环境。
+
+也可以单独启动 Portal：
+
 ```bash
 cd clover-platform
 python3 -m venv .venv
@@ -85,7 +98,14 @@ portal-launchpad/
 
 修改模块地址、状态或描述时，只调整该配置文件，不在组件中硬编码模块信息。
 
-当前模块 URL 会在浏览器运行时根据 Portal 访问域名自动生成：
+当前模块 URL 会优先来自 Portal 后端 runtime 接口：
+
+- `GET /api/runtime/apps`
+- 后端读取 `clover-platform/runtime/ports.json`
+- 前端用返回的 `iframeUrl` 覆盖静态配置
+- 如果接口失败或 `runtime/ports.json` 不存在，继续使用 `src/config/apps.config.ts` 兜底
+
+静态兜底 URL 会在浏览器运行时根据 Portal 访问域名自动生成：
 - 本地访问 `http://localhost:5200` 时，模块地址为 `http://localhost:181xx`
 - 服务器访问 `http://<server-ip>:5200` 时，模块地址为 `http://<server-ip>:181xx`
 
@@ -124,6 +144,8 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres123456@10.88.20.14:5432/app_d
 ```
 
 `.env` 放在 `clover-platform` 根目录，不应提交到 Git。Python 代码只从根目录 `.env` 或环境变量读取连接信息，不硬编码数据库连接串。
+
+Portal 后端会优先读取 `clover-platform/.env`。如果存在 `legacy/portal-launchpad/.env`，仅作为兼容补充读取，不优先于根目录 `.env`。
 
 ### 安装依赖
 
@@ -203,6 +225,25 @@ npm run dev:frontend
 ```
 
 如果管理员已经初始化过，后续修改根目录 `.env` 中 `PORTAL_ADMIN_PASSWORD` 不会自动重置已有管理员密码。
+
+### 统一启动器
+
+从 `clover-platform` 根目录执行：
+
+```bash
+python scripts/dev.py --write-ports-only
+python scripts/dev.py --no-business
+```
+
+`--write-ports-only` 只生成 `runtime/ports.json`，不启动进程。`--no-business` 启动 Portal 前后端，不启动四个业务模块。
+
+Portal runtime apps 接口：
+
+```text
+GET /api/runtime/apps
+```
+
+该接口只返回前端需要的模块 `code`、`name`、`iframeUrl`、`enabled` 等信息，不返回启动命令、环境变量或密钥。
 
 ### 生产验证
 

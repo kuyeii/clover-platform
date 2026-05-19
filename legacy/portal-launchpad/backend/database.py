@@ -3,28 +3,19 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 from uuid import UUID
 
-from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-MONOREPO_ROOT = Path(__file__).resolve().parents[3]
-if str(MONOREPO_ROOT) not in sys.path:
-    # Monorepo transition: allow the legacy Portal backend to reuse root packages.
-    sys.path.insert(0, str(MONOREPO_ROOT))
-
-load_dotenv(MONOREPO_ROOT / ".env")
+from .config import APP_IDS, APP_USAGE_TTL_SECONDS, MONOREPO_ROOT, SESSION_TTL_SECONDS
+from .security import hash_password, normalize_account, sanitize_user
 
 from packages.py_common.db.session import get_engine  # noqa: E402
-
-from .config import APP_IDS, APP_USAGE_TTL_SECONDS, SESSION_TTL_SECONDS
-from .security import hash_password, normalize_account, sanitize_user
 
 logger = logging.getLogger("portal.database")
 

@@ -53,6 +53,7 @@ from .deps import (
     require_admin,
 )
 from .routers.feedback import router as feedback_router
+from .runtime_apps import get_runtime_apps_payload
 from .schemas import ChangePasswordInput, EnterAppInput, LoginInput, UserCreateInput, UserUpdateInput
 from .security import create_token, normalize_account, sanitize_user, sanitize_users, verify_password
 
@@ -272,6 +273,11 @@ def get_user_by_raw_token(token: str) -> dict[str, Any] | None:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "database": "postgresql", "apiPort": API_PORT}
+
+
+@app.get("/api/runtime/apps")
+def runtime_apps() -> dict[str, Any]:
+    return get_runtime_apps_payload()
 
 
 @app.post("/api/auth/login")

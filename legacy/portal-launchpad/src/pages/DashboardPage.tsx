@@ -1,10 +1,12 @@
 import { CloverLauncher } from "../components/CloverLauncher";
-import { appsConfig } from "../config/apps.config";
+import { useRuntimeApps } from "../contexts/RuntimeAppsContext";
 
 export function DashboardPage() {
+  const { apps } = useRuntimeApps();
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <CloverLauncher apps={appsConfig} />
+      <CloverLauncher apps={apps} />
     </div>
   );
 }
