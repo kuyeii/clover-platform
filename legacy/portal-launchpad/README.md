@@ -13,14 +13,30 @@
 - lucide-react
 
 ## 本地启动
+
 ```bash
-cd 03-entry-portal/portal-launchpad
+cd clover-platform
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m pip install -r legacy/portal-launchpad/requirements.txt
+cp .env.example .env
+
+python scripts/check_db.py
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+
+cd legacy/portal-launchpad
 npm install
-npm run dev
+PORTAL_PYTHON_BIN=../../.venv/bin/python npm run dev
 ```
 
 默认访问地址：
-`http://localhost:5200`
+
+- 前端：`http://localhost:5200`
+- 后端：`http://localhost:5210`
+- 接口文档：`http://localhost:5210/docs`
 
 ## 构建
 ```bash
@@ -96,15 +112,30 @@ portal-launchpad/
 
 Portal 后端当前使用 PostgreSQL，数据库配置来自 `clover-platform` 根目录 `.env` 或环境变量。用户认证、用户管理、应用权限、应用占用状态和反馈提交都通过 `/api/*` 维护。
 
+当前开发环境 PostgreSQL 示例配置：
+
+```bash
+POSTGRES_HOST=10.88.20.14
+POSTGRES_PORT=5432
+POSTGRES_DB=app_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres123456
+DATABASE_URL=postgresql+psycopg://postgres:postgres123456@10.88.20.14:5432/app_db
+```
+
+`.env` 放在 `clover-platform` 根目录，不应提交到 Git。Python 代码只从根目录 `.env` 或环境变量读取连接信息，不硬编码数据库连接串。
+
 ### 安装依赖
 
 ```bash
-npm install
-cd ../..
+cd clover-platform
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 python -m pip install -r legacy/portal-launchpad/requirements.txt
+
+cd legacy/portal-launchpad
+npm install
 ```
 
 ### 数据库初始化
@@ -114,6 +145,7 @@ python -m pip install -r legacy/portal-launchpad/requirements.txt
 ```bash
 python scripts/check_db.py
 python scripts/init_db.py
+alembic upgrade head
 python scripts/check_db.py
 ```
 
@@ -144,7 +176,8 @@ PORTAL_ADMIN_DISPLAY_NAME=系统管理员
 ### 开发启动
 
 ```bash
-npm run dev
+cd clover-platform/legacy/portal-launchpad
+PORTAL_PYTHON_BIN=../../.venv/bin/python npm run dev
 ```
 
 默认启动：
@@ -156,10 +189,20 @@ npm run dev
 ### 单独启动后端
 
 ```bash
+cd clover-platform
+source .venv/bin/activate
 cd legacy/portal-launchpad
-source ../../.venv/bin/activate
 uvicorn backend.main:app --host 0.0.0.0 --port 5210 --reload
 ```
+
+单独启动前端：
+
+```bash
+cd clover-platform/legacy/portal-launchpad
+npm run dev:frontend
+```
+
+如果管理员已经初始化过，后续修改根目录 `.env` 中 `PORTAL_ADMIN_PASSWORD` 不会自动重置已有管理员密码。
 
 ### 生产验证
 

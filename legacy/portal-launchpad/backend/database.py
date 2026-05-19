@@ -24,7 +24,7 @@ load_dotenv(MONOREPO_ROOT / ".env")
 from packages.py_common.db.session import get_engine  # noqa: E402
 
 from .config import APP_IDS, APP_USAGE_TTL_SECONDS, SESSION_TTL_SECONDS
-from .security import hash_password, normalize_account, now_iso, sanitize_user
+from .security import hash_password, normalize_account, sanitize_user
 
 logger = logging.getLogger("portal.database")
 

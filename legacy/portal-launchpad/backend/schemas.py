@@ -22,7 +22,7 @@ class UserCreateInput(BaseModel):
     account: str = Field(min_length=1)
     password: str = Field(min_length=1)
     role: UserRole = "operator"
-    appPermissions: list[str] = Field(default_factory=list)
+    appPermissions: list[str] | None = None
 
 
 class UserUpdateInput(BaseModel):

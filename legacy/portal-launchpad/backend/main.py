@@ -4,8 +4,7 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
-from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -207,10 +206,6 @@ async def cleanup_expired_usage_loop() -> None:
         except Exception:
             # Cleanup is a best-effort background task. API requests will still purge expired rows.
             continue
-
-
-def api_error(status_code: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
 
 
 @app.exception_handler(HTTPException)

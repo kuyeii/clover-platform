@@ -81,9 +81,11 @@ clover-platform/
 1. 安装根级 Python 依赖：
 
 ```bash
+cd clover-platform
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
+python -m pip install -r legacy/portal-launchpad/requirements.txt
 ```
 
 2. 准备本地环境变量：
@@ -92,7 +94,18 @@ python -m pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-编辑 `.env` 中的 `DATABASE_URL`，或使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD` 组合配置。`.env` 不应提交到 Git。
+`.env` 放在 `clover-platform` 根目录，不应提交到 Git。当前开发环境 PostgreSQL 示例配置：
+
+```bash
+POSTGRES_HOST=10.88.20.14
+POSTGRES_PORT=5432
+POSTGRES_DB=app_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres123456
+DATABASE_URL=postgresql+psycopg://postgres:postgres123456@10.88.20.14:5432/app_db
+```
+
+Python 代码只从根目录 `.env` 或环境变量读取连接信息，不硬编码数据库连接串。
 
 3. 检查数据库连接：
 
@@ -140,7 +153,7 @@ python scripts/check_db.py
 
 Portal 后端位于 `legacy/portal-launchpad`。本阶段只把 Portal 数据库访问层切换到 PostgreSQL，前端页面、iframe 集成、认证 token 形态和其他四个 legacy 项目不变。
 
-启动前先确认根目录 `.env` 配置了 `DATABASE_URL`，并可选配置默认管理员：
+启动前先确认根目录 `.env` 配置了 PostgreSQL 连接信息，并可选配置默认管理员：
 
 ```bash
 PORTAL_ADMIN_USERNAME=admin
@@ -150,12 +163,50 @@ PORTAL_ADMIN_DISPLAY_NAME=系统管理员
 
 开发默认密码只用于本地初始化，上线前必须修改。第一次启动 Portal 后端时，如果 `core.users` 中没有管理员，会按上述环境变量创建默认管理员；不迁移旧 SQLite 数据。
 
-启动方式保持原项目习惯：
+推荐启动步骤：
+
+1. 初始化数据库：
+
+```bash
+cd clover-platform
+source .venv/bin/activate
+python scripts/check_db.py
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+```
+
+2. 前后端一起启动：
 
 ```bash
 cd legacy/portal-launchpad
+npm install
+PORTAL_PYTHON_BIN=../../.venv/bin/python npm run dev
+```
+
+3. 或前后端分开启动：
+
+```bash
+cd clover-platform
+source .venv/bin/activate
+cd legacy/portal-launchpad
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 5210
 ```
+
+另一个终端启动前端：
+
+```bash
+cd clover-platform/legacy/portal-launchpad
+npm run dev:frontend
+```
+
+访问地址：
+
+- 前端：`http://localhost:5200`
+- 后端：`http://localhost:5210`
+- 接口文档：`http://localhost:5210/docs`
+
+默认开发管理员：`admin / admin123456`。如果管理员已经初始化过，后续修改 `.env` 中 `PORTAL_ADMIN_PASSWORD` 不会自动重置已有管理员密码。
 
 Portal 当前使用 PostgreSQL 表：
 
