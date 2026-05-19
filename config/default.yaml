@@ -3,8 +3,17 @@ app:
   env: dev
 
 database:
-  enabled: false
-  note: PostgreSQL will be added in the next phase.
+  enabled: true
+  driver: postgresql
+  version: 18
+  url_env: DATABASE_URL
+  schemas:
+    - core
+    - portal
+    - contract_review
+    - bid_generator
+    - rag
+    - competitor_analysis
 
 storage:
   backend: local
@@ -15,4 +24,4 @@ runtime:
 
 security:
   auth_mode: legacy
-  note: Authentication will remain unchanged in this phase.
+  note: Authentication remains unchanged in this phase.

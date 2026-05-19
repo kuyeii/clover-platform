@@ -1,5 +1,5 @@
 # packages/py_common
 
-未来放 Python 公共配置、数据库、鉴权、Dify client、文件存储、日志等。
+Python 公共基础设施包，当前包含统一配置读取、PostgreSQL 连接、健康检查和 schema 初始化。
 
-当前阶段不要强行抽公共代码。
+当前阶段不要迁移 legacy 业务逻辑到这里。后续模块迁移时，再按边界逐步沉淀公共能力。

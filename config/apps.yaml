@@ -61,7 +61,7 @@ apps:
     legacy_path: legacy/chat_with_rag_and_websearch
     module_path: modules/rag_qa
     route_path: /apps/rag-web-search
-    target_api_prefix: /api/v1/rag-qa
+    target_api_prefix: /api/v1/rag-web-search
     iframe_enabled: true
     iframe_url_env: RAG_QA_URL
     permission_default: true

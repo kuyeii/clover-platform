@@ -5,8 +5,7 @@ app:
   env: dev
 
 database:
-  enabled: false
-  url_env: DATABASE_URL
+  url: postgresql+psycopg://postgres:postgres123456@10.88.20.14:5432/app_db
 
 legacy:
   portal_url_env: PORTAL_URL
