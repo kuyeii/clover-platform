@@ -87,7 +87,12 @@ def _reserve_port(
     )
 
 
-def check_port_plan(apps_config: dict[str, Any], host: str = "127.0.0.1") -> dict[str, Any]:
+def check_port_plan(
+    apps_config: dict[str, Any],
+    host: str = "127.0.0.1",
+    include_codes: set[str] | None = None,
+    include_module_keys: set[str] | None = None,
+) -> dict[str, Any]:
     apps = apps_config.get("apps") or {}
     if not isinstance(apps, dict):
         raise ValueError("config/apps.yaml must contain an apps mapping")
@@ -100,6 +105,12 @@ def check_port_plan(apps_config: dict[str, Any], host: str = "127.0.0.1") -> dic
             raise ValueError(f"Invalid app config for {app_key}")
 
         code = str(app.get("code") or app_key)
+        module_key = str(app.get("module_key") or app_key)
+        if include_codes is not None and code not in include_codes:
+            continue
+        if include_module_keys is not None and module_key not in include_module_keys:
+            continue
+
         name = str(app.get("name") or code)
         dev = app.get("dev") or {}
         if not isinstance(dev, dict):

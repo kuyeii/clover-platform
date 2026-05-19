@@ -224,6 +224,8 @@ Portal 当前使用 PostgreSQL 表：
 
 动态端口只用于开发环境。生产或准生产部署不建议使用动态端口，应按 Docker 部署规范使用固定容器端口和网络。
 
+`scripts/dev.py` 是本地开发启动器，不是 Docker 生产部署入口；生产阶段不建议用它管理多个长期进程，Docker / Docker Compose 会在后续部署阶段单独设计。
+
 端口规划和 legacy 模块启动配置集中在 `config/apps.yaml`。端口检测逻辑在 `packages/py_common/ports.py`，进程管理在 `packages/py_common/process_manager.py`，runtime 文件读写在 `packages/py_common/runtime.py`。
 
 开发检查端口：

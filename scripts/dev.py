@@ -42,14 +42,53 @@ def _format_env(env_config: dict[str, Any], app: dict[str, Any], plan: dict[str,
     return {key: _format_value(str(value), app, plan) for key, value in env_config.items()}
 
 
-def _resolve_app_tokens(apps_config: dict[str, Any], values: list[str]) -> set[str]:
+def _app_token_maps(apps_config: dict[str, Any]) -> tuple[dict[str, str], list[str], list[str]]:
     apps = apps_config.get("apps") or {}
+    preferred_order = [
+        "portal",
+        "bid-generator",
+        "contract-review",
+        "competitor-analysis",
+        "rag-web-search",
+    ]
+    ordered_apps = sorted(
+        apps.items(),
+        key=lambda item: preferred_order.index(str(item[1].get("code")))
+        if str(item[1].get("code")) in preferred_order
+        else len(preferred_order),
+    )
+    token_to_code: dict[str, str] = {}
+    app_codes: list[str] = []
+    module_keys: list[str] = []
+    for key, app in ordered_apps:
+        code = str(app.get("code"))
+        module_key = str(app.get("module_key") or key)
+        app_codes.append(code)
+        module_keys.append(module_key)
+        token_to_code[str(key)] = code
+        token_to_code[code] = code
+        token_to_code[module_key] = code
+    return token_to_code, app_codes, module_keys
+
+
+def _unknown_token_message(token: str, app_codes: list[str], module_keys: list[str]) -> str:
+    app_codes_text = "\n".join(f"  {code}" for code in app_codes)
+    module_keys_text = "\n".join(f"  {module_key}" for module_key in module_keys)
+    return (
+        f"Unknown app token: {token}\n\n"
+        f"Available app codes:\n{app_codes_text}\n\n"
+        f"Available module keys:\n{module_keys_text}"
+    )
+
+
+def _resolve_app_tokens(apps_config: dict[str, Any], values: list[str]) -> set[str]:
+    token_to_code, app_codes, module_keys = _app_token_maps(apps_config)
     resolved: set[str] = set()
     for value in values:
         normalized = value.strip()
-        for key, app in apps.items():
-            if normalized in {key, str(app.get("code")), str(app.get("module_key"))}:
-                resolved.add(str(app.get("code")))
+        if normalized not in token_to_code:
+            raise ValueError(_unknown_token_message(normalized, app_codes, module_keys))
+        resolved.add(token_to_code[normalized])
     return resolved
 
 
@@ -85,9 +124,9 @@ def build_process_specs(
     for _, app in apps.items():
         code = str(app.get("code"))
         dev = app.get("dev") or {}
-        plan = plan_by_code[code]
         if not should_start_app(app, no_business=no_business, only=only, skip=skip):
             continue
+        plan = plan_by_code[code]
 
         env = _format_env(dev.get("env") or {}, app, plan)
         if code == "portal":
@@ -126,9 +165,12 @@ def main() -> int:
 
     try:
         apps_config = load_apps_config(REPO_ROOT)
-        port_plan = check_port_plan(apps_config)
+        only = _resolve_app_tokens(apps_config, args.only)
+        skip = _resolve_app_tokens(apps_config, args.skip)
+        include_codes = {"portal"} if args.no_business and not args.write_ports_only else None
+        port_plan = check_port_plan(apps_config, include_codes=include_codes)
     except (OSError, ValueError, PortAllocationError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print(str(exc), file=sys.stderr)
         return 1
 
     payload = build_ports_payload(apps_config, port_plan, env=os.getenv("APP_ENV", "dev"))
@@ -138,8 +180,6 @@ def main() -> int:
     if args.write_ports_only:
         return 0
 
-    only = _resolve_app_tokens(apps_config, args.only)
-    skip = _resolve_app_tokens(apps_config, args.skip)
     specs = build_process_specs(
         apps_config,
         port_plan,

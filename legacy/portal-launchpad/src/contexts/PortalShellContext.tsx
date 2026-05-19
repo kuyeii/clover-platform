@@ -37,7 +37,7 @@ export function PortalShellProvider({ children }: PortalShellProviderProps) {
     if (isDashboardRoute) {
       setActiveModule(null);
     }
-  }, [canAccessApp, isDashboardRoute, routeAppId]);
+  }, [canAccessApp, getAppById, isDashboardRoute, routeAppId]);
 
   return (
     <PortalShellContext.Provider

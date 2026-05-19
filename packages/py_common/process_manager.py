@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -34,6 +35,7 @@ class ProcessManager:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            preexec_fn=os.setsid if os.name == "posix" else None,
         )
         self._processes.append((spec, process))
         self._pipe_output(spec.name, process.stdout, sys.stdout)
@@ -48,6 +50,7 @@ class ProcessManager:
                         continue
                     self.stop_all()
                     return code
+                time.sleep(0.2)
         except KeyboardInterrupt:
             self.stop_all()
             return 130
@@ -56,17 +59,36 @@ class ProcessManager:
     def stop_all(self) -> None:
         for _, process in self._processes:
             if process.poll() is None:
-                if os.name == "posix":
-                    process.send_signal(signal.SIGTERM)
-                else:
-                    process.terminate()
+                self._terminate_process_tree(process, signal.SIGTERM)
 
         for _, process in self._processes:
             if process.poll() is None:
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    process.kill()
+                    self._kill_process_tree(process)
+
+    @staticmethod
+    def _terminate_process_tree(process: subprocess.Popen[str], sig: signal.Signals) -> None:
+        # Development launcher cleanup only. Docker production lifecycle will be
+        # managed by Docker Compose in a separate deployment phase.
+        try:
+            if os.name == "posix":
+                os.killpg(os.getpgid(process.pid), sig)
+            else:
+                process.terminate()
+        except ProcessLookupError:
+            return
+
+    @staticmethod
+    def _kill_process_tree(process: subprocess.Popen[str]) -> None:
+        try:
+            if os.name == "posix":
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            else:
+                process.kill()
+        except ProcessLookupError:
+            return
 
     @staticmethod
     def _pipe_output(prefix: str, stream: TextIO | None, target: TextIO) -> None:

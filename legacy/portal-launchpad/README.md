@@ -25,6 +25,8 @@ python scripts/dev.py --no-business
 
 启动器会生成 `runtime/ports.json`，并把 Portal 前后端端口写入该文件。动态端口只用于开发环境。
 
+`scripts/dev.py` 不是 Docker 生产部署入口，正式 Docker / Docker Compose 进程生命周期会在后续部署阶段单独处理。
+
 也可以单独启动 Portal：
 
 ```bash
