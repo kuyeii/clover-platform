@@ -89,7 +89,7 @@ apps:
       backend_working_dir: legacy/contract_review
       python_bin_env: CONTRACT_REVIEW_PYTHON_BIN
       prefer_local_python: true
-      frontend_command: npm run dev -- --host 0.0.0.0 --port {frontend_port}
+      frontend_command: npx vite --host 0.0.0.0 --port {frontend_port}
       backend_command: "{python} -m uvicorn web_api:app --host 0.0.0.0 --port {backend_port}"
       frontend_preferred_port: 18120
       frontend_port_range: [18120, 18124]

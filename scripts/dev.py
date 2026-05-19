@@ -108,6 +108,31 @@ def _resolve_app_tokens(apps_config: dict[str, Any], values: list[str]) -> set[s
     return resolved
 
 
+def _auto_start_codes(apps_config: dict[str, Any]) -> set[str]:
+    apps = apps_config.get("apps") or {}
+    return {
+        str(app.get("code"))
+        for app in apps.values()
+        if isinstance(app, dict) and bool((app.get("dev") or {}).get("enabled", False))
+    }
+
+
+def _port_plan_include_codes(
+    apps_config: dict[str, Any],
+    *,
+    no_business: bool,
+    write_ports_only: bool,
+    only: set[str],
+) -> set[str] | None:
+    if no_business:
+        return {"portal"}
+    if only:
+        return set(only)
+    if write_ports_only:
+        return None
+    return _auto_start_codes(apps_config)
+
+
 def should_start_app(
     app: dict[str, Any],
     *,
@@ -192,8 +217,17 @@ def main() -> int:
         apps_config = load_apps_config(REPO_ROOT)
         only = _resolve_app_tokens(apps_config, args.only)
         skip = _resolve_app_tokens(apps_config, args.skip)
-        include_codes = {"portal"} if args.no_business and not args.write_ports_only else None
-        port_plan = check_port_plan(apps_config, include_codes=include_codes)
+        include_codes = _port_plan_include_codes(
+            apps_config,
+            no_business=args.no_business,
+            write_ports_only=args.write_ports_only,
+            only=only,
+        )
+        port_plan = check_port_plan(
+            apps_config,
+            include_codes=include_codes,
+            exclude_codes=skip,
+        )
     except (OSError, ValueError, PortAllocationError) as exc:
         print(str(exc), file=sys.stderr)
         return 1

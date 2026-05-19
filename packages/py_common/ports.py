@@ -123,6 +123,8 @@ def check_port_plan(
     host: str = "127.0.0.1",
     include_codes: set[str] | None = None,
     include_module_keys: set[str] | None = None,
+    exclude_codes: set[str] | None = None,
+    exclude_module_keys: set[str] | None = None,
 ) -> dict[str, Any]:
     apps = apps_config.get("apps") or {}
     if not isinstance(apps, dict):
@@ -137,6 +139,10 @@ def check_port_plan(
 
         code = str(app.get("code") or app_key)
         module_key = str(app.get("module_key") or app_key)
+        if exclude_codes is not None and code in exclude_codes:
+            continue
+        if exclude_module_keys is not None and module_key in exclude_module_keys:
+            continue
         if include_codes is not None and code not in include_codes:
             continue
         if include_module_keys is not None and module_key not in include_module_keys:

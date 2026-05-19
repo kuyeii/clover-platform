@@ -241,6 +241,8 @@ python scripts/check_ports.py
 python scripts/dev.py --write-ports-only
 ```
 
+`--write-ports-only` 默认生成全部模块的端口规划；如果同时传入 `--only` 或 `--skip`，会按筛选后的模块范围生成，Portal runtime 接口会对缺失的模块继续使用静态配置兜底。
+
 只启动 Portal 前后端：
 
 ```bash
