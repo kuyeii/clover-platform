@@ -49,20 +49,24 @@ apps:
     workflow_refs:
       - bid_generator
     dev:
-      enabled: false
-      kind: manual
-      note: "manual startup required in phase 4.1; frontend-web + pipt-flask chain needs separate validation"
+      enabled: true
+      kind: frontend_backend
       working_dir: legacy/bid-generator
       frontend_working_dir: legacy/bid-generator/frontend-web
       backend_working_dir: legacy/bid-generator/pipt-flask
-      frontend_command: npm run dev -- --host 0.0.0.0 --port {port}
-      backend_command: "{python} -m uvicorn app:app --host 0.0.0.0 --port {backend_port} --reload"
-      preferred_port: 18110
-      port_range: [18110, 18119]
-      backend_preferred_port: 18111
-      backend_port_range: [18111, 18119]
+      frontend_command: npx vite --host 0.0.0.0 --port {frontend_port}
+      backend_command: "{python} -m uvicorn main_lite:app --host 0.0.0.0 --port {backend_port}"
+      frontend_preferred_port: 18110
+      frontend_port_range: [18110, 18114]
+      backend_preferred_port: 18115
+      backend_port_range: [18115, 18119]
+      health_check: /health
       env:
-        VITE_API_BASE_URL: "http://localhost:{backend_port}/api"
+        VITE_API_BASE_URL: "http://127.0.0.1:{backend_port}"
+        VITE_API_URL: "http://127.0.0.1:{backend_port}/api"
+        HOST: "0.0.0.0"
+        PORT: "{backend_port}"
+        PIPT_CORS_ORIGINS: "http://localhost:{frontend_port},http://127.0.0.1:{frontend_port}"
 
   contract_review:
     name: 合同审查

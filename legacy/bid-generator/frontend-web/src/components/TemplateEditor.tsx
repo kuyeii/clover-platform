@@ -21,6 +21,7 @@ import {
     buildContentTaskStorageKey,
     getContentTaskStorageCandidates,
 } from '../services/projectService';
+import { getApiBaseUrl } from '../services/apiBase';
 import clsx from 'clsx';
 import { ContentEditor } from './ContentEditor';
 import { TaskLoadingState } from './TaskLoadingState';
@@ -960,7 +961,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             resumeTargets.forEach(({ blockId, taskId }) => {
                                 // 竞态约束：先快速查一次后端状态，若已 done 则直接应用，不等 resumeContentTask 轮询
                                 // 场景：刷新前任务刚完成但结果还没写入 localStorage，后端已有数据
-                                const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+                                const apiBase = getApiBaseUrl();
                                 fetch(`${apiBase}/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`)
                                     .then(r => r.ok ? r.json() : null)
                                     .then(taskStatus => {

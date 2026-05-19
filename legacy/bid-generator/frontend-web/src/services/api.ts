@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { getApiBaseUrl } from './apiBase';
 
 // pipt-flask 服务的地址
-export const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+export const baseURL = getApiBaseUrl();
 
 const api = axios.create({
     baseURL,

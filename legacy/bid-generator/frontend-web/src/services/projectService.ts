@@ -4,6 +4,7 @@
  */
 
 import api from './api';
+import { getApiBaseUrl, getBackendBaseUrl } from './apiBase';
 import { extractCoreWritingIntent } from './writingHintService';
 
 const DIAGRAM_GENERATION_ENABLED = false;
@@ -1294,7 +1295,7 @@ export function syncBidModulesForProject(
 // ────────────────────── 常量 ──────────────────────
 
 const STORAGE_KEY = 'proengine_projects';
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE = getApiBaseUrl();
 let writeQueue: Promise<void> = Promise.resolve();
 const projectChangeListeners = new Set<() => void>();
 const RUNTIME_DONE_STATES = new Set(['succeeded', 'cancelled', 'failed', 'timed_out']);
@@ -2208,7 +2209,7 @@ export const projectService = {
                     : undefined,
                 // PDF 预览 URL — 后端返回相对路径，需拼上后端 origin 才能在 iframe 加载
                 pdfUrl: response.pdf_url
-                    ? `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '')}${response.pdf_url}`
+                    ? `${getBackendBaseUrl()}${response.pdf_url}`
                     : undefined,
                 bidType: response.bid_type,
                 summary: response.project_summary,
@@ -2242,7 +2243,7 @@ export const projectService = {
             onError?: (data: { message: string }) => void;
         }
     ): Promise<Project | null> {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('project_name', file.name.replace(/\.\w+$/, ''));
@@ -2366,7 +2367,7 @@ export const projectService = {
                 analysisV2: resultData.analysis_v2?.schema_version
                     ? resultData.analysis_v2 : undefined,
                 pdfUrl: resultData.pdf_url
-                    ? `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '')}${resultData.pdf_url}`
+                    ? `${getBackendBaseUrl()}${resultData.pdf_url}`
                     : undefined,
                 bidType: resultData.bid_type,
                 summary: resultData.project_summary,
@@ -2467,7 +2468,7 @@ export const projectService = {
 
     /** 导出解析报告 PDF（后端生成） */
     async exportReportPdf(projectName: string, nodes: any[]): Promise<void> {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const resp = await fetch(`${apiBase}/projects/export-report`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2505,7 +2506,7 @@ export const projectService = {
         selectedNodeIds?: string[],
         signal?: AbortSignal,
     ): Promise<void> {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const storageKey = `proengine_analyze_task_${projectId}`;
         const currentRuntime = this.getById(projectId)?.taskRuntime;
 
@@ -2604,7 +2605,7 @@ export const projectService = {
         },
         signal?: AbortSignal,
     ): Promise<void> {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
 
         const response = await fetch(`${apiBase}/tasks/${taskId}/progress?project_id=${encodeURIComponent(projectId)}`, { signal });
         if (!response.ok) {
@@ -2726,7 +2727,7 @@ export const projectService = {
         onChunk?: (partial: string) => void,
         onBidAttachments?: (items: BidAttachmentItem[]) => void,
     ): Promise<{ content: string } | null> {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
 
         const res = await fetch(`${apiBase}/projects/${projectId}/analyze-node`, {
             method: 'POST',
@@ -2773,7 +2774,7 @@ export const projectService = {
 
     /** 持久化解析报告到后端 */
     async saveAnalysisReport(projectId: string, nodes: AnalysisNode[]): Promise<void> {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         try {
             await fetch(`${apiBase}/projects/${projectId}/analysis-report`, {
                 method: 'POST',
@@ -2787,7 +2788,7 @@ export const projectService = {
 
     /** 从后端读取解析报告 */
     async loadAnalysisReport(projectId: string): Promise<AnalysisNode[]> {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         try {
             const res = await fetch(`${apiBase}/projects/${projectId}/analysis-report`);
             if (!res.ok) return [];
@@ -3082,7 +3083,7 @@ export const projectService = {
             generationStrategy,
         );
 
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
 
         const requestBody = {
             project_id: params.projectId,
@@ -3536,7 +3537,7 @@ export const projectService = {
 
         const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const taskStorageKey = buildContentTaskStorageKey(params.projectId, params.sectionId);
         const requestBody = {
             project_id: params.projectId,
@@ -3802,7 +3803,7 @@ export const projectService = {
             };
         });
 
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const enableDiagrams = DIAGRAM_GENERATION_ENABLED;
         const maxDiagrams = 0;
         const requestBody = {
@@ -4052,7 +4053,7 @@ export const projectService = {
         const projectSummary = proj?.blueprint
             ? `【项目核心定位】\n${proj.blueprint.positioning}\n\n【整体投标策略】\n${proj.blueprint.strategy}\n\n【差异化亮点】\n${proj.blueprint.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${proj.blueprint.writing_style}`
             : (proj?.summary || '');
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const groupAnalysisContext = (() => {
             if (!proj?.analysisReport?.length) return '';
             const ids = sections.map(item => item.section_id);
@@ -4155,7 +4156,7 @@ export const projectService = {
         onExpired?: () => void;
     }): AbortController {
         const controller = new AbortController();
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const taskStorageKey = buildContentTaskStorageKey(projectId, sectionId);
 
         (async () => {
@@ -4575,7 +4576,7 @@ export const bidAttachmentService = {
     },
 
     getSourceDocx: async (projectId: string): Promise<Blob> => {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const resp = await fetch(`${apiBase}/projects/${encodeURIComponent(projectId)}/source-docx`);
         if (!resp.ok) {
             const msg = await resp.text().catch(() => '');
@@ -4621,7 +4622,7 @@ export const bidAttachmentService = {
         projectId: string,
         params: { attachmentName: string; startBlockId: string; endBlockId: string },
     ): Promise<Blob> => {
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiBase = getApiBaseUrl();
         const resp = await fetch(`${apiBase}/bid-attachment/extract-by-block-docx`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

@@ -19,7 +19,7 @@ export const appsConfig: ToolkitApp[] = [
     ctaLabel: "进入应用",
     backgroundImage: "/app-backgrounds/bid-generator.png",
     url: buildRuntimeUrl(18110),
-    healthUrl: buildRuntimeUrl(18111, "/health"),
+    healthUrl: buildRuntimeUrl(18115, "/health"),
     status: "running",
     healthStatus: "unknown",
     theme: "blue",

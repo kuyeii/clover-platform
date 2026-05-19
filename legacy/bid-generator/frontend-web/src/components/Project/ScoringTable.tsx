@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../../services/api';
+import { getApiBaseUrl } from '../../services/apiBase';
 import type { Project, ScoringRow } from '../../services/projectService';
 import { projectService } from '../../services/projectService';
 
@@ -113,7 +114,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
     const handleExport = async () => {
         setExporting(true);
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/projects/export-scoring-table`, {
+            const res = await fetch(`${getApiBaseUrl()}/projects/export-scoring-table`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

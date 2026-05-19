@@ -105,6 +105,12 @@ python main_lite.py
 # API Doc: http://localhost:5000/apidoc
 ```
 
+`main_lite.py` 支持通过 `HOST` / `PORT` 覆盖监听地址；统一启动器会直接使用 uvicorn 的 `--host` / `--port` 参数启动：
+
+```bash
+HOST=0.0.0.0 PORT=18115 python main_lite.py
+```
+
 ## 脱敏 profile 配置
 
 脱敏方案在 `config.yaml` 的 `pipt.profiles` 中定义：

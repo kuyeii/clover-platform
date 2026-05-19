@@ -249,10 +249,12 @@ python scripts/dev.py --write-ports-only
 python scripts/dev.py --no-business
 ```
 
-默认命令会启动配置中 `dev.enabled: true` 的模块。第 4.1-C 已支持自动启动：
+默认命令会启动配置中 `dev.enabled: true` 的模块。第 4.1-D 已支持自动启动：
 
 - Portal 前端
 - Portal 后端
+- 标书生成前端
+- 标书生成后端
 - 合同审查前端
 - 合同审查后端
 - RAG 问答前端
@@ -260,11 +262,11 @@ python scripts/dev.py --no-business
 - 竞对分析前端
 - 竞对分析后端
 
-当前仍需手动启动：
-
-- 标书生成
+第 4.1 阶段的业务模块开发自动启动接入已完成。标书生成的 `gateway-out` 是被 `pipt-flask` 导入调用的 Python 库/CLI，不是常驻 HTTP 服务，本阶段不单独自动启动。
 
 合同审查在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端端口优先使用 `18120`，可在 `18120-18124` 内自动切换；后端端口优先使用 `18125`，可在 `18125-18129` 内自动切换。`runtime/ports.json` 中的 `contract-review.iframe_url` 指向合同审查前端，`contract-review.backend_url` 指向合同审查后端，统一启动器会把后端地址注入合同审查前端的 `VITE_API_BASE_URL`。
+
+标书生成在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端端口优先使用 `18110`，可在 `18110-18114` 内自动切换；后端端口优先使用 `18115`，可在 `18115-18119` 内自动切换。`runtime/ports.json` 中的 `bid-generator.iframe_url` 指向标书生成前端，`bid-generator.backend_url` 指向标书生成后端，统一启动器会把后端地址注入标书生成前端的 `VITE_API_BASE_URL`。
 
 RAG 问答在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端端口优先使用 `18140`，可在 `18140-18144` 内自动切换；后端端口优先使用 `18145`，可在 `18145-18149` 内自动切换。`runtime/ports.json` 中的 `rag-web-search.iframe_url` 指向 RAG 前端，`rag-web-search.backend_url` 指向 RAG 后端，统一启动器会把后端地址注入 RAG 前端的 `VITE_API_BASE_URL`。
 
@@ -289,11 +291,13 @@ python scripts/dev.py --only rag-web-search
 python scripts/dev.py --only rag_qa
 python scripts/dev.py --only competitor-analysis
 python scripts/dev.py --only competitor_analysis
+python scripts/dev.py --only bid-generator
+python scripts/dev.py --only bid_generator
 python scripts/dev.py --only portal
 python scripts/dev.py --skip bid-generator
 ```
 
-`python scripts/dev.py --no-business` 只启动 Portal 前后端。`python scripts/dev.py --only contract-review` 只启动合同审查前后端。`python scripts/dev.py --only rag-web-search` 和 `python scripts/dev.py --only rag_qa` 只启动 RAG 前后端。`python scripts/dev.py --only competitor-analysis` 和 `python scripts/dev.py --only competitor_analysis` 只启动竞对分析前后端。动态端口只用于开发环境；Docker 正式部署会在后续部署阶段单独处理。
+`python scripts/dev.py --no-business` 只启动 Portal 前后端。`python scripts/dev.py --only contract-review` 只启动合同审查前后端。`python scripts/dev.py --only rag-web-search` 和 `python scripts/dev.py --only rag_qa` 只启动 RAG 前后端。`python scripts/dev.py --only competitor-analysis` 和 `python scripts/dev.py --only competitor_analysis` 只启动竞对分析前后端。`python scripts/dev.py --only bid-generator` 和 `python scripts/dev.py --only bid_generator` 只启动标书生成前后端。动态端口只用于开发环境；Docker 正式部署会在后续部署阶段单独处理。
 
 ## 下一阶段计划
 

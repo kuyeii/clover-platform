@@ -50,7 +50,10 @@ src/services/
 
 | 变量 | 说明 | 默认 |
 |------|------|------|
-| `VITE_API_URL` | pipt-flask 后端地址 | `http://localhost:5000/api` |
+| `VITE_API_URL` | pipt-flask API 地址 | `http://localhost:5000/api` |
+| `VITE_API_BASE_URL` | pipt-flask 后端根地址；设置后自动拼接 `/api` | - |
+
+在 `clover-platform` 统一启动器中会注入 `VITE_API_BASE_URL=http://127.0.0.1:<标书生成后端端口>`。单独启动本前端时不设置该变量，仍默认访问 `http://localhost:5000/api`。
 
 ## 快速启动
 
