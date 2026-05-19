@@ -17,6 +17,9 @@ if _env_file.is_file():
 DIST_DIR = PROJECT_ROOT / "dist"
 BACKEND_DIR = PROJECT_ROOT / "backend"
 DATA_DIR = Path(os.getenv("PORTAL_DATA_DIR", str(BACKEND_DIR / "data")))
+# Deprecated after phase 3: Portal now uses PostgreSQL via DATABASE_URL.
+# Keep these constants only for backward-compatible imports; runtime code must not
+# create or read SQLite files.
 DB_FILE = Path(os.getenv("PORTAL_DB_FILE", str(DATA_DIR / "portal.db")))
 LEGACY_JSON_FILE = Path(
     os.getenv(
@@ -83,6 +86,8 @@ FEEDBACK_ALLOWED_EXTENSIONS = {
     ".mp4",
 }
 
+# Deprecated after phase 3: default users are no longer bulk-seeded from code.
+# Portal creates only the configurable default admin when PostgreSQL has no admin.
 DEFAULT_USERS = [
     {
         "id": "user-admin",

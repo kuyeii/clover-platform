@@ -16,7 +16,6 @@ from .config import (
     API_PORT,
     APP_IDS,
     CORS_ORIGINS,
-    DB_FILE,
     DIST_DIR,
     FEATURE_REQUEST_EMAIL_TO,
     ROLE_VALUES,
@@ -30,6 +29,8 @@ from .database import (
     build_usage_summary,
     can_access_app,
     connect,
+    count_usage_sessions,
+    count_usage_sessions_for_user_client,
     create_auth_session,
     create_user,
     delete_auth_session,
@@ -134,14 +135,7 @@ class AppUsageWebSocketManager:
                 self._pending_usage_cleanups.pop(key, None)
 
             with connect() as conn:
-                usage_count = conn.execute(
-                    """
-                    SELECT COUNT(*) AS count
-                    FROM app_usage_sessions
-                    WHERE user_id = ? AND client_id = ?
-                    """,
-                    (user["id"], client_id),
-                ).fetchone()["count"]
+                usage_count = count_usage_sessions_for_user_client(conn, user, client_id)
                 if usage_count:
                     leave_all_for_user_client(conn, user, client_id)
                     audit(conn, user, "app.websocket_disconnect_cleanup", {"clientId": client_id})
@@ -203,13 +197,9 @@ async def cleanup_expired_usage_loop() -> None:
         await asyncio.sleep(30)
         try:
             with connect() as conn:
-                before_count = conn.execute(
-                    "SELECT COUNT(*) AS count FROM app_usage_sessions"
-                ).fetchone()["count"]
+                before_count = count_usage_sessions(conn)
                 build_usage_summary(conn, "system")
-                after_count = conn.execute(
-                    "SELECT COUNT(*) AS count FROM app_usage_sessions"
-                ).fetchone()["count"]
+                after_count = count_usage_sessions(conn)
             if after_count != before_count:
                 await app_usage_ws_manager.broadcast_usage()
         except asyncio.CancelledError:
@@ -249,6 +239,7 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
 @app.on_event("startup")
 async def on_startup() -> None:
     init_database()
+    logging.getLogger("portal.bootstrap").info("Portal backend is using PostgreSQL; SQLite is disabled.")
     app.state.usage_cleanup_task = asyncio.create_task(cleanup_expired_usage_loop())
     bootstrap_log = logging.getLogger("portal.bootstrap")
     if not SMTP_HOST or not SMTP_FROM:
@@ -285,7 +276,7 @@ def get_user_by_raw_token(token: str) -> dict[str, Any] | None:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "database": str(DB_FILE), "apiPort": API_PORT}
+    return {"ok": True, "database": "postgresql", "apiPort": API_PORT}
 
 
 @app.post("/api/auth/login")

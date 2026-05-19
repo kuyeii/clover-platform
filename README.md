@@ -135,4 +135,37 @@ python scripts/check_db.py
 
 ## 下一阶段计划
 
-下一阶段再推进 Portal 数据库切换与统一运行时集成。业务迁移应按模块逐步推进，并保留 iframe fallback。
+下一阶段再推进统一启动器与动态端口。业务迁移应按模块逐步推进，并保留 iframe fallback。
+
+## 第 3 阶段：Portal PostgreSQL
+
+Portal 后端位于 `legacy/portal-launchpad`。本阶段只把 Portal 数据库访问层切换到 PostgreSQL，前端页面、iframe 集成、认证 token 形态和其他四个 legacy 项目不变。
+
+启动前先确认根目录 `.env` 配置了 `DATABASE_URL`，并可选配置默认管理员：
+
+```bash
+PORTAL_ADMIN_USERNAME=admin
+PORTAL_ADMIN_PASSWORD=admin123456
+PORTAL_ADMIN_DISPLAY_NAME=系统管理员
+```
+
+开发默认密码只用于本地初始化，上线前必须修改。第一次启动 Portal 后端时，如果 `core.users` 中没有管理员，会按上述环境变量创建默认管理员；不会迁移旧 SQLite 数据。
+
+启动方式保持原项目习惯：
+
+```bash
+cd legacy/portal-launchpad
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 5210
+```
+
+Portal 当前使用 PostgreSQL 表：
+
+- `core.users`
+- `core.sessions`
+- `core.user_app_permissions`
+- `core.app_usage_sessions`
+- `core.audit_logs`
+- `portal.user_profiles`
+- `portal.feedback_submissions`
+
+应用权限继续使用 Portal 既有短横线 app id：`bid-generator`、`contract-review`、`competitor-analysis`、`rag-web-search`。没有权限记录时默认允许访问；有记录时以 `core.user_app_permissions.can_access` 为准。
