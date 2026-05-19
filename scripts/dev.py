@@ -34,6 +34,12 @@ def _python_bin_for_app(app: dict[str, Any]) -> str:
         return str(os.getenv(env_name))
 
     if bool(dev.get("prefer_local_python", False)):
+        backend_working_dir = str(dev.get("backend_working_dir") or "").strip()
+        if backend_working_dir:
+            backend_python = REPO_ROOT / backend_working_dir / ".venv" / "bin" / "python"
+            if backend_python.is_file():
+                return str(backend_python)
+
         legacy_path = str(app.get("legacy_path") or "")
         if legacy_path:
             local_python = REPO_ROOT / legacy_path / ".venv" / "bin" / "python"

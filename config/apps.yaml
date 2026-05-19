@@ -118,21 +118,23 @@ apps:
     workflow_refs:
       - rag_qa
     dev:
-      enabled: false
-      kind: manual
-      note: "manual startup required in phase 4.1; frontend/backend split must be validated with current env files"
+      enabled: true
+      kind: frontend_backend
       working_dir: legacy/chat_with_rag_and_websearch
       frontend_working_dir: legacy/chat_with_rag_and_websearch/frontend
       backend_working_dir: legacy/chat_with_rag_and_websearch/backend
-      frontend_command: npm run dev -- --host 0.0.0.0 --port {port}
-      backend_command: "{python} run.py"
-      preferred_port: 18140
-      port_range: [18140, 18149]
-      backend_preferred_port: 18141
-      backend_port_range: [18141, 18149]
+      python_bin_env: RAG_QA_PYTHON_BIN
+      prefer_local_python: true
+      frontend_command: npx vite --host 0.0.0.0 --port {frontend_port}
+      backend_command: "{python} -m uvicorn app.main:app --host 0.0.0.0 --port {backend_port}"
+      frontend_preferred_port: 18140
+      frontend_port_range: [18140, 18144]
+      backend_preferred_port: 18145
+      backend_port_range: [18145, 18149]
+      health_check: /api/v1/health
       env:
-        APP_PORT: "{backend_port}"
         VITE_API_BASE_URL: "http://127.0.0.1:{backend_port}"
+        CORS_ORIGINS: "http://localhost:{frontend_port},http://127.0.0.1:{frontend_port}"
 
   competitor_analysis:
     name: 竞对分析

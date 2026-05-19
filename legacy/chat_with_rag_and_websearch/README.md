@@ -109,7 +109,9 @@ npm install
 npm run dev
 ```
 
-浏览器访问 **`http://localhost:5173`**。开发时 API 会通过 Vite 代理到后端（见 `frontend/vite.config.ts`）。若在独立域名或端口部署前端并直连后端，在 `frontend/.env` 中设置 **`VITE_API_BASE_URL`**（如 `http://127.0.0.1:8000`）后需**重启** `npm run dev`。
+浏览器访问 **`http://localhost:5175`**。开发时 API 会通过 Vite 代理到后端（见 `frontend/vite.config.ts`）。若在独立域名或端口部署前端并直连后端，在 `frontend/.env` 中设置 **`VITE_API_BASE_URL`**（如 `http://127.0.0.1:8000`）后需**重启** `npm run dev`。
+
+在 `clover-platform` 根目录使用统一启动器时，RAG 前端和后端会分别使用 `config/apps.yaml` 中的动态端口范围启动；启动器会向前端注入 **`VITE_API_BASE_URL=http://127.0.0.1:<RAG 后端端口>`**，因此 iframe 会打开 RAG 前端端口，前端 API 请求会直连对应的 RAG 后端端口。单独启动本项目时仍可继续使用上面的 `python run.py` 与 `npm run dev` 流程。
 
 生产构建：
 

@@ -70,7 +70,7 @@ export const appsConfig: ToolkitApp[] = [
     ctaLabel: "开始使用",
     backgroundImage: "/app-backgrounds/rag-web-search.png",
     url: buildRuntimeUrl(18140),
-    healthUrl: buildRuntimeUrl(18141, "/health"),
+    healthUrl: buildRuntimeUrl(18145, "/api/v1/health"),
     status: "running",
     healthStatus: "unknown",
     theme: "amber",
