@@ -185,6 +185,61 @@ PORTAL_INDEXES: tuple[str, ...] = (
     "idx_feedback_submissions_lookup",
 )
 
+COMPETITOR_ANALYSIS_TABLES: tuple[str, ...] = (
+    "history_records",
+    "company_profiles",
+    "company_validation_queries",
+)
+
+CREATE_COMPETITOR_ANALYSIS_TABLE_SQLS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS competitor_analysis.history_records (
+      id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL,
+      query_time TEXT NOT NULL,
+      title TEXT NOT NULL,
+      input_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      record_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      sort_order BIGINT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS competitor_analysis.company_profiles (
+      normalized_name TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      intro TEXT NOT NULL DEFAULT '',
+      business TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS competitor_analysis.company_validation_queries (
+      normalized_query TEXT PRIMARY KEY,
+      query TEXT NOT NULL,
+      candidate_items_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      response_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+)
+
+CREATE_COMPETITOR_ANALYSIS_INDEX_SQLS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_competitor_history_records_sort_order ON competitor_analysis.history_records(sort_order DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_competitor_history_records_created_at ON competitor_analysis.history_records(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_competitor_company_profiles_updated_at ON competitor_analysis.company_profiles(updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_competitor_company_validation_queries_updated_at ON competitor_analysis.company_validation_queries(updated_at DESC)",
+)
+
+COMPETITOR_ANALYSIS_INDEXES: tuple[str, ...] = (
+    "idx_competitor_history_records_sort_order",
+    "idx_competitor_history_records_created_at",
+    "idx_competitor_company_profiles_updated_at",
+    "idx_competitor_company_validation_queries_updated_at",
+)
+
 CREATE_MODULE_META_TABLE_SQLS: tuple[tuple[str, str], ...] = tuple(
     (
         schema,

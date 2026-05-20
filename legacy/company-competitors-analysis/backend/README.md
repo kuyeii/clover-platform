@@ -5,7 +5,7 @@
 - 读取 `.env` / `.env.local` 中的工作流地址与 API Key
 - 调用 Dify 工作流并做结果解析、重试与错误归一化
 - 编排一次完整竞争分析任务：输入校验 → 企业详情 → 对比报告 → 评分
-- 将分析结果保存到本地 SQLite 历史记录数据库
+- 将分析结果保存到 PostgreSQL 历史记录表
 - 提供 `GET /api/history/:id`，支持前端通过 `/results/{result_id}` 回看历史结果
 - 在 Docker / 生产环境中托管 `dist/` 静态文件，并对前端路由做 SPA fallback
 
@@ -37,7 +37,16 @@ python3 backend/server.py --host 0.0.0.0 --port 8788
 BACKEND_HOST=0.0.0.0 BACKEND_PORT=8788 python3 backend/server.py
 ```
 
-Python 后端只使用标准库，不需要额外依赖。`backend/requirements.txt` 仅作说明。
+Python 后端需要 PostgreSQL 依赖。单独启动前请在 monorepo 根目录安装依赖并初始化数据库：
+
+```bash
+cd clover-platform
+python -m pip install -r requirements-dev.txt
+python -m pip install -r legacy/company-competitors-analysis/backend/requirements.txt
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+```
 
 ## API
 
@@ -57,15 +66,18 @@ Python 后端只使用标准库，不需要额外依赖。`backend/requirements.
 
 ## 数据存储
 
-当前使用本地 SQLite 存储：
+当前使用 PostgreSQL 存储，schema 为 `competitor_analysis`：
+
+```text
+competitor_analysis.history_records
+competitor_analysis.company_profiles
+competitor_analysis.company_validation_queries
+```
+
+数据库连接来自 `clover-platform/.env` 中的 `DATABASE_URL` 或 `POSTGRES_*`。旧 SQLite / JSON 历史数据不迁移，运行时也不再写入 SQLite；如存在下列文件，可作为历史备份保留：
 
 ```text
 backend/data/history.sqlite3
-```
-
-可以通过 `HISTORY_DB_PATH` 或 `SQLITE_DB_PATH` 覆盖数据库路径。服务首次启动时会自动迁移旧版 JSON 数据：
-
-```text
 backend/data/index.json
 backend/data/history/{result_id}.json
 backend/data/history.json

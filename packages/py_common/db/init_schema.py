@@ -8,6 +8,10 @@ from sqlalchemy.engine import Connection, Engine
 from .ddl import (
     CORE_INDEXES,
     CORE_TABLES,
+    COMPETITOR_ANALYSIS_INDEXES,
+    COMPETITOR_ANALYSIS_TABLES,
+    CREATE_COMPETITOR_ANALYSIS_INDEX_SQLS,
+    CREATE_COMPETITOR_ANALYSIS_TABLE_SQLS,
     CREATE_CORE_INDEX_SQLS,
     CREATE_CORE_TABLE_SQLS,
     CREATE_EXTENSION_SQL,
@@ -29,6 +33,8 @@ class InitResult:
     core_indexes: tuple[str, ...]
     portal_tables: tuple[str, ...]
     portal_indexes: tuple[str, ...]
+    competitor_analysis_tables: tuple[str, ...]
+    competitor_analysis_indexes: tuple[str, ...]
     module_meta_schemas: tuple[str, ...]
 
 
@@ -49,6 +55,10 @@ def init_database_schema(engine: Engine) -> InitResult:
             _execute(conn, statement)
         for statement in CREATE_PORTAL_INDEX_SQLS:
             _execute(conn, statement)
+        for statement in CREATE_COMPETITOR_ANALYSIS_TABLE_SQLS:
+            _execute(conn, statement)
+        for statement in CREATE_COMPETITOR_ANALYSIS_INDEX_SQLS:
+            _execute(conn, statement)
         for _, statement in CREATE_MODULE_META_TABLE_SQLS:
             _execute(conn, statement)
         for _, statement, params in UPSERT_MODULE_META_SQLS:
@@ -60,5 +70,7 @@ def init_database_schema(engine: Engine) -> InitResult:
         core_indexes=CORE_INDEXES,
         portal_tables=PORTAL_TABLES,
         portal_indexes=PORTAL_INDEXES,
+        competitor_analysis_tables=COMPETITOR_ANALYSIS_TABLES,
+        competitor_analysis_indexes=COMPETITOR_ANALYSIS_INDEXES,
         module_meta_schemas=tuple(schema for schema, _ in CREATE_MODULE_META_TABLE_SQLS),
     )

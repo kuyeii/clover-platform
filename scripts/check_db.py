@@ -99,6 +99,28 @@ def main() -> int:
         print("Portal indexes are missing. Run: python scripts/init_db.py && alembic upgrade head")
         return 2
 
+    print("Competitor analysis tables:")
+    for table in result["competitor_analysis_tables"]:
+        print(f"  - competitor_analysis.{table}")
+
+    if result["missing_competitor_analysis_tables"]:
+        print("Missing competitor_analysis tables:")
+        for table in result["missing_competitor_analysis_tables"]:
+            print(f"  - competitor_analysis.{table}")
+        print("Competitor analysis tables are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
+    print("Competitor analysis indexes:")
+    for index in result["competitor_analysis_indexes"]:
+        print(f"  - competitor_analysis.{index}")
+
+    if result["missing_competitor_analysis_indexes"]:
+        print("Missing competitor_analysis indexes:")
+        for index in result["missing_competitor_analysis_indexes"]:
+            print(f"  - competitor_analysis.{index}")
+        print("Competitor analysis indexes are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
     if result["missing_schemas"]:
         print("Database connection OK, but required schemas are missing. Run: python scripts/init_db.py")
         return 2

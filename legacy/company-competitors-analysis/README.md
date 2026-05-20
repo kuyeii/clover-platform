@@ -1,6 +1,6 @@
 # 企业竞争对手分析平台
 
-一个面向企业竞争分析场景的 Web 应用。用户输入我方企业后，系统可自动发现竞争对手，或按用户指定的企业进行精确对比；后端会调用多个 Dify Workflow 完成企业信息校验、企业详情补全、对比报告生成、评分汇总，并把完整分析结果保存到本地 SQLite，便于历史回看与分享。
+一个面向企业竞争分析场景的 Web 应用。用户输入我方企业后，系统可自动发现竞争对手，或按用户指定的企业进行精确对比；后端会调用多个 Dify Workflow 完成企业信息校验、企业详情补全、对比报告生成、评分汇总，并把完整分析结果保存到 PostgreSQL，便于历史回看与分享。
 
 ## 目录
 
@@ -55,7 +55,7 @@
 
 ### 历史记录
 
-- 分析结果会自动保存到 SQLite。
+- 分析结果会自动保存到 PostgreSQL。
 - 侧边栏展示历史记录列表。
 - 支持通过 `/results/{result_id}` 直接回看历史报告。
 - 兼容旧版 `/{result_id}` 分享链接。
@@ -75,25 +75,26 @@
 | 模块 | 技术 |
 | --- | --- |
 | 前端 | React 18、Vite 5 |
-| 后端 | Python 3 标准库，`http.server` + `ThreadingHTTPServer` |
-| 数据库 | SQLite |
+| 后端 | Python 3，`http.server` + `ThreadingHTTPServer` |
+| 数据库 | PostgreSQL 18，schema：`competitor_analysis` |
 | 外部工作流 | Dify Workflow API |
 | 开发脚本 | Node.js `child_process` 同时启动前后端 |
 | 部署 | Docker、Docker Compose |
 
-> 当前 Python 后端只使用标准库，`backend/requirements.txt` 仅用于说明，不需要额外安装 pip 依赖。
+> 第 5-A 阶段后，Python 后端需要根目录 `requirements-dev.txt` 和 `backend/requirements.txt` 中的 PostgreSQL 依赖。
 
 ## 项目结构
 
 ```text
 .
 ├── backend/
-│   ├── data/                         # SQLite 数据与历史记录目录，运行时生成/更新
+│   ├── data/                         # 旧 SQLite/JSON 历史数据目录，运行时不再写入
 │   ├── schemas/
 │   │   └── analysisRecord.schema.json # 历史记录结构说明
 │   ├── README.md                     # 后端说明
-│   ├── requirements.txt              # 当前仅说明使用 Python 标准库
-│   └── server.py                     # Python API、Dify 编排、SQLite 存储、静态文件服务
+│   ├── requirements.txt              # PostgreSQL 运行依赖
+│   ├── repository.py                 # PostgreSQL 数据访问层
+│   └── server.py                     # Python API、Dify 编排、PostgreSQL 存储、静态文件服务
 ├── docs/
 │   └── project-structure.md          # 项目结构补充说明
 ├── public/
@@ -230,11 +231,21 @@ npm run preview
 | `CORS_ORIGIN` | `http://localhost:5174` | 允许跨域访问的前端来源 |
 | `STATIC_DIR` | `dist` | 静态文件目录。Docker 中默认为 `/app/dist` |
 | `HISTORY_MAX_ITEMS` | `200` | 历史记录最大保留条数 |
-| `HISTORY_DB_PATH` | `backend/data/history.sqlite3` | SQLite 数据库路径 |
-| `SQLITE_DB_PATH` | - | SQLite 路径兼容变量 |
 | `COMPANY_MEMORY_CACHE_SIZE` | `5000` | 企业名称校验内存缓存上限 |
+| `DATABASE_URL` | - | PostgreSQL 连接串，优先从 `clover-platform/.env` 读取 |
+| `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | - | 未配置 `DATABASE_URL` 时使用 |
 
-在 `clover-platform` 根目录使用统一启动器时，竞对分析前端和后端会分别使用 `config/apps.yaml` 中的动态端口范围启动；启动器会向前端注入 `VITE_API_BASE_URL=http://127.0.0.1:<竞对分析后端端口>`，因此 iframe 会打开竞对分析前端端口，前端 API 请求会访问对应的竞对分析后端端口。单独启动本项目时仍可继续使用 `npm run dev` 或分开运行前后端。
+在 `clover-platform` 根目录使用统一启动器时，竞对分析前端和后端会分别使用 `config/apps.yaml` 中的动态端口范围启动；启动器会向前端注入 `VITE_API_BASE_URL=http://127.0.0.1:<竞对分析后端端口>`，因此 iframe 会打开竞对分析前端端口，前端 API 请求会访问对应的竞对分析后端端口。单独启动本项目时仍可继续使用 `npm run dev` 或分开运行前后端，但必须先在 monorepo 根目录完成 PostgreSQL 初始化。
+
+初始化命令：
+
+```bash
+cd clover-platform
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+python scripts/preflight.py --only competitor-analysis
+```
 
 ### 通用 Dify 变量
 
@@ -330,7 +341,7 @@ tech        技术能力分析
   ↓
 调用评分工作流
   ↓
-保存 SQLite 历史记录
+保存 PostgreSQL 历史记录
   ↓
 前端结果页展示 / 历史回看 / 导出 Markdown
 ```
@@ -471,31 +482,21 @@ application/x-ndjson; charset=utf-8
 
 ## 数据存储
 
-默认数据库路径：
+第 5-A 阶段后，运行时历史记录写入 `competitor_analysis` schema：
 
-```text
-backend/data/history.sqlite3
-```
-
-SQLite 中主要包含：
+PostgreSQL 中主要包含：
 
 - `history_records`：历史分析记录
-- `storage_meta`：存储迁移标记等元信息
 - `company_profiles`：企业基础信息缓存
 - `company_validation_queries`：企业名称校验查询缓存
 
-后端启动时会自动创建表结构，并启用 WAL。服务首次启动时会尝试迁移旧版 JSON 数据，兼容来源包括：
+表结构由 monorepo 根目录的 `python scripts/init_db.py` 和 `alembic upgrade head` 创建。后端启动时只检查表是否存在，不再自动创建 SQLite，也不迁移旧版 JSON / SQLite 历史数据。旧数据文件可保留在本地，但运行时不会继续写入：
 
 ```text
+backend/data/history.sqlite3
 backend/data/index.json
 backend/data/history/{result_id}.json
 backend/data/history.json
-```
-
-如需自定义数据库路径：
-
-```bash
-HISTORY_DB_PATH=/path/to/history.sqlite3
 ```
 
 ## Docker 部署
@@ -558,8 +559,7 @@ docker compose down
 - 暴露宿主机端口 `8788`。
 - 读取 `.env.local`。
 - 设置 `STATIC_DIR=/app/dist`。
-- 设置 `HISTORY_DB_PATH=/app/backend/data/history.sqlite3`。
-- 将本机 `./backend/data` 挂载到容器 `/app/backend/data`，保证 SQLite 数据持久化。
+- 需要连接外部 PostgreSQL，并确保已完成 `competitor_analysis` schema 初始化。
 
 ## 常见问题
 
@@ -617,9 +617,9 @@ npm run build
 
 检查：
 
-- `backend/data` 是否可写。
-- `HISTORY_DB_PATH` 指向的目录是否存在或可创建。
-- Docker 是否正确挂载了 `./backend/data:/app/backend/data`。
+- 根目录 `.env` 是否配置 `DATABASE_URL` 或 `POSTGRES_*`。
+- 是否已执行 `python scripts/init_db.py` 和 `alembic upgrade head`。
+- `python scripts/check_db.py` 是否能看到 `competitor_analysis.history_records`。
 
 ### 5. 结果页刷新后找不到记录
 
@@ -632,13 +632,12 @@ GET /api/history/{result_id}
 请确认：
 
 - 后端仍在运行。
-- SQLite 数据库没有被删除。
-- Docker 部署时已挂载 `backend/data`。
+- PostgreSQL 中 `competitor_analysis.history_records` 存在。
 - URL 中的 `result_id` 与历史记录 ID 一致。
 
 ## 开发建议
 
-- 不要提交 `.env.local`、`.env.production`、SQLite 数据库、`node_modules`、`dist` 等运行产物。
+- 不要提交 `.env.local`、`.env.production`、SQLite/DB 文件、`node_modules`、`dist` 等运行产物。
 - API Key 应尽量使用无 `VITE_` 前缀的后端变量，例如 `SCORE_API_KEY`，避免被前端构建过程暴露。
 - 修改 Dify 输出结构时，需要同步检查后端解析逻辑：
   - `run_input_validation_workflow`

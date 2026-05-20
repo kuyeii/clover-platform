@@ -339,6 +339,7 @@ python -m pip install -r requirements-dev.txt
 python -m pip install -r legacy/portal-launchpad/requirements.txt
 python -m pip install -r legacy/contract_review/requirements.txt
 python -m pip install -r legacy/chat_with_rag_and_websearch/backend/requirements.txt
+python -m pip install -r legacy/company-competitors-analysis/backend/requirements.txt
 ```
 
 其他 legacy 后端按各自 `requirements.txt`、`requirements-lite.txt` 或 `pyproject.toml` 安装。Dify / workflow / API key 相关配置只检查存在性或给 warning，实际密钥继续放在 `.env`、本地配置或部署平台密钥中，不提交 Git。Docker 正式部署不是第 4.2 阶段内容，生产环境不依赖动态端口或 preflight。
@@ -363,6 +364,34 @@ python scripts/dev.py --skip bid-generator
 
 `python scripts/dev.py --no-business` 只启动 Portal 前后端。`python scripts/dev.py --only contract-review` 只启动合同审查前后端。`python scripts/dev.py --only rag-web-search` 和 `python scripts/dev.py --only rag_qa` 只启动 RAG 前后端。`python scripts/dev.py --only competitor-analysis` 和 `python scripts/dev.py --only competitor_analysis` 只启动竞对分析前后端。`python scripts/dev.py --only bid-generator` 和 `python scripts/dev.py --only bid_generator` 只启动标书生成前后端。动态端口只用于开发环境；Docker 正式部署会在后续部署阶段单独处理。
 
+## 第 5-A 阶段：竞对分析 PostgreSQL 持久化
+
+第 5-A 阶段只迁移竞对分析 `competitor-analysis` 的运行时历史记录和企业校验缓存。竞对分析后端现在使用 PostgreSQL 18，数据写入 `competitor_analysis` schema，不再向旧 SQLite 历史库写入。旧 SQLite 历史数据不迁移、不删除。
+
+新增表：
+
+- `competitor_analysis.history_records`
+- `competitor_analysis.company_profiles`
+- `competitor_analysis.company_validation_queries`
+
+新环境初始化：
+
+```bash
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+python scripts/preflight.py --only competitor-analysis
+```
+
+运行方式不变：
+
+```bash
+python scripts/dev.py --only competitor-analysis
+python scripts/dev.py
+```
+
+Portal iframe 集成不变。合同审查、RAG 问答、标书生成数据库尚未迁移，仍保持 legacy 状态。
+
 ## 下一阶段计划
 
-第 4.2 阶段完成后，后续再进入其他业务模块数据库迁移、统一后端接入与进一步去 iframe。当前仍不在本阶段合并后端或迁移四个业务模块数据库。
+第 5-A 阶段完成后，后续再进入其他业务模块数据库迁移、统一后端接入与进一步去 iframe。当前仍不在本阶段合并后端或迁移其他三个业务模块数据库。

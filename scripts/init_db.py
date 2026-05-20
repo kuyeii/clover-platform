@@ -45,6 +45,10 @@ def main() -> int:
         print("Ensured portal indexes")
         for index in result.portal_indexes:
             print(f"Ensured index: portal.{index}")
+        print("Ensured competitor_analysis tables")
+        print("Ensured competitor_analysis indexes")
+        for index in result.competitor_analysis_indexes:
+            print(f"Ensured index: competitor_analysis.{index}")
         print("Ensured module_meta tables")
         print("Database initialization completed")
         return 0

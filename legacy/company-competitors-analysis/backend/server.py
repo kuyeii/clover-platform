@@ -11,12 +11,10 @@ from __future__ import annotations
 import json
 import ast
 import argparse
-from contextlib import contextmanager
 import mimetypes
 import os
 import random
 import re
-import sqlite3
 import sys
 import threading
 import time
@@ -30,6 +28,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 from urllib.parse import unquote, urlparse
+
+import repository
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -101,14 +101,11 @@ def resolve_local_path(value: str, fallback: Path) -> Path:
     return path if path.is_absolute() else ROOT_DIR / path
 
 
-DB_FILE = resolve_local_path(os.environ.get("HISTORY_DB_PATH") or os.environ.get("SQLITE_DB_PATH") or "", DATA_DIR / "history.sqlite3")
 STATIC_DIR = resolve_local_path(os.environ.get("STATIC_DIR") or "", ROOT_DIR / "dist")
 MAX_COMPANY_MEMORY_CACHE_SIZE = int(os.environ.get("COMPANY_MEMORY_CACHE_SIZE") or 5000)
 
 _STORAGE_READY = False
 _STORAGE_READY_LOCK = threading.Lock()
-_DB_CONNECTION: Optional[sqlite3.Connection] = None
-_DB_CONNECTION_LOCK = threading.RLock()
 _COMPANY_CACHE_LOCK = threading.Lock()
 _COMPANY_QUERY_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _COMPANY_PROFILE_MEMORY_CACHE: Dict[str, Dict[str, str]] = {}
@@ -156,32 +153,8 @@ def safe_record_file_name(record_id: Any) -> str:
     return f"{re.sub(r'[^a-zA-Z0-9_-]', '_', str(record_id))}.json"
 
 
-@contextmanager
-def connect_db(read_only: bool = False) -> sqlite3.Connection:
-    global _DB_CONNECTION
-    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with _DB_CONNECTION_LOCK:
-        if _DB_CONNECTION is None:
-            _DB_CONNECTION = sqlite3.connect(DB_FILE, timeout=30, check_same_thread=False)
-            _DB_CONNECTION.row_factory = sqlite3.Row
-            _DB_CONNECTION.execute("PRAGMA foreign_keys = ON")
-            _DB_CONNECTION.execute("PRAGMA busy_timeout = 30000")
-        try:
-            yield _DB_CONNECTION
-            if not read_only:
-                _DB_CONNECTION.commit()
-        except Exception:
-            if not read_only:
-                _DB_CONNECTION.rollback()
-            raise
-
-
 def close_db_connection() -> None:
-    global _DB_CONNECTION
-    with _DB_CONNECTION_LOCK:
-        if _DB_CONNECTION is not None:
-            _DB_CONNECTION.close()
-            _DB_CONNECTION = None
+    repository.close_db_connection()
 
 
 def ensure_storage() -> None:
@@ -191,58 +164,7 @@ def ensure_storage() -> None:
     with _STORAGE_READY_LOCK:
         if _STORAGE_READY:
             return
-        with connect_db() as conn:
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS history_records (
-                    id TEXT PRIMARY KEY,
-                    created_at TEXT NOT NULL,
-                    query_time TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    input_json TEXT NOT NULL,
-                    record_json TEXT NOT NULL,
-                    sort_order INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS storage_meta (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS company_profiles (
-                    normalized_name TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    intro TEXT NOT NULL DEFAULT '',
-                    business TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS company_validation_queries (
-                    normalized_query TEXT PRIMARY KEY,
-                    query TEXT NOT NULL,
-                    candidate_items_json TEXT NOT NULL DEFAULT '[]',
-                    response_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_history_records_sort_order ON history_records(sort_order DESC)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_history_records_created_at ON history_records(created_at DESC)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_company_profiles_updated_at ON company_profiles(updated_at DESC)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_company_validation_queries_updated_at ON company_validation_queries(updated_at DESC)")
+        repository.ensure_storage()
         _STORAGE_READY = True
 
 
@@ -258,14 +180,6 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def row_to_record(row: sqlite3.Row) -> Optional[Dict[str, Any]]:
-    try:
-        parsed = json.loads(row["record_json"])
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
 def get_record_fields(record: Dict[str, Any]) -> Dict[str, str]:
     input_value = record.get("input") if isinstance(record.get("input"), dict) else {}
     return {
@@ -278,66 +192,13 @@ def get_record_fields(record: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
-def upsert_history_record(conn: sqlite3.Connection, record: Dict[str, Any], sort_order: int) -> None:
-    fields = get_record_fields(record)
-    conn.execute(
-        """
-        INSERT INTO history_records (
-            id, created_at, query_time, title, input_json, record_json, sort_order, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            created_at = excluded.created_at,
-            query_time = excluded.query_time,
-            title = excluded.title,
-            input_json = excluded.input_json,
-            record_json = excluded.record_json,
-            sort_order = excluded.sort_order,
-            updated_at = excluded.updated_at
-        """,
-        (
-            fields["id"],
-            fields["created_at"],
-            fields["query_time"],
-            fields["title"],
-            fields["input_json"],
-            fields["record_json"],
-            sort_order,
-            utc_now_iso(),
-        ),
-    )
-
-
-def trim_overflow(conn: sqlite3.Connection) -> None:
-    if MAX_ITEMS <= 0:
-        conn.execute("DELETE FROM history_records")
-        return
-    conn.execute(
-        """
-        DELETE FROM history_records
-        WHERE id IN (
-            SELECT id
-            FROM history_records
-            ORDER BY sort_order DESC, created_at DESC, id DESC
-            LIMIT -1 OFFSET ?
-        )
-        """,
-        (MAX_ITEMS,),
-    )
-
-
 def save_history_record(record: Any) -> Dict[str, Any]:
     if not isinstance(record, dict):
         raise AppError("请求体必须为对象", status_code=400, code="BAD_REQUEST")
     if not record.get("id") or not record.get("createdAt"):
         raise AppError("缺少必要字段 id/createdAt", status_code=400, code="BAD_REQUEST")
 
-    ensure_storage()
-    with connect_db() as conn:
-        next_sort_order = int(conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM history_records").fetchone()[0])
-        upsert_history_record(conn, record, next_sort_order)
-        trim_overflow(conn)
-    return record
+    return repository.save_history_record(record, max_items=MAX_ITEMS)
 
 
 def read_legacy_index_records() -> List[Dict[str, Any]]:
@@ -400,79 +261,25 @@ def load_legacy_json_records() -> List[Dict[str, Any]]:
     return ordered[:MAX_ITEMS] if MAX_ITEMS > 0 else []
 
 
-def get_storage_meta(conn: sqlite3.Connection, key: str) -> str:
-    row = conn.execute("SELECT value FROM storage_meta WHERE key = ?", (key,)).fetchone()
-    return str(row["value"]) if row else ""
-
-
-def set_storage_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
-    conn.execute(
-        """
-        INSERT INTO storage_meta (key, value)
-        VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        """,
-        (key, value),
-    )
-
-
 def migrate_legacy_if_needed() -> None:
+    # Deprecated in stage 5-A: historical SQLite/JSON data is not migrated.
     ensure_storage()
-    try:
-        with connect_db() as conn:
-            if get_storage_meta(conn, "json_migrated") == "1":
-                return
-            row_count = int(conn.execute("SELECT COUNT(*) FROM history_records").fetchone()[0])
-            if row_count > 0:
-                set_storage_meta(conn, "json_migrated", "1")
-                return
-            records = load_legacy_json_records()
-            total = len(records)
-            for index, record in enumerate(records):
-                upsert_history_record(conn, record, total - index)
-            set_storage_meta(conn, "json_migrated", "1")
-    except Exception:
-        # Ignore migration errors to avoid blocking startup.
-        return
 
 
 def read_records() -> List[Dict[str, Any]]:
-    ensure_storage()
-    records: List[Dict[str, Any]] = []
-    with connect_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT record_json
-            FROM history_records
-            ORDER BY sort_order DESC, created_at DESC, id DESC
-            LIMIT ?
-            """,
-            (max(MAX_ITEMS, 0),),
-        ).fetchall()
-    for row in rows:
-        record = row_to_record(row)
-        if record:
-            records.append(record)
-    return records
+    return repository.read_records(max_items=MAX_ITEMS)
 
 
 def read_record_by_id(record_id: str) -> Optional[Dict[str, Any]]:
-    ensure_storage()
-    with connect_db() as conn:
-        row = conn.execute("SELECT record_json FROM history_records WHERE id = ?", (record_id,)).fetchone()
-    return row_to_record(row) if row else None
+    return repository.read_record_by_id(record_id)
 
 
 def delete_history_record(record_id: str) -> None:
-    ensure_storage()
-    with connect_db() as conn:
-        conn.execute("DELETE FROM history_records WHERE id = ?", (record_id,))
+    repository.delete_history_record(record_id)
 
 
 def clear_history_records() -> None:
-    ensure_storage()
-    with connect_db() as conn:
-        conn.execute("DELETE FROM history_records")
+    repository.clear_history_records()
 
 
 def get_error_message(payload: Any, fallback: str = "请求失败：未识别的错误响应") -> str:
@@ -1312,17 +1119,8 @@ def read_company_validation_query_cache(company_name: str) -> Optional[Dict[str,
     memory_response = get_company_query_memory_cache(normalized_query)
     if memory_response:
         return memory_response
-    ensure_storage()
-    with connect_db() as conn:
-        row = conn.execute(
-            "SELECT response_json FROM company_validation_queries WHERE normalized_query = ?",
-            (normalized_query,),
-        ).fetchone()
-    if not row:
-        return None
-    try:
-        response = json.loads(row["response_json"])
-    except (json.JSONDecodeError, TypeError):
+    response = repository.read_company_validation_query_cache(normalized_query)
+    if not response:
         return None
     cache_response = normalize_cached_validation_response(response)
     if cache_response:
@@ -1337,19 +1135,9 @@ def read_company_profile_cache(company_name: str) -> Optional[Dict[str, str]]:
     memory_company = get_company_profile_memory_cache(normalized_name)
     if memory_company:
         return memory_company
-    ensure_storage()
-    with connect_db() as conn:
-        row = conn.execute(
-            """
-            SELECT name, intro, business
-            FROM company_profiles
-            WHERE normalized_name = ?
-            """,
-            (normalized_name,),
-        ).fetchone()
-    if not row:
+    company = repository.read_company_profile_cache(normalized_name)
+    if not company:
         return None
-    company = {"name": row["name"], "intro": row["intro"] or "", "business": row["business"] or ""}
     if company["intro"].strip() and company["business"].strip():
         remember_company_profile_cache(company)
         return company
@@ -1382,34 +1170,24 @@ def build_company_profile_cache_response(company: Dict[str, str]) -> Dict[str, A
     }
 
 
-def upsert_company_profile(conn: sqlite3.Connection, company: Any) -> None:
+def _profile_for_storage(company: Any) -> tuple[Dict[str, str], str] | None:
     normalized_company = normalize_complete_company(company)
     if not normalized_company:
-        return
+        return None
     name = normalized_company["name"]
     normalized_name = normalize_company_cache_key(name)
+    if not normalized_name:
+        return None
+    return normalized_company, normalized_name
+
+
+def upsert_company_profile(company: Any) -> None:
+    profile = _profile_for_storage(company)
+    if not profile:
+        return
+    normalized_company, normalized_name = profile
     now = utc_now_iso()
-    conn.execute(
-        """
-        INSERT INTO company_profiles (
-            normalized_name, name, intro, business, created_at, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(normalized_name) DO UPDATE SET
-            name = excluded.name,
-            intro = excluded.intro,
-            business = excluded.business,
-            updated_at = excluded.updated_at
-        """,
-        (
-            normalized_name,
-            name,
-            normalized_company["intro"],
-            normalized_company["business"],
-            now,
-            now,
-        ),
-    )
+    repository.upsert_company_profile(normalized_company, normalized_name=normalized_name, now_iso=now)
     remember_company_profile_cache(normalized_company)
 
 
@@ -1423,32 +1201,21 @@ def write_company_validation_cache(company_name: str, response: Dict[str, Any]) 
         return
     candidate_items = cache_response["candidateItems"]
     now = utc_now_iso()
-    ensure_storage()
-    with connect_db() as conn:
-        conn.execute(
-            """
-            INSERT INTO company_validation_queries (
-                normalized_query, query, candidate_items_json, response_json, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(normalized_query) DO UPDATE SET
-                query = excluded.query,
-                candidate_items_json = excluded.candidate_items_json,
-                response_json = excluded.response_json,
-                updated_at = excluded.updated_at
-            """,
-            (
-                normalized_query,
-                company_name,
-                json_dumps(candidate_items),
-                json_dumps(cache_response),
-                now,
-                now,
-            ),
-        )
-        upsert_company_profile(conn, cache_response.get("company"))
-        for item in candidate_items:
-            upsert_company_profile(conn, item)
+    profiles = [
+        profile
+        for item in [cache_response.get("company"), *candidate_items]
+        if (profile := _profile_for_storage(item))
+    ]
+    repository.write_company_validation_cache(
+        normalized_query=normalized_query,
+        query=company_name,
+        candidate_items=candidate_items,
+        response=cache_response,
+        now_iso=now,
+        profiles=profiles,
+    )
+    for normalized_company, _ in profiles:
+        remember_company_profile_cache(normalized_company)
     remembered_response = dict(cache_response)
     remembered_response["cacheHit"] = True
     remembered_response["cacheSource"] = "validation_query"
@@ -1478,63 +1245,38 @@ def write_company_candidate_to_query_cache(query: str, company: Any) -> None:
         return
 
     now = utc_now_iso()
-    ensure_storage()
-    with connect_db() as conn:
-        row = conn.execute(
-            "SELECT response_json FROM company_validation_queries WHERE normalized_query = ?",
-            (normalized_query,),
-        ).fetchone()
-        existing_response: Dict[str, Any] = {}
-        if row:
-            try:
-                parsed_response = json.loads(row["response_json"])
-                if isinstance(parsed_response, dict):
-                    existing_response = parsed_response
-            except (json.JSONDecodeError, TypeError):
-                existing_response = {}
+    existing_response = repository.read_validation_response(normalized_query)
+    existing_company = normalize_complete_company(existing_response.get("company"))
+    candidate_items = merge_complete_company_items(
+        existing_response.get("candidateItems") or existing_response.get("candidates") or [],
+        complete_company,
+    )
+    candidates = [item.get("name", "") for item in candidate_items if item.get("name")]
+    cache_response = build_cacheable_company_validation_response(
+        {
+            "raw": {"data": {"outputs": {"候选企业": candidate_items}}},
+            "outputText": "",
+            "searchResult": normalize_text_value(existing_response.get("searchResult")) or "已从企业缓存获取候选企业",
+            "candidates": candidates,
+            "candidateItems": candidate_items,
+            "company": existing_company,
+            "note": normalize_text_value(existing_response.get("note")),
+        }
+    )
+    if not cache_response:
+        return
 
-        existing_company = normalize_complete_company(existing_response.get("company"))
-        candidate_items = merge_complete_company_items(
-            existing_response.get("candidateItems") or existing_response.get("candidates") or [],
-            complete_company,
-        )
-        candidates = [item.get("name", "") for item in candidate_items if item.get("name")]
-        cache_response = build_cacheable_company_validation_response(
-            {
-                "raw": {"data": {"outputs": {"候选企业": candidate_items}}},
-                "outputText": "",
-                "searchResult": normalize_text_value(existing_response.get("searchResult")) or "已从企业缓存获取候选企业",
-                "candidates": candidates,
-                "candidateItems": candidate_items,
-                "company": existing_company,
-                "note": normalize_text_value(existing_response.get("note")),
-            }
-        )
-        if not cache_response:
-            return
-
-        conn.execute(
-            """
-            INSERT INTO company_validation_queries (
-                normalized_query, query, candidate_items_json, response_json, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(normalized_query) DO UPDATE SET
-                query = excluded.query,
-                candidate_items_json = excluded.candidate_items_json,
-                response_json = excluded.response_json,
-                updated_at = excluded.updated_at
-            """,
-            (
-                normalized_query,
-                query,
-                json_dumps(cache_response["candidateItems"]),
-                json_dumps(cache_response),
-                now,
-                now,
-            ),
-        )
-        upsert_company_profile(conn, complete_company)
+    profile = _profile_for_storage(complete_company)
+    repository.write_company_validation_cache(
+        normalized_query=normalized_query,
+        query=query,
+        candidate_items=cache_response["candidateItems"],
+        response=cache_response,
+        now_iso=now,
+        profiles=[profile] if profile else [],
+    )
+    if profile:
+        remember_company_profile_cache(profile[0])
     remembered_response = dict(cache_response)
     remembered_response["cacheHit"] = True
     remembered_response["cacheSource"] = "validation_query"

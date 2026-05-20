@@ -112,7 +112,11 @@ LEGACY_IMPORTS = {
         "dotenv": "python-dotenv",
         "multipart": "python-multipart",
     },
-    "competitor-analysis": {},
+    "competitor-analysis": {
+        "sqlalchemy": "SQLAlchemy",
+        "psycopg": "psycopg",
+        "dotenv": "python-dotenv",
+    },
     "bid-generator": {
         "fastapi": "fastapi",
         "uvicorn": "uvicorn",
@@ -274,7 +278,13 @@ def _check_root_env(repo_root: Path, env_values: dict[str, Any]) -> list[CheckRe
     return results
 
 
-def _check_database(repo_root: Path, env_values: dict[str, Any]) -> list[CheckResult]:
+def _check_database(
+    repo_root: Path,
+    env_values: dict[str, Any],
+    *,
+    check_portal: bool,
+    check_competitor_analysis: bool,
+) -> list[CheckResult]:
     result = check_database_connection()
     if not result["ok"]:
         safe_error = _redact(str(result.get("error") or result.get("error_type") or "unknown error"), env_values)
@@ -308,20 +318,46 @@ def _check_database(repo_root: Path, env_values: dict[str, Any]) -> list[CheckRe
     else:
         results.append(CheckResult("core schema and tables", "ok", "Core schemas, tables, module_meta tables, and indexes exist"))
 
-    missing_portal = result.get("missing_portal_tables", [])
-    missing_portal_indexes = result.get("missing_portal_indexes", [])
-    if missing_portal or missing_portal_indexes:
-        missing = [*(f"portal.{table}" for table in missing_portal), *(f"portal index {index}" for index in missing_portal_indexes)]
-        results.append(
-            CheckResult(
-                "Portal PostgreSQL tables",
-                "error",
-                f"Missing Portal database objects: {', '.join(missing)}",
-                "python scripts/init_db.py && alembic upgrade head",
+    if check_portal:
+        missing_portal = result.get("missing_portal_tables", [])
+        missing_portal_indexes = result.get("missing_portal_indexes", [])
+        if missing_portal or missing_portal_indexes:
+            missing = [*(f"portal.{table}" for table in missing_portal), *(f"portal index {index}" for index in missing_portal_indexes)]
+            results.append(
+                CheckResult(
+                    "Portal PostgreSQL tables",
+                    "error",
+                    f"Missing Portal database objects: {', '.join(missing)}",
+                    "python scripts/init_db.py && alembic upgrade head",
+                )
             )
-        )
-    else:
-        results.append(CheckResult("Portal PostgreSQL tables", "ok", "Portal tables and indexes exist"))
+        else:
+            results.append(CheckResult("Portal PostgreSQL tables", "ok", "Portal tables and indexes exist"))
+
+    if check_competitor_analysis:
+        missing_tables = result.get("missing_competitor_analysis_tables", [])
+        missing_indexes = result.get("missing_competitor_analysis_indexes", [])
+        if missing_tables or missing_indexes:
+            missing = [
+                *(f"competitor_analysis.{table}" for table in missing_tables),
+                *(f"competitor_analysis index {index}" for index in missing_indexes),
+            ]
+            results.append(
+                CheckResult(
+                    "competitor_analysis PostgreSQL tables",
+                    "error",
+                    f"Missing competitor_analysis database objects: {', '.join(missing)}",
+                    "python scripts/init_db.py && alembic upgrade head",
+                )
+            )
+        else:
+            results.append(
+                CheckResult(
+                    "competitor_analysis PostgreSQL tables",
+                    "ok",
+                    "competitor_analysis history and cache tables exist",
+                )
+            )
 
     return results
 
@@ -530,8 +566,10 @@ def run_preflight(
 
     results: list[CheckResult] = []
     includes_portal = "portal" in selected
+    includes_competitor_analysis = "competitor-analysis" in selected
+    includes_database = includes_portal or includes_competitor_analysis
 
-    if includes_portal:
+    if includes_database:
         results.extend(_check_root_env(root, env_values))
 
     results.append(_check_dir("Python virtual environment", root / ".venv", root, fix_hint="python3 -m venv .venv"))
@@ -548,8 +586,15 @@ def run_preflight(
     results.append(_check_runtime(root))
     results.extend(_check_port_plan(apps_config, selected, skip, port_plan))
 
-    if includes_portal:
-        results.extend(_check_database(root, env_values))
+    if includes_database:
+        results.extend(
+            _check_database(
+                root,
+                env_values,
+                check_portal=includes_portal,
+                check_competitor_analysis=includes_competitor_analysis,
+            )
+        )
 
     apps_by_code = app_by_code(apps_config)
     for code in sorted(selected, key=lambda item: PREFERRED_APP_ORDER.index(item) if item in PREFERRED_APP_ORDER else 99):
