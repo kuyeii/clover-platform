@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from packages.py_common.config.loader import load_apps_config
 from packages.py_common.ports import PortAllocationError, check_port_plan
+from packages.py_common.preflight import run_preflight
 from packages.py_common.process_manager import ProcessManager, ProcessSpec
 from packages.py_common.runtime import build_ports_payload, write_ports_file
 
@@ -24,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--write-ports-only", action="store_true", help="Write runtime/ports.json without starting services.")
     parser.add_argument("--only", action="append", default=[], help="Only start selected app code or module key.")
     parser.add_argument("--skip", action="append", default=[], help="Skip selected app code or module key.")
+    parser.add_argument("--skip-preflight", action="store_true", help="Skip startup preflight checks.")
     return parser.parse_args()
 
 
@@ -237,6 +239,21 @@ def main() -> int:
     except (OSError, ValueError, PortAllocationError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+    if not args.write_ports_only and not args.skip_preflight:
+        preflight_report = run_preflight(
+            REPO_ROOT,
+            apps_config,
+            include_codes=include_codes or _auto_start_codes(apps_config),
+            exclude_codes=skip,
+            port_plan=port_plan,
+        )
+        print(preflight_report.format_text())
+        if not preflight_report.ok:
+            print("Preflight failed; fix the errors above or rerun with --skip-preflight.", file=sys.stderr)
+            return preflight_report.exit_code()
+    elif args.skip_preflight:
+        print("Skipping preflight checks.")
 
     payload = build_ports_payload(apps_config, port_plan, env=os.getenv("APP_ENV", "dev"))
     ports_path = write_ports_file(REPO_ROOT, payload)
