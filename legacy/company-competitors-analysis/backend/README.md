@@ -75,14 +75,7 @@ competitor_analysis.company_profiles
 competitor_analysis.company_validation_queries
 ```
 
-数据库连接来自 `clover-platform/.env` 中的 `DATABASE_URL` 或 `POSTGRES_*`。旧 SQLite / JSON 历史数据不迁移，运行时也不再写入 SQLite；如存在下列文件，可作为历史备份保留：
-
-```text
-backend/data/history.sqlite3
-backend/data/index.json
-backend/data/history/{result_id}.json
-backend/data/history.json
-```
+数据库连接来自 `clover-platform/.env` 中的 `DATABASE_URL` 或 `POSTGRES_*`。
 
 ## 静态文件托管
 

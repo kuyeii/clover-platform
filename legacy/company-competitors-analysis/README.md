@@ -88,7 +88,6 @@
 ```text
 .
 ├── backend/
-│   ├── data/                         # 旧 SQLite/JSON 历史数据目录，运行时不再写入
 │   ├── schemas/
 │   │   └── analysisRecord.schema.json # 历史记录结构说明
 │   ├── README.md                     # 后端说明
@@ -491,18 +490,11 @@ PostgreSQL 中主要包含：
 - `company_profiles`：企业基础信息缓存
 - `company_validation_queries`：企业名称校验查询缓存
 
-表结构由 monorepo 根目录的 `python scripts/init_db.py` 和 `alembic upgrade head` 创建。后端启动时只检查表是否存在，不再自动创建 SQLite，也不迁移旧版 JSON / SQLite 历史数据。旧数据文件可保留在本地，但运行时不会继续写入：
-
-```text
-backend/data/history.sqlite3
-backend/data/index.json
-backend/data/history/{result_id}.json
-backend/data/history.json
-```
+表结构由 monorepo 根目录的 `python scripts/init_db.py`、`alembic upgrade head`、`python scripts/check_db.py` 和 `python scripts/preflight.py --only competitor-analysis` 初始化与检查。
 
 ## Docker 部署
 
-第 5-A 后，竞对分析历史记录已切换到 PostgreSQL 的 `competitor_analysis` schema。旧 SQLite 文件仅作为历史运行产物保留，不再作为当前运行数据源，且不做历史数据迁移。当前 Docker 配置尚未作为 PostgreSQL 部署方案交付，Docker 统一部署会在后续阶段单独处理。
+竞对分析历史记录写入 PostgreSQL 的 `competitor_analysis` schema。Docker 统一部署将在后续阶段处理。
 
 ### 1. 准备环境变量
 
@@ -571,7 +563,6 @@ docker compose down
 - 读取 `.env.local`。
 - 设置 `STATIC_DIR=/app/dist`。
 - 需要连接外部 PostgreSQL，并确保已完成 `competitor_analysis` schema 初始化。
-- 不再配置 `HISTORY_DB_PATH` / `history.sqlite3`；当前 Docker 配置不是最终 PostgreSQL 部署方案。
 
 ## 常见问题
 
@@ -649,7 +640,7 @@ GET /api/history/{result_id}
 
 ## 开发建议
 
-- 不要提交 `.env`、`.env.local`、`.env.production`、SQLite/DB 文件、`node_modules`、`dist` 等运行产物。
+- 不要提交 `.env`、`.env.local`、`.env.production`、DB 文件、`node_modules`、`dist` 等运行产物。
 - API Key 应尽量使用无 `VITE_` 前缀的后端变量，例如 `SCORE_API_KEY`，避免被前端构建过程暴露。
 - 修改 Dify 输出结构时，需要同步检查后端解析逻辑：
   - `run_input_validation_workflow`
@@ -660,7 +651,6 @@ GET /api/history/{result_id}
 - 修改历史记录结构时，需要同步检查：
   - `backend/schemas/analysisRecord.schema.json`
   - `build_record`
-  - `row_to_record`
   - 前端 `applyRecordSnapshot`
 - 修改结果页路由时，需要同步检查：
   - `src/routes.js`

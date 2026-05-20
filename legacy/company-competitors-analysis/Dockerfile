@@ -28,9 +28,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY backend ./backend
 COPY --from=frontend /app/dist ./dist
 
-# Stage 5-A stores runtime data in PostgreSQL competitor_analysis schema.
-# This Dockerfile has not yet been delivered as the final PostgreSQL deployment plan.
-# Configure DATABASE_URL or POSTGRES_* at runtime; HISTORY_DB_PATH/history.sqlite3 is deprecated.
+# Docker unified deployment will be handled in a later phase.
 
 EXPOSE 8788
 

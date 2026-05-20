@@ -4,7 +4,7 @@
 
 本指南用于在本地 Mac 环境下测试项目是否可以正常 Docker 打包、运行和访问页面。
 
-第 5-A 后，竞对分析历史记录已切换到 PostgreSQL 的 `competitor_analysis` schema。旧 SQLite 文件仅作为历史运行产物保留，不再作为当前运行数据源，且不做历史数据迁移。当前 Docker 配置尚未作为 PostgreSQL 部署方案交付，Docker 统一部署会在后续阶段单独处理；本地开发运行以 clover-platform 根目录 `.env` / `DATABASE_URL` 或 `POSTGRES_*` 为准。
+竞对分析历史记录写入 PostgreSQL 的 `competitor_analysis` schema。本地开发运行以 clover-platform 根目录 `.env` / `DATABASE_URL` 或 `POSTGRES_*` 为准。Docker 统一部署将在后续阶段处理。
 
 ---
 
@@ -98,9 +98,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY backend ./backend
 COPY --from=frontend /app/dist ./dist
 
-# Stage 5-A stores runtime data in PostgreSQL competitor_analysis schema.
-# This Dockerfile has not yet been delivered as the final PostgreSQL deployment plan.
-# Configure DATABASE_URL or POSTGRES_* at runtime; HISTORY_DB_PATH/history.sqlite3 is deprecated.
+# Docker unified deployment will be handled in a later phase.
 
 EXPOSE 8788
 
@@ -116,7 +114,7 @@ CMD ["python", "backend/server.py"]
 - 使用 `m.daocloud.io/docker.io/library/...` 镜像前缀，适合 Docker Hub 访问不稳定的环境。
 - 前端使用 Node 构建，后端使用 Python 运行。
 - 后端端口是 `8788`。
-- 第 5-A 后不应继续使用 `HISTORY_DB_PATH` / `history.sqlite3` 作为当前数据源；历史记录写入 PostgreSQL `competitor_analysis.history_records`。
+- 历史记录写入 PostgreSQL `competitor_analysis.history_records`。
 
 ---
 
@@ -246,7 +244,7 @@ docker run --rm \
 - `-p 8788:8788`：把容器的 8788 端口映射到本机 8788。
 - `--env-file .env.production`：读取生产环境变量。
 - `--add-host=host.docker.internal:host-gateway`：让容器可以访问宿主机服务。
-- 当前 Docker 配置尚未完成第 5-A PostgreSQL 部署适配；不要把 `HISTORY_DB_PATH` / `history.sqlite3` 作为当前数据源。
+- Docker 统一部署将在后续阶段处理。
 
 ---
 
@@ -344,7 +342,7 @@ competitor_analysis.company_profiles
 competitor_analysis.company_validation_queries
 ```
 
-旧 `backend/data/history.sqlite3` 只作为历史运行产物保留，不再作为当前运行数据源，且不做历史数据迁移。运行前请在 clover-platform 根目录完成初始化和检查：
+运行前请在 clover-platform 根目录完成初始化和检查：
 
 ```bash
 python scripts/init_db.py
@@ -475,7 +473,7 @@ Ctrl + C
 
 本地测试通过后，正式部署时建议：
 
-1. 不要把 `.env.local`、`.env.production`、`.env`、SQLite/DB 文件提交到代码仓库。
+1. 不要把 `.env.local`、`.env.production`、`.env`、DB 文件提交到代码仓库。
 2. 生产环境使用单独的 `.env.production`。
 3. 如果部署到 Linux 服务器，保留：
 

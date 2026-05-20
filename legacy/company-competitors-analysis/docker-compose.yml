@@ -11,6 +11,4 @@ services:
       BACKEND_PORT: 8788
       CORS_ORIGIN: http://localhost:8788
       STATIC_DIR: /app/dist
-      # Stage 5-A uses PostgreSQL via DATABASE_URL or POSTGRES_*.
-      # HISTORY_DB_PATH/history.sqlite3 is deprecated and must not be used as the current data source.
     restart: unless-stopped
