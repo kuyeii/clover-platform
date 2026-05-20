@@ -21,7 +21,6 @@ frontend/tsconfig.tsbuildinfo
 # Runtime data is mounted as a volume by docker-compose.
 data/runs/
 data/uploads/
-data/web_meta/
 data/*.sqlite3
 data/*.sqlite3-*
 data/*.db

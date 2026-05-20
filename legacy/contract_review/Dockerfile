@@ -26,7 +26,7 @@ RUN python -m pip install --upgrade pip \
 COPY packages /app/packages
 COPY config /app/config
 COPY legacy/contract_review /app/legacy/contract_review
-RUN mkdir -p /app/data/runs /app/data/uploads /app/data/web_meta
+RUN mkdir -p /app/data/runs /app/data/uploads
 
 EXPOSE 8000
 

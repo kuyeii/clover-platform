@@ -40,7 +40,6 @@ from src.review_store import (
 BASE_DIR = Path(__file__).resolve().parent
 RUN_ROOT = BASE_DIR / "data" / "runs"
 UPLOAD_ROOT = BASE_DIR / "data" / "uploads"
-WEB_META_ROOT = BASE_DIR / "data" / "web_meta"
 _RUN_LOCKS_GUARD = threading.Lock()
 _RUN_LOCKS: dict[str, threading.RLock] = {}
 _ACTIVE_REVIEW_LOCK = threading.Lock()
@@ -76,7 +75,7 @@ def _running_review_meta() -> dict[str, Any] | None:
     return None
 
 
-for path in (RUN_ROOT, UPLOAD_ROOT, WEB_META_ROOT):
+for path in (RUN_ROOT, UPLOAD_ROOT):
     path.mkdir(parents=True, exist_ok=True)
 
 init_storage()
@@ -2095,25 +2094,21 @@ def _finalize_aggregate_patch_pair(item: dict[str, Any], ai_payload: dict[str, A
     resolved_target, next_revised = _preserve_leading_list_marker_outside_patch(resolved_target, next_revised)
     return resolved_target, next_revised
 
-def _meta_path(run_id: str) -> Path:
-    return WEB_META_ROOT / f"{run_id}.json"
-
-
 def _write_meta(run_id: str, payload: dict[str, Any]) -> None:
-    # PostgreSQL 是运行记录的主存储；默认不再依赖 data/web_meta/*.json。
-    next_payload = dict(payload or {})
-    current = upsert_review_meta(run_id, next_payload)
-    # 兼容旧部署：需要继续生成 JSON 影子文件时可设置 MIRROR_LEGACY_JSON=1。
-    if os.getenv("MIRROR_LEGACY_JSON", "0").strip().lower() in {"1", "true", "yes", "on"}:
-        path = _meta_path(run_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write_text(path, json.dumps(current, ensure_ascii=False, indent=2))
+    upsert_review_meta(run_id, dict(payload or {}))
+
+
+def _mirror_artifacts_enabled() -> bool:
+    return os.getenv("MIRROR_RUN_ARTIFACTS_TO_DB", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _write_json_artifact(path: Path, payload: Any) -> None:
     _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
-    if os.getenv("MIRROR_RUN_ARTIFACTS_TO_DB", "0").strip().lower() in {"1", "true", "yes", "on"}:
-        store_json_artifact_by_path(path, payload, run_root=RUN_ROOT)
+    if _mirror_artifacts_enabled():
+        try:
+            store_json_artifact_by_path(path, payload, run_root=RUN_ROOT)
+        except Exception:
+            return
 
 
 def _parse_iso_datetime(value: str | None) -> float:
@@ -2285,13 +2280,7 @@ def _repair_run_state_if_outputs_ready(
 def _read_meta(run_id: str) -> dict[str, Any]:
     payload = get_review_meta(run_id)
     if payload is None:
-        # 兼容尚未迁移的老版本 JSON 元数据。
-        path = _meta_path(run_id)
-        if path.exists():
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            payload.setdefault("run_id", run_id)
-        else:
-            payload = _infer_meta_from_run(run_id)
+        payload = _infer_meta_from_run(run_id)
 
     payload.setdefault("run_id", run_id)
     raw_updated_at = str(payload.get("updated_at") or "").strip()
@@ -2332,7 +2321,10 @@ def _safe_json(path: Path, *, persist: bool = False) -> Any:
         # GET/status/history/result 请求默认只读，避免读取文件时反向写数据库
         # 造成锁竞争。只有明确传 persist=True 时才同步到 artifacts 表。
         if persist:
-            store_json_artifact_by_path(path, payload, run_root=RUN_ROOT)
+            try:
+                store_json_artifact_by_path(path, payload, run_root=RUN_ROOT)
+            except Exception:
+                pass
         return payload
     return load_json_artifact_by_path(path, run_root=RUN_ROOT)
 
@@ -3905,17 +3897,19 @@ def _to_history_item(meta: dict[str, Any]) -> dict[str, Any]:
 
 
 def _list_history_items(limit: int) -> list[dict[str, Any]]:
-    # 历史列表默认只读 PostgreSQL。仅当数据库为空时读取旧版 web_meta 文件，
-    # 兼容未迁移数据；这个兜底路径仍保持只读，不反向写库。
     raw_items = list_review_meta(limit=limit)
-    if not raw_items and WEB_META_ROOT.exists():
-        legacy_paths = sorted(WEB_META_ROOT.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
-        for path in legacy_paths:
+    repaired_items: list[dict[str, Any]] = []
+    for meta in raw_items:
+        next_meta = meta
+        run_id = str(meta.get("run_id") or "").strip() if isinstance(meta, dict) else ""
+        status = str(meta.get("status") or "").strip().lower() if isinstance(meta, dict) else ""
+        if run_id and status in {"queued", "running"}:
             try:
-                raw_items.append(_read_meta(path.stem))
+                next_meta = _repair_run_state_if_outputs_ready(run_id, meta, persist=False) or meta
             except Exception:
-                continue
-    items = [_to_history_item(meta) for meta in raw_items]
+                next_meta = meta
+        repaired_items.append(next_meta)
+    items = [_to_history_item(meta) for meta in repaired_items]
     items.sort(key=lambda x: _parse_iso_datetime(x.get("updated_at")), reverse=True)
     return items[:limit]
 

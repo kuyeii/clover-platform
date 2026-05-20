@@ -60,17 +60,24 @@ class _FakeClient:
         }
 
 
+def _review_meta() -> dict:
+    return {
+        "run_id": "smoke_test_006",
+        "status": "completed",
+        "review_side": "supplier",
+        "contract_type_hint": "service_agreement",
+    }
+
+
 class WebApiAiFlowTests(unittest.TestCase):
     def _setup_run(self):
         td = tempfile.TemporaryDirectory()
         base = Path(td.name)
         run_root = base / "runs"
         upload_root = base / "uploads"
-        meta_root = base / "meta"
         run_dir = run_root / "smoke_test_006"
         run_dir.mkdir(parents=True, exist_ok=True)
         upload_root.mkdir(parents=True, exist_ok=True)
-        meta_root.mkdir(parents=True, exist_ok=True)
         (run_dir / "risk_result_validated.json").write_text(
             json.dumps(_validated_payload(), ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -86,26 +93,13 @@ class WebApiAiFlowTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        (meta_root / "smoke_test_006.json").write_text(
-            json.dumps(
-                {
-                    "run_id": "smoke_test_006",
-                    "status": "completed",
-                    "review_side": "supplier",
-                    "contract_type_hint": "service_agreement",
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return td, run_root, upload_root, meta_root, run_dir
+        return td, run_root, upload_root, run_dir
 
     def test_ai_apply_all_generates_rewrite_for_all_items(self):
-        td, run_root, upload_root, meta_root, run_dir = self._setup_run()
+        td, run_root, upload_root, run_dir = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", _FakeClient
             ):
@@ -121,10 +115,10 @@ class WebApiAiFlowTests(unittest.TestCase):
             td.cleanup()
 
     def test_ai_accept_requires_rewrite_and_sets_ai_applied(self):
-        td, run_root, upload_root, meta_root, run_dir = self._setup_run()
+        td, run_root, upload_root, run_dir = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", _FakeClient
             ):
@@ -140,10 +134,10 @@ class WebApiAiFlowTests(unittest.TestCase):
             td.cleanup()
 
     def test_ai_edit_updates_revised_text_and_comment(self):
-        td, run_root, upload_root, meta_root, run_dir = self._setup_run()
+        td, run_root, upload_root, run_dir = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", _FakeClient
             ):
@@ -155,10 +149,10 @@ class WebApiAiFlowTests(unittest.TestCase):
             td.cleanup()
 
     def test_ai_edit_allows_empty_revised_text_for_delete(self):
-        td, run_root, upload_root, meta_root, run_dir = self._setup_run()
+        td, run_root, upload_root, run_dir = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", _FakeClient
             ):
@@ -170,10 +164,10 @@ class WebApiAiFlowTests(unittest.TestCase):
             td.cleanup()
 
     def test_ai_reject_clears_ai_rewrite(self):
-        td, run_root, upload_root, meta_root, run_dir = self._setup_run()
+        td, run_root, upload_root, run_dir = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", _FakeClient
             ):
@@ -185,7 +179,7 @@ class WebApiAiFlowTests(unittest.TestCase):
             td.cleanup()
 
     def test_get_or_create_reviewed_risks_sanitizes_segment_prefixed_ai_target(self):
-        td, run_root, upload_root, meta_root, run_dir = self._setup_run()
+        td, run_root, upload_root, run_dir = self._setup_run()
         try:
             reviewed = _validated_payload()
             reviewed_item = reviewed["risk_result"]["risk_items"][0]
@@ -202,9 +196,7 @@ class WebApiAiFlowTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
-            ):
+            with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root):
                 payload = web_api.get_or_create_reviewed_risks("smoke_test_006")
                 ai = payload["risk_result"]["risk_items"][0]["ai_rewrite"]
                 self.assertEqual(ai["target_text"], "由乙方组织实施的本项目中的所有文件、资料、数据信息等，其所有权均属甲方所有")

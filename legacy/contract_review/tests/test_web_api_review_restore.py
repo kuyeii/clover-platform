@@ -35,11 +35,9 @@ class WebApiReviewRestoreTests(unittest.TestCase):
         base = Path(td.name)
         run_root = base / "runs"
         upload_root = base / "uploads"
-        meta_root = base / "meta"
         run_dir = run_root / "restore_case_001"
         run_dir.mkdir(parents=True, exist_ok=True)
         upload_root.mkdir(parents=True, exist_ok=True)
-        meta_root.mkdir(parents=True, exist_ok=True)
 
         (run_dir / "merged_clauses.json").write_text(
             json.dumps(
@@ -61,29 +59,22 @@ class WebApiReviewRestoreTests(unittest.TestCase):
         )
         (run_dir / "app.stdout.log").write_text("Run complete.", encoding="utf-8")
         (run_dir / "source.docx").write_bytes(b"fake-docx")
-        (meta_root / "restore_case_001.json").write_text(
-            json.dumps(
-                {
-                    "run_id": "restore_case_001",
-                    "status": "running",
-                    "file_name": "测试合同.docx",
-                    "review_side": "supplier",
-                    "contract_type_hint": "service_agreement",
-                    "step": "正在识别风险点",
-                    "progress": 65,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return td, run_root, upload_root, meta_root
+        stale_meta = {
+            "run_id": "restore_case_001",
+            "status": "running",
+            "file_name": "测试合同.docx",
+            "review_side": "supplier",
+            "contract_type_hint": "service_agreement",
+            "step": "正在识别风险点",
+            "progress": 65,
+        }
+        return td, run_root, upload_root, stale_meta
 
     def test_get_review_status_reconciles_stale_running_meta(self):
-        td, run_root, upload_root, meta_root = self._setup_run()
+        td, run_root, upload_root, stale_meta = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", side_effect=lambda run_id: dict(stale_meta)
             ):
                 meta = web_api.get_review_status("restore_case_001")
                 self.assertEqual(meta["status"], "completed")
@@ -94,10 +85,10 @@ class WebApiReviewRestoreTests(unittest.TestCase):
             td.cleanup()
 
     def test_get_review_result_works_when_meta_is_stale(self):
-        td, run_root, upload_root, meta_root = self._setup_run()
+        td, run_root, upload_root, stale_meta = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", side_effect=lambda run_id: dict(stale_meta)
             ):
                 payload = web_api.get_review_result("restore_case_001")
                 self.assertEqual(payload["status"], "completed")
@@ -107,10 +98,10 @@ class WebApiReviewRestoreTests(unittest.TestCase):
             td.cleanup()
 
     def test_get_review_result_exposes_download_url_without_prebuilt_docx(self):
-        td, run_root, upload_root, meta_root = self._setup_run()
+        td, run_root, upload_root, stale_meta = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", side_effect=lambda run_id: dict(stale_meta)
             ):
                 payload = web_api.get_review_result("restore_case_001")
                 self.assertTrue(payload["download_ready"])
@@ -120,10 +111,10 @@ class WebApiReviewRestoreTests(unittest.TestCase):
             td.cleanup()
 
     def test_history_list_uses_reconciled_completed_status(self):
-        td, run_root, upload_root, meta_root = self._setup_run()
+        td, run_root, upload_root, stale_meta = self._setup_run()
         try:
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "list_review_meta", return_value=[dict(stale_meta)]
             ):
                 body = web_api.get_review_history(limit=30)
                 self.assertEqual(len(body["items"]), 1)

@@ -13,7 +13,7 @@ def ensure_dir(path: Path) -> Path:
 
 
 def _mirror_artifacts_enabled() -> bool:
-    return os.getenv("MIRROR_RUN_ARTIFACTS_TO_DB", "0").strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("MIRROR_RUN_ARTIFACTS_TO_DB", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _atomic_write_text(path: Path, content: str) -> None:

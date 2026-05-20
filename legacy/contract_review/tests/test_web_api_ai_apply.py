@@ -28,17 +28,24 @@ def _validated_payload(status: str = "pending") -> dict:
     }
 
 
+def _review_meta() -> dict:
+    return {
+        "run_id": "smoke_test_006",
+        "status": "completed",
+        "review_side": "supplier",
+        "contract_type_hint": "service_agreement",
+    }
+
+
 class WebApiAiApplyTests(unittest.TestCase):
     def test_ai_apply_updates_reviewed_item(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
             run_root = base / "runs"
             upload_root = base / "uploads"
-            meta_root = base / "meta"
             run_dir = run_root / "smoke_test_006"
             run_dir.mkdir(parents=True, exist_ok=True)
             upload_root.mkdir(parents=True, exist_ok=True)
-            meta_root.mkdir(parents=True, exist_ok=True)
 
             (run_dir / "risk_result_validated.json").write_text(
                 json.dumps(_validated_payload(), ensure_ascii=False, indent=2),
@@ -58,20 +65,6 @@ class WebApiAiApplyTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (meta_root / "smoke_test_006.json").write_text(
-                json.dumps(
-                    {
-                        "run_id": "smoke_test_006",
-                        "status": "completed",
-                        "review_side": "supplier",
-                        "contract_type_hint": "service_agreement",
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
-
             fake_client = type(
                 "FakeClient",
                 (),
@@ -93,7 +86,7 @@ class WebApiAiApplyTests(unittest.TestCase):
             )
 
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", fake_client
             ):
@@ -117,22 +110,19 @@ class WebApiAiApplyTests(unittest.TestCase):
             base = Path(td)
             run_root = base / "runs"
             upload_root = base / "uploads"
-            meta_root = base / "meta"
             run_dir = run_root / "smoke_test_006"
             run_dir.mkdir(parents=True, exist_ok=True)
             upload_root.mkdir(parents=True, exist_ok=True)
-            meta_root.mkdir(parents=True, exist_ok=True)
 
             (run_dir / "risk_result_validated.json").write_text(
                 json.dumps(_validated_payload(status="rejected"), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             (run_dir / "merged_clauses.json").write_text("[]", encoding="utf-8")
-            (meta_root / "smoke_test_006.json").write_text("{}", encoding="utf-8")
 
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
-            ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"):
+                web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"
+            ):
                 with self.assertRaises(web_api.HTTPException) as ctx:
                     web_api.ai_apply_risk("smoke_test_006", "201")
                 self.assertEqual(ctx.exception.status_code, 409)
@@ -142,11 +132,9 @@ class WebApiAiApplyTests(unittest.TestCase):
             base = Path(td)
             run_root = base / "runs"
             upload_root = base / "uploads"
-            meta_root = base / "meta"
             run_dir = run_root / "smoke_test_006"
             run_dir.mkdir(parents=True, exist_ok=True)
             upload_root.mkdir(parents=True, exist_ok=True)
-            meta_root.mkdir(parents=True, exist_ok=True)
 
             (run_dir / "risk_result_validated.json").write_text(
                 json.dumps(_validated_payload(), ensure_ascii=False, indent=2),
@@ -166,20 +154,6 @@ class WebApiAiApplyTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (meta_root / "smoke_test_006.json").write_text(
-                json.dumps(
-                    {
-                        "run_id": "smoke_test_006",
-                        "status": "completed",
-                        "review_side": "supplier",
-                        "contract_type_hint": "service_agreement",
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
-
             fake_client = type(
                 "FakeClientFlat",
                 (),
@@ -199,7 +173,7 @@ class WebApiAiApplyTests(unittest.TestCase):
             )
 
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", fake_client
             ):
@@ -213,11 +187,9 @@ class WebApiAiApplyTests(unittest.TestCase):
             base = Path(td)
             run_root = base / "runs"
             upload_root = base / "uploads"
-            meta_root = base / "meta"
             run_dir = run_root / "smoke_test_006"
             run_dir.mkdir(parents=True, exist_ok=True)
             upload_root.mkdir(parents=True, exist_ok=True)
-            meta_root.mkdir(parents=True, exist_ok=True)
 
             (run_dir / "risk_result_validated.json").write_text(
                 json.dumps(_validated_payload(), ensure_ascii=False, indent=2),
@@ -237,20 +209,6 @@ class WebApiAiApplyTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (meta_root / "smoke_test_006.json").write_text(
-                json.dumps(
-                    {
-                        "run_id": "smoke_test_006",
-                        "status": "completed",
-                        "review_side": "supplier",
-                        "contract_type_hint": "service_agreement",
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
-
             fake_client = type(
                 "FakeClientDelete",
                 (),
@@ -272,7 +230,7 @@ class WebApiAiApplyTests(unittest.TestCase):
             )
 
             with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
+                web_api, "get_review_meta", return_value=_review_meta()
             ), patch.object(web_api.settings, "dify_rewrite_workflow_api_key", "app-rewrite"), patch.object(
                 web_api, "DifyWorkflowClient", fake_client
             ):

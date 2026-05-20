@@ -11,7 +11,7 @@ PostgreSQL 使用 `contract_review` schema：
 - `contract_review.review_text_artifacts`
 - `contract_review.review_file_assets`
 
-旧 SQLite / JSON 历史数据不迁移、不删除。上传文件、转换文件、DOCX 导出文件、日志和 `data/runs` 运行产物仍保留在文件系统中，本阶段不接 MinIO。
+`contract_review.review_runs` 是运行元数据主表；`review_json_artifacts` / `review_text_artifacts` 是 PostgreSQL 中的结构化 artifact 索引增强，默认开启。旧 SQLite / JSON 历史数据不迁移、不删除。上传文件、转换文件、DOCX 导出文件、日志和 `data/runs` 运行产物仍保留在文件系统中，本阶段不接 MinIO。
 
 ## 技术栈
 
@@ -140,7 +140,7 @@ python app.py /path/to/contract.docx --run-id live_test_001 --resume
 | `DIFY_MAX_CONCURRENCY` | 风险识别并发数 |
 | `CLAUSE_SPLIT_MAX_CONCURRENCY` | 条款切分并发数 |
 | `RUN_ROOT` | 运行产物目录，本地默认 `data/runs` |
-| `MIRROR_RUN_ARTIFACTS_TO_DB` | 可选，将写入文件系统的 JSON / 文本运行产物同步索引到 PostgreSQL |
+| `MIRROR_RUN_ARTIFACTS_TO_DB` | JSON / 文本 artifact 的 PostgreSQL 同步开关，默认 `1`；设为 `0` 可关闭同步，`data/runs` 仍是文件产物主存储 |
 | `DEBUG_SAVE_INTERMEDIATE` | 是否保留中间产物 |
 | `FAST_SCREEN_ENABLED` | 是否启用 Fast Screen |
 | `FAST_SCREEN_MAX_CANDIDATES` | Fast Screen 最大候选数 |
@@ -153,10 +153,9 @@ python app.py /path/to/contract.docx --run-id live_test_001 --resume
 data/
   uploads/                       # Web 上传原文件
   runs/<run_id>/                 # 单次审查运行产物、转换文件、导出文件、日志
-  web_meta/                      # 旧版元数据兼容目录，只读兜底
 ```
 
-PostgreSQL 中保存审查任务元数据、任务状态、进度、错误信息和结构化 artifact 索引。DOCX、PDF、日志和导出文件仍保存在文件系统中，避免数据库过大。
+PostgreSQL 中 `contract_review.review_runs` 保存审查任务元数据、任务状态、进度和错误信息。`review_json_artifacts` / `review_text_artifacts` 默认同步 JSON / 文本 artifact，作为结构化查询和排查增强；同步失败不会影响文件落盘。DOCX、PDF、上传文件、日志和导出文件仍保存在文件系统中，避免数据库过大。
 
 ## 主要 API
 

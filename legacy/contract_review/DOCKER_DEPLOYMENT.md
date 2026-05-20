@@ -17,7 +17,8 @@ python scripts/dev.py --only contract-review
 - PostgreSQL 18 保存合同审查运行元数据和结构化 artifact 索引。
 - 使用 schema：`contract_review`。
 - 表包括 `review_runs`、`review_json_artifacts`、`review_text_artifacts`、`review_file_assets`。
-- 上传文件、运行产物、日志和 DOCX 导出仍保存在 `data/` 目录或 Docker volume 中。
+- `review_runs` 是运行元数据主表；JSON / 文本 artifact 默认同步到 `review_json_artifacts` / `review_text_artifacts`，可通过 `MIRROR_RUN_ARTIFACTS_TO_DB=0` 关闭。
+- 上传文件、运行产物、日志和 DOCX 导出仍保存在 `data/` 目录或 Docker volume 中，其中 `data/runs` 是文件产物主存储。
 - 旧 SQLite / JSON 历史数据不迁移、不删除。
 
 ## legacy Docker Compose 调试

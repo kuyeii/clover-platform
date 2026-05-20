@@ -30,19 +30,15 @@ class WebApiReviewedPatchTests(unittest.TestCase):
             base = Path(td)
             run_root = base / "runs"
             upload_root = base / "uploads"
-            meta_root = base / "meta"
             run_dir = run_root / "smoke_test_006"
             run_dir.mkdir(parents=True, exist_ok=True)
             upload_root.mkdir(parents=True, exist_ok=True)
-            meta_root.mkdir(parents=True, exist_ok=True)
             (run_dir / "risk_result_validated.json").write_text(
                 json.dumps(_validated_payload(), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
 
-            with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
-            ):
+            with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root):
                 body = web_api.patch_risk_status("smoke_test_006", "101", web_api.RiskPatchBody(status="rejected"))
                 self.assertTrue(body.get("ok"))
                 self.assertEqual(body["item"]["status"], "rejected")
@@ -59,19 +55,15 @@ class WebApiReviewedPatchTests(unittest.TestCase):
             base = Path(td)
             run_root = base / "runs"
             upload_root = base / "uploads"
-            meta_root = base / "meta"
             run_dir = run_root / "smoke_test_006"
             run_dir.mkdir(parents=True, exist_ok=True)
             upload_root.mkdir(parents=True, exist_ok=True)
-            meta_root.mkdir(parents=True, exist_ok=True)
             (run_dir / "risk_result_validated.json").write_text(
                 json.dumps(_validated_payload(), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
 
-            with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root), patch.object(
-                web_api, "WEB_META_ROOT", meta_root
-            ):
+            with patch.object(web_api, "RUN_ROOT", run_root), patch.object(web_api, "UPLOAD_ROOT", upload_root):
                 with self.assertRaises(web_api.HTTPException) as ctx:
                     web_api.patch_risk_status("smoke_test_006", "999", web_api.RiskPatchBody(status="rejected"))
                 self.assertEqual(ctx.exception.status_code, 404)
