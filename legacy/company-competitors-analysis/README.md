@@ -502,13 +502,23 @@ backend/data/history.json
 
 ## Docker 部署
 
+第 5-A 后，竞对分析历史记录已切换到 PostgreSQL 的 `competitor_analysis` schema。旧 SQLite 文件仅作为历史运行产物保留，不再作为当前运行数据源，且不做历史数据迁移。当前 Docker 配置尚未作为 PostgreSQL 部署方案交付，Docker 统一部署会在后续阶段单独处理。
+
 ### 1. 准备环境变量
 
 ```bash
 cp .env.example .env.local
 ```
 
-编辑 `.env.local`，填入生产环境 Dify Workflow 地址和 API Key。
+编辑 `.env.local`，填入生产环境 Dify Workflow 地址和 API Key。不要提交 `.env`、`.env.local` 或任何包含真实密钥/数据库密码的环境文件。
+
+竞对分析后端通过 `DATABASE_URL` 或 `POSTGRES_*` 连接 PostgreSQL。运行前请先在 clover-platform 根目录执行：
+
+```bash
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+```
 
 如果 Dify 运行在宿主机，容器内不能使用 `localhost` 访问宿主机服务。Mac/Windows Docker Desktop 可使用：
 
@@ -561,6 +571,7 @@ docker compose down
 - 读取 `.env.local`。
 - 设置 `STATIC_DIR=/app/dist`。
 - 需要连接外部 PostgreSQL，并确保已完成 `competitor_analysis` schema 初始化。
+- 不再配置 `HISTORY_DB_PATH` / `history.sqlite3`；当前 Docker 配置不是最终 PostgreSQL 部署方案。
 
 ## 常见问题
 
@@ -638,7 +649,7 @@ GET /api/history/{result_id}
 
 ## 开发建议
 
-- 不要提交 `.env.local`、`.env.production`、SQLite/DB 文件、`node_modules`、`dist` 等运行产物。
+- 不要提交 `.env`、`.env.local`、`.env.production`、SQLite/DB 文件、`node_modules`、`dist` 等运行产物。
 - API Key 应尽量使用无 `VITE_` 前缀的后端变量，例如 `SCORE_API_KEY`，避免被前端构建过程暴露。
 - 修改 Dify 输出结构时，需要同步检查后端解析逻辑：
   - `run_input_validation_workflow`

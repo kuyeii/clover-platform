@@ -23,13 +23,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BACKEND_HOST=0.0.0.0 \
     BACKEND_PORT=8788 \
     CORS_ORIGIN=http://localhost:8788 \
-    STATIC_DIR=/app/dist \
-    HISTORY_DB_PATH=/app/backend/data/history.sqlite3
+    STATIC_DIR=/app/dist
 
 COPY backend ./backend
 COPY --from=frontend /app/dist ./dist
 
-RUN mkdir -p /app/backend/data
+# Stage 5-A stores runtime data in PostgreSQL competitor_analysis schema.
+# This Dockerfile has not yet been delivered as the final PostgreSQL deployment plan.
+# Configure DATABASE_URL or POSTGRES_* at runtime; HISTORY_DB_PATH/history.sqlite3 is deprecated.
 
 EXPOSE 8788
 

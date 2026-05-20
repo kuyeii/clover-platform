@@ -2,7 +2,9 @@
 
 适用项目：`company-competitors-analysis`
 
-本指南用于在本地 Mac 环境下测试项目是否可以正常 Docker 打包、运行、访问页面，以及确认后端和 SQLite 数据是否正常。
+本指南用于在本地 Mac 环境下测试项目是否可以正常 Docker 打包、运行和访问页面。
+
+第 5-A 后，竞对分析历史记录已切换到 PostgreSQL 的 `competitor_analysis` schema。旧 SQLite 文件仅作为历史运行产物保留，不再作为当前运行数据源，且不做历史数据迁移。当前 Docker 配置尚未作为 PostgreSQL 部署方案交付，Docker 统一部署会在后续阶段单独处理；本地开发运行以 clover-platform 根目录 `.env` / `DATABASE_URL` 或 `POSTGRES_*` 为准。
 
 ---
 
@@ -91,13 +93,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BACKEND_HOST=0.0.0.0 \
     BACKEND_PORT=8788 \
     CORS_ORIGIN=http://localhost:8788 \
-    STATIC_DIR=/app/dist \
-    HISTORY_DB_PATH=/app/backend/data/history.sqlite3
+    STATIC_DIR=/app/dist
 
 COPY backend ./backend
 COPY --from=frontend /app/dist ./dist
 
-RUN mkdir -p /app/backend/data
+# Stage 5-A stores runtime data in PostgreSQL competitor_analysis schema.
+# This Dockerfile has not yet been delivered as the final PostgreSQL deployment plan.
+# Configure DATABASE_URL or POSTGRES_* at runtime; HISTORY_DB_PATH/history.sqlite3 is deprecated.
 
 EXPOSE 8788
 
@@ -113,7 +116,7 @@ CMD ["python", "backend/server.py"]
 - 使用 `m.daocloud.io/docker.io/library/...` 镜像前缀，适合 Docker Hub 访问不稳定的环境。
 - 前端使用 Node 构建，后端使用 Python 运行。
 - 后端端口是 `8788`。
-- SQLite 数据库存储路径是 `/app/backend/data/history.sqlite3`。
+- 第 5-A 后不应继续使用 `HISTORY_DB_PATH` / `history.sqlite3` 作为当前数据源；历史记录写入 PostgreSQL `competitor_analysis.history_records`。
 
 ---
 
@@ -232,7 +235,6 @@ docker run --rm \
   --name competitor-analysis-test \
   -p 8788:8788 \
   --env-file .env.production \
-  -v "$(pwd)/backend/data:/app/backend/data" \
   --add-host=host.docker.internal:host-gateway \
   competitor-analysis:test
 ```
@@ -243,8 +245,8 @@ docker run --rm \
 - `--name competitor-analysis-test`：容器名称。
 - `-p 8788:8788`：把容器的 8788 端口映射到本机 8788。
 - `--env-file .env.production`：读取生产环境变量。
-- `-v "$(pwd)/backend/data:/app/backend/data"`：把 SQLite 数据库目录挂载到本机，避免容器删除后数据丢失。
 - `--add-host=host.docker.internal:host-gateway`：让容器可以访问宿主机服务。
+- 当前 Docker 配置尚未完成第 5-A PostgreSQL 部署适配；不要把 `HISTORY_DB_PATH` / `history.sqlite3` 作为当前数据源。
 
 ---
 
@@ -295,7 +297,6 @@ docker run -d \
   --name competitor-analysis-test \
   -p 8788:8788 \
   --env-file .env.production \
-  -v "$(pwd)/backend/data:/app/backend/data" \
   --add-host=host.docker.internal:host-gateway \
   competitor-analysis:test
 ```
@@ -332,35 +333,26 @@ docker stop competitor-analysis-test
 
 ---
 
-## 11. SQLite 数据库说明
+## 11. 数据库说明
 
-当前部署方式仍然使用 SQLite。
-
-容器内数据库路径：
+第 5-A 后，运行时历史记录和企业缓存写入 PostgreSQL：
 
 ```text
-/app/backend/data/history.sqlite3
+competitor_analysis.history_records
+competitor_analysis.storage_meta
+competitor_analysis.company_profiles
+competitor_analysis.company_validation_queries
 ```
 
-因为运行时挂载了：
+旧 `backend/data/history.sqlite3` 只作为历史运行产物保留，不再作为当前运行数据源，且不做历史数据迁移。运行前请在 clover-platform 根目录完成初始化和检查：
 
 ```bash
--v "$(pwd)/backend/data:/app/backend/data"
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
 ```
 
-所以实际数据会保存在你本机项目目录：
-
-```text
-backend/data/history.sqlite3
-```
-
-容器删除后，只要本机的 `backend/data/history.sqlite3` 还在，历史数据就还在。
-
-检查数据库文件：
-
-```bash
-ls -lh backend/data
-```
+竞对分析后端通过 `DATABASE_URL` 或 `POSTGRES_*` 连接 PostgreSQL，不要提交 `.env` 或写入真实数据库密码。
 
 ---
 
@@ -435,7 +427,6 @@ docker run --rm \
   --name competitor-analysis-test \
   -p 8899:8788 \
   --env-file .env.production \
-  -v "$(pwd)/backend/data:/app/backend/data" \
   --add-host=host.docker.internal:host-gateway \
   competitor-analysis:test
 ```
@@ -462,7 +453,6 @@ docker run --rm \
   --name competitor-analysis-test \
   -p 8788:8788 \
   --env-file .env.production \
-  -v "$(pwd)/backend/data:/app/backend/data" \
   --add-host=host.docker.internal:host-gateway \
   competitor-analysis:test
 ```
@@ -485,7 +475,7 @@ Ctrl + C
 
 本地测试通过后，正式部署时建议：
 
-1. 不要把 `.env.local`、`.env.production`、SQLite 数据库文件提交到代码仓库。
+1. 不要把 `.env.local`、`.env.production`、`.env`、SQLite/DB 文件提交到代码仓库。
 2. 生产环境使用单独的 `.env.production`。
 3. 如果部署到 Linux 服务器，保留：
 
@@ -493,7 +483,7 @@ Ctrl + C
 --add-host=host.docker.internal:host-gateway
 ```
 
-4. 如果后续多用户、高并发或多容器部署，建议把 SQLite 迁移到 PostgreSQL 或 MySQL。
+4. PostgreSQL 正式 Docker 部署会在后续 Docker 阶段统一改造；当前 Docker 配置不是最终数据库部署方案。
 5. 如果服务器能正常访问 Docker Hub，可以把基础镜像改回官方镜像：
 
 ```dockerfile
