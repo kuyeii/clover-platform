@@ -3,6 +3,7 @@ import json
 import time
 import uuid
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -31,6 +32,13 @@ def _sse_data(obj: dict) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
 
+def _validate_uuid(value: str, field_name: str) -> None:
+    try:
+        UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"{field_name} 不是合法 UUID") from exc
+
+
 @router.post("/chat/stream")
 async def chat_stream(
     body: ChatStreamRequest,
@@ -39,6 +47,7 @@ async def chat_stream(
     request_id = new_request_id()
     user_id = (body.user_id or settings.default_user_id).strip() or settings.default_user_id
     session_id = body.session_id or str(uuid.uuid4())
+    _validate_uuid(session_id, "session_id")
     user_message = body.message
     allow_search = "1" if body.allow_search else "0"
     history = body.history

@@ -14,8 +14,11 @@ from app.schemas.conversations import (
 from app.services import conversation_db
 
 
-def _parse_uuid(cid: str) -> UUID:
-    return UUID(cid)
+def _parse_uuid(value: str, field_name: str) -> UUID:
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} 不是合法 UUID") from exc
 
 
 def read_bootstrap(settings: Settings) -> ConversationsBootstrapResponse:
@@ -54,12 +57,10 @@ def apply_sync(settings: Settings, body: ConversationsSyncRequest) -> None:
         conversation_db.sync_conversations(settings, [], set())
         return
 
-    try:
-        _parse_uuid(body.activeConversationId)
-    except ValueError as exc:
-        raise ValueError("activeConversationId 不是合法 UUID") from exc
+    _parse_uuid(body.activeConversationId, "activeConversationId")
 
     for c in trimmed:
-        _parse_uuid(c.id)
+        _parse_uuid(c.id, "id")
+        _parse_uuid(c.sessionId, "sessionId")
 
     conversation_db.sync_conversations(settings, trimmed, allowed_ids)
