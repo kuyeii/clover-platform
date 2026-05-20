@@ -41,6 +41,7 @@ python scripts/check_db.py
 python scripts/init_db.py
 alembic upgrade head
 python scripts/check_db.py
+python scripts/preflight.py --no-business
 
 cd legacy/portal-launchpad
 npm install
@@ -171,7 +172,10 @@ python scripts/check_db.py
 python scripts/init_db.py
 alembic upgrade head
 python scripts/check_db.py
+python scripts/preflight.py --no-business
 ```
+
+`portal.user_profiles` 和 `portal.feedback_submissions` 已纳入 monorepo 统一数据库初始化和 Alembic。Portal 表缺失时，应通过 `python scripts/init_db.py` 和 `alembic upgrade head` 修复；Portal 后端启动时的建表逻辑只是兼容性兜底。
 
 Portal 使用以下 PostgreSQL 表：
 
@@ -238,6 +242,14 @@ python scripts/dev.py --no-business
 ```
 
 `--write-ports-only` 只生成 `runtime/ports.json`，不启动进程。`--no-business` 启动 Portal 前后端，不启动四个业务模块。
+
+`scripts/dev.py` 默认会先执行 preflight。如新环境提示缺少 root infrastructure dependency，请在 `clover-platform` 根目录执行：
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+preflight 不会自动安装依赖，也不会打印数据库密码或其他密钥。
 
 Portal runtime apps 接口：
 

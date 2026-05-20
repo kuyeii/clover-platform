@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from dotenv import load_dotenv
 
+from packages.py_common.apps import auto_start_codes, resolve_app_tokens, select_app_codes
 from packages.py_common.config.loader import load_apps_config
 from packages.py_common.ports import PortAllocationError, check_port_plan
 from packages.py_common.preflight import run_preflight
@@ -66,65 +67,6 @@ def _format_env(env_config: dict[str, Any], app: dict[str, Any], plan: dict[str,
     return {key: _format_value(str(value), app, plan) for key, value in env_config.items()}
 
 
-def _app_token_maps(apps_config: dict[str, Any]) -> tuple[dict[str, str], list[str], list[str]]:
-    apps = apps_config.get("apps") or {}
-    preferred_order = [
-        "portal",
-        "bid-generator",
-        "contract-review",
-        "competitor-analysis",
-        "rag-web-search",
-    ]
-    ordered_apps = sorted(
-        apps.items(),
-        key=lambda item: preferred_order.index(str(item[1].get("code")))
-        if str(item[1].get("code")) in preferred_order
-        else len(preferred_order),
-    )
-    token_to_code: dict[str, str] = {}
-    app_codes: list[str] = []
-    module_keys: list[str] = []
-    for key, app in ordered_apps:
-        code = str(app.get("code"))
-        module_key = str(app.get("module_key") or key)
-        app_codes.append(code)
-        module_keys.append(module_key)
-        token_to_code[str(key)] = code
-        token_to_code[code] = code
-        token_to_code[module_key] = code
-    return token_to_code, app_codes, module_keys
-
-
-def _unknown_token_message(token: str, app_codes: list[str], module_keys: list[str]) -> str:
-    app_codes_text = "\n".join(f"  {code}" for code in app_codes)
-    module_keys_text = "\n".join(f"  {module_key}" for module_key in module_keys)
-    return (
-        f"Unknown app token: {token}\n\n"
-        f"Available app codes:\n{app_codes_text}\n\n"
-        f"Available module keys:\n{module_keys_text}"
-    )
-
-
-def _resolve_app_tokens(apps_config: dict[str, Any], values: list[str]) -> set[str]:
-    token_to_code, app_codes, module_keys = _app_token_maps(apps_config)
-    resolved: set[str] = set()
-    for value in values:
-        normalized = value.strip()
-        if normalized not in token_to_code:
-            raise ValueError(_unknown_token_message(normalized, app_codes, module_keys))
-        resolved.add(token_to_code[normalized])
-    return resolved
-
-
-def _auto_start_codes(apps_config: dict[str, Any]) -> set[str]:
-    apps = apps_config.get("apps") or {}
-    return {
-        str(app.get("code"))
-        for app in apps.values()
-        if isinstance(app, dict) and bool((app.get("dev") or {}).get("enabled", False))
-    }
-
-
 def _port_plan_include_codes(
     apps_config: dict[str, Any],
     *,
@@ -132,13 +74,12 @@ def _port_plan_include_codes(
     write_ports_only: bool,
     only: set[str],
 ) -> set[str] | None:
-    if no_business:
-        return {"portal"}
-    if only:
-        return set(only)
-    if write_ports_only:
-        return None
-    return _auto_start_codes(apps_config)
+    return select_app_codes(
+        apps_config,
+        no_business=no_business,
+        only=only,
+        default_all=write_ports_only,
+    )
 
 
 def should_start_app(
@@ -223,8 +164,8 @@ def main() -> int:
 
     try:
         apps_config = load_apps_config(REPO_ROOT)
-        only = _resolve_app_tokens(apps_config, args.only)
-        skip = _resolve_app_tokens(apps_config, args.skip)
+        only = resolve_app_tokens(apps_config, args.only)
+        skip = resolve_app_tokens(apps_config, args.skip)
         include_codes = _port_plan_include_codes(
             apps_config,
             no_business=args.no_business,
@@ -244,7 +185,7 @@ def main() -> int:
         preflight_report = run_preflight(
             REPO_ROOT,
             apps_config,
-            include_codes=include_codes or _auto_start_codes(apps_config),
+            include_codes=include_codes or auto_start_codes(apps_config),
             exclude_codes=skip,
             port_plan=port_plan,
         )

@@ -41,6 +41,10 @@ def main() -> int:
         print("Ensured core indexes")
         for index in result.core_indexes:
             print(f"Ensured index: core.{index}")
+        print("Ensured portal tables")
+        print("Ensured portal indexes")
+        for index in result.portal_indexes:
+            print(f"Ensured index: portal.{index}")
         print("Ensured module_meta tables")
         print("Database initialization completed")
         return 0

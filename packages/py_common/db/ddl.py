@@ -149,6 +149,42 @@ CORE_INDEXES: tuple[str, ...] = (
     "idx_jobs_created_by",
 )
 
+PORTAL_TABLES: tuple[str, ...] = (
+    "user_profiles",
+    "feedback_submissions",
+)
+
+CREATE_PORTAL_TABLE_SQLS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS portal.user_profiles (
+      user_id UUID PRIMARY KEY REFERENCES core.users(id) ON DELETE CASCADE,
+      role VARCHAR(50) NOT NULL DEFAULT 'operator',
+      last_login_at TIMESTAMPTZ NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS portal.feedback_submissions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      kind VARCHAR(50) NOT NULL CHECK(kind IN ('ticket', 'feature_request')),
+      user_id UUID NOT NULL REFERENCES core.users(id) ON DELETE CASCADE,
+      submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+)
+
+CREATE_PORTAL_INDEX_SQLS: tuple[str, ...] = (
+    """
+    CREATE INDEX IF NOT EXISTS idx_feedback_submissions_lookup
+      ON portal.feedback_submissions(kind, user_id, submitted_at)
+    """,
+)
+
+PORTAL_INDEXES: tuple[str, ...] = (
+    "idx_feedback_submissions_lookup",
+)
+
 CREATE_MODULE_META_TABLE_SQLS: tuple[tuple[str, str], ...] = tuple(
     (
         schema,

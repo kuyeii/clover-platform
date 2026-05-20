@@ -12,11 +12,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import dotenv_values
-from sqlalchemy import text
-
+from packages.py_common.apps import PREFERRED_APP_ORDER, app_by_code, auto_start_codes
 from packages.py_common.config.loader import load_yaml
 from packages.py_common.db.health import check_database_connection
-from packages.py_common.db.session import get_engine
 from packages.py_common.ports import PortAllocationError, check_port_plan
 
 CheckStatus = Literal["ok", "warn", "error", "skip"]
@@ -75,16 +73,6 @@ class PreflightReport:
             lines.append("  strict: warnings cause a non-zero exit code")
         return "\n".join(lines)
 
-
-PREFERRED_APP_ORDER = (
-    "portal",
-    "contract-review",
-    "rag-web-search",
-    "competitor-analysis",
-    "bid-generator",
-)
-
-PORTAL_TABLES = ("user_profiles", "feedback_submissions")
 
 ROOT_IMPORTS = {
     "sqlalchemy": "SQLAlchemy",
@@ -169,71 +157,6 @@ CONFIG_HINTS = {
 
 SENSITIVE_NAME_RE = re.compile(r"(PASSWORD|SECRET|TOKEN|KEY|API_KEY)", re.IGNORECASE)
 URL_PASSWORD_RE = re.compile(r"([a-z][a-z0-9+.-]*://[^:/@\s]+:)([^@\s]+)(@)", re.IGNORECASE)
-
-
-def app_token_maps(apps_config: dict[str, Any]) -> tuple[dict[str, str], list[str], list[str]]:
-    apps = apps_config.get("apps") or {}
-    ordered_apps = sorted(
-        apps.items(),
-        key=lambda item: PREFERRED_APP_ORDER.index(str(item[1].get("code")))
-        if str(item[1].get("code")) in PREFERRED_APP_ORDER
-        else len(PREFERRED_APP_ORDER),
-    )
-    token_to_code: dict[str, str] = {}
-    app_codes: list[str] = []
-    module_keys: list[str] = []
-    for key, app in ordered_apps:
-        code = str(app.get("code") or key)
-        module_key = str(app.get("module_key") or key)
-        app_codes.append(code)
-        module_keys.append(module_key)
-        token_to_code[str(key)] = code
-        token_to_code[code] = code
-        token_to_code[module_key] = code
-    return token_to_code, app_codes, module_keys
-
-
-def unknown_token_message(token: str, app_codes: list[str], module_keys: list[str]) -> str:
-    app_codes_text = "\n".join(f"  {code}" for code in app_codes)
-    module_keys_text = "\n".join(f"  {module_key}" for module_key in module_keys)
-    return (
-        f"Unknown app token: {token}\n\n"
-        f"Available app codes:\n{app_codes_text}\n\n"
-        f"Available module keys:\n{module_keys_text}"
-    )
-
-
-def resolve_app_tokens(apps_config: dict[str, Any], values: list[str]) -> set[str]:
-    token_to_code, app_codes, module_keys = app_token_maps(apps_config)
-    resolved: set[str] = set()
-    for value in values:
-        normalized = value.strip()
-        if normalized not in token_to_code:
-            raise ValueError(unknown_token_message(normalized, app_codes, module_keys))
-        resolved.add(token_to_code[normalized])
-    return resolved
-
-
-def auto_start_codes(apps_config: dict[str, Any]) -> set[str]:
-    apps = apps_config.get("apps") or {}
-    return {
-        str(app.get("code"))
-        for app in apps.values()
-        if isinstance(app, dict) and bool((app.get("dev") or {}).get("enabled", False))
-    }
-
-
-def selected_codes(
-    apps_config: dict[str, Any],
-    *,
-    no_business: bool = False,
-    only: set[str] | None = None,
-) -> set[str]:
-    if no_business:
-        return {"portal"}
-    if only:
-        return set(only)
-    return auto_start_codes(apps_config)
 
 
 def _redact(text_value: str, env_values: dict[str, Any]) -> str:
@@ -385,47 +308,20 @@ def _check_database(repo_root: Path, env_values: dict[str, Any]) -> list[CheckRe
     else:
         results.append(CheckResult("core schema and tables", "ok", "Core schemas, tables, module_meta tables, and indexes exist"))
 
-    try:
-        with get_engine().connect() as conn:
-            portal_tables = [
-                row[0]
-                for row in conn.execute(
-                    text(
-                        """
-                        SELECT table_name
-                        FROM information_schema.tables
-                        WHERE table_schema = 'portal'
-                          AND table_name = ANY(:tables)
-                        ORDER BY table_name
-                        """
-                    ),
-                    {"tables": list(PORTAL_TABLES)},
-                )
-            ]
-    except Exception as exc:
-        safe_error = _redact(str(exc), env_values)
+    missing_portal = result.get("missing_portal_tables", [])
+    missing_portal_indexes = result.get("missing_portal_indexes", [])
+    if missing_portal or missing_portal_indexes:
+        missing = [*(f"portal.{table}" for table in missing_portal), *(f"portal index {index}" for index in missing_portal_indexes)]
         results.append(
             CheckResult(
                 "Portal PostgreSQL tables",
                 "error",
-                f"Cannot inspect Portal tables: {safe_error}",
+                f"Missing Portal database objects: {', '.join(missing)}",
                 "python scripts/init_db.py && alembic upgrade head",
             )
         )
-        return results
-
-    missing_portal = sorted(set(PORTAL_TABLES) - set(portal_tables))
-    if missing_portal:
-        results.append(
-            CheckResult(
-                "Portal PostgreSQL tables",
-                "error",
-                f"Missing Portal tables: {', '.join(f'portal.{table}' for table in missing_portal)}",
-                "Start Portal once after database initialization, or run the Portal PostgreSQL initialization step.",
-            )
-        )
     else:
-        results.append(CheckResult("Portal PostgreSQL tables", "ok", "Portal tables exist"))
+        results.append(CheckResult("Portal PostgreSQL tables", "ok", "Portal tables and indexes exist"))
 
     return results
 
@@ -469,14 +365,6 @@ def _check_port_plan(
         elif service.get("available") is True:
             results.append(CheckResult(f"{label} port", "ok", f"Preferred port {service['port']} is available"))
     return results
-
-
-def _app_by_code(apps_config: dict[str, Any], code: str) -> dict[str, Any] | None:
-    apps = apps_config.get("apps") or {}
-    for app in apps.values():
-        if isinstance(app, dict) and str(app.get("code")) == code:
-            return app
-    return None
 
 
 def _module_paths(app: dict[str, Any], repo_root: Path) -> tuple[Path, Path, Path]:
@@ -663,8 +551,9 @@ def run_preflight(
     if includes_portal:
         results.extend(_check_database(root, env_values))
 
+    apps_by_code = app_by_code(apps_config)
     for code in sorted(selected, key=lambda item: PREFERRED_APP_ORDER.index(item) if item in PREFERRED_APP_ORDER else 99):
-        app = _app_by_code(apps_config, code)
+        app = apps_by_code.get(code)
         if not app:
             results.append(CheckResult(code, "error", "Selected app is not present in config/apps.yaml"))
             continue

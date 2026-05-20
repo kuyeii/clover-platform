@@ -12,7 +12,11 @@ from .ddl import (
     CREATE_CORE_TABLE_SQLS,
     CREATE_EXTENSION_SQL,
     CREATE_MODULE_META_TABLE_SQLS,
+    CREATE_PORTAL_INDEX_SQLS,
+    CREATE_PORTAL_TABLE_SQLS,
     CREATE_SCHEMA_SQLS,
+    PORTAL_INDEXES,
+    PORTAL_TABLES,
     SCHEMAS,
     UPSERT_MODULE_META_SQLS,
 )
@@ -23,6 +27,8 @@ class InitResult:
     schemas: tuple[str, ...]
     core_tables: tuple[str, ...]
     core_indexes: tuple[str, ...]
+    portal_tables: tuple[str, ...]
+    portal_indexes: tuple[str, ...]
     module_meta_schemas: tuple[str, ...]
 
 
@@ -39,6 +45,10 @@ def init_database_schema(engine: Engine) -> InitResult:
             _execute(conn, statement)
         for statement in CREATE_CORE_INDEX_SQLS:
             _execute(conn, statement)
+        for statement in CREATE_PORTAL_TABLE_SQLS:
+            _execute(conn, statement)
+        for statement in CREATE_PORTAL_INDEX_SQLS:
+            _execute(conn, statement)
         for _, statement in CREATE_MODULE_META_TABLE_SQLS:
             _execute(conn, statement)
         for _, statement, params in UPSERT_MODULE_META_SQLS:
@@ -48,5 +58,7 @@ def init_database_schema(engine: Engine) -> InitResult:
         schemas=SCHEMAS,
         core_tables=CORE_TABLES,
         core_indexes=CORE_INDEXES,
+        portal_tables=PORTAL_TABLES,
+        portal_indexes=PORTAL_INDEXES,
         module_meta_schemas=tuple(schema for schema, _ in CREATE_MODULE_META_TABLE_SQLS),
     )

@@ -15,34 +15,13 @@ from sqlalchemy.engine import Connection
 from .config import APP_IDS, APP_USAGE_TTL_SECONDS, MONOREPO_ROOT, SESSION_TTL_SECONDS
 from .security import hash_password, normalize_account, sanitize_user
 
+from packages.py_common.db.ddl import CREATE_PORTAL_INDEX_SQLS, CREATE_PORTAL_TABLE_SQLS  # noqa: E402
 from packages.py_common.db.session import get_engine  # noqa: E402
 
 logger = logging.getLogger("portal.database")
 
 PASSWORD_SEPARATOR = "$"
-PORTAL_MODULE_TABLES = (
-    """
-    CREATE TABLE IF NOT EXISTS portal.user_profiles (
-      user_id UUID PRIMARY KEY REFERENCES core.users(id) ON DELETE CASCADE,
-      role VARCHAR(50) NOT NULL DEFAULT 'operator',
-      last_login_at TIMESTAMPTZ NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS portal.feedback_submissions (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      kind VARCHAR(50) NOT NULL CHECK(kind IN ('ticket', 'feature_request')),
-      user_id UUID NOT NULL REFERENCES core.users(id) ON DELETE CASCADE,
-      submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_feedback_submissions_lookup
-      ON portal.feedback_submissions(kind, user_id, submitted_at)
-    """,
-)
+PORTAL_MODULE_TABLES = (*CREATE_PORTAL_TABLE_SQLS, *CREATE_PORTAL_INDEX_SQLS)
 
 
 def _now_dt() -> datetime:

@@ -77,6 +77,28 @@ def main() -> int:
         print("Database connection OK, but core indexes are missing. Run: python scripts/init_db.py")
         return 2
 
+    print("Portal tables:")
+    for table in result["portal_tables"]:
+        print(f"  - portal.{table}")
+
+    if result["missing_portal_tables"]:
+        print("Missing Portal tables:")
+        for table in result["missing_portal_tables"]:
+            print(f"  - portal.{table}")
+        print("Portal tables are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
+    print("Portal indexes:")
+    for index in result["portal_indexes"]:
+        print(f"  - portal.{index}")
+
+    if result["missing_portal_indexes"]:
+        print("Missing Portal indexes:")
+        for index in result["missing_portal_indexes"]:
+            print(f"  - portal.{index}")
+        print("Portal indexes are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
     if result["missing_schemas"]:
         print("Database connection OK, but required schemas are missing. Run: python scripts/init_db.py")
         return 2
