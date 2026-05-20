@@ -131,6 +131,13 @@ def ensure_venv(python: Path) -> None:
     _run([sys.executable, "-m", "venv", ".venv"])
 
 
+def ensure_pip(python: Path) -> None:
+    if _run([str(python), "-m", "pip", "--version"], allow_failure=True) == 0:
+        return
+    print("==> pip is missing in .venv; bootstrapping it with ensurepip")
+    _run([str(python), "-m", "ensurepip", "--upgrade"])
+
+
 def selected_apps(args: argparse.Namespace) -> tuple[str, ...]:
     if args.no_business:
         return ("portal",)
@@ -149,6 +156,7 @@ def selected_apps(args: argparse.Namespace) -> tuple[str, ...]:
 
 
 def install_python_dependencies(python: Path, apps: tuple[str, ...]) -> None:
+    ensure_pip(python)
     _run([str(python), "-m", "pip", "install", "--upgrade", "pip"])
     requirements = ["requirements-dev.txt"]
     for app in apps:
