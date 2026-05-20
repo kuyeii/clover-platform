@@ -45,6 +45,10 @@ def main() -> int:
         print("Ensured portal indexes")
         for index in result.portal_indexes:
             print(f"Ensured index: portal.{index}")
+        print("Ensured rag tables")
+        print("Ensured rag indexes")
+        for index in result.rag_indexes:
+            print(f"Ensured index: rag.{index}")
         print("Ensured competitor_analysis tables")
         print("Ensured competitor_analysis indexes")
         for index in result.competitor_analysis_indexes:

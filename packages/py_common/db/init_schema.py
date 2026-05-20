@@ -18,9 +18,13 @@ from .ddl import (
     CREATE_MODULE_META_TABLE_SQLS,
     CREATE_PORTAL_INDEX_SQLS,
     CREATE_PORTAL_TABLE_SQLS,
+    CREATE_RAG_INDEX_SQLS,
+    CREATE_RAG_TABLE_SQLS,
     CREATE_SCHEMA_SQLS,
     PORTAL_INDEXES,
     PORTAL_TABLES,
+    RAG_INDEXES,
+    RAG_TABLES,
     SCHEMAS,
     UPSERT_MODULE_META_SQLS,
 )
@@ -33,6 +37,8 @@ class InitResult:
     core_indexes: tuple[str, ...]
     portal_tables: tuple[str, ...]
     portal_indexes: tuple[str, ...]
+    rag_tables: tuple[str, ...]
+    rag_indexes: tuple[str, ...]
     competitor_analysis_tables: tuple[str, ...]
     competitor_analysis_indexes: tuple[str, ...]
     module_meta_schemas: tuple[str, ...]
@@ -55,6 +61,10 @@ def init_database_schema(engine: Engine) -> InitResult:
             _execute(conn, statement)
         for statement in CREATE_PORTAL_INDEX_SQLS:
             _execute(conn, statement)
+        for statement in CREATE_RAG_TABLE_SQLS:
+            _execute(conn, statement)
+        for statement in CREATE_RAG_INDEX_SQLS:
+            _execute(conn, statement)
         for statement in CREATE_COMPETITOR_ANALYSIS_TABLE_SQLS:
             _execute(conn, statement)
         for statement in CREATE_COMPETITOR_ANALYSIS_INDEX_SQLS:
@@ -70,6 +80,8 @@ def init_database_schema(engine: Engine) -> InitResult:
         core_indexes=CORE_INDEXES,
         portal_tables=PORTAL_TABLES,
         portal_indexes=PORTAL_INDEXES,
+        rag_tables=RAG_TABLES,
+        rag_indexes=RAG_INDEXES,
         competitor_analysis_tables=COMPETITOR_ANALYSIS_TABLES,
         competitor_analysis_indexes=COMPETITOR_ANALYSIS_INDEXES,
         module_meta_schemas=tuple(schema for schema, _ in CREATE_MODULE_META_TABLE_SQLS),

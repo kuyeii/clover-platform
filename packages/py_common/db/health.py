@@ -12,6 +12,8 @@ from .ddl import (
     MODULE_META,
     PORTAL_INDEXES,
     PORTAL_TABLES,
+    RAG_INDEXES,
+    RAG_TABLES,
     SCHEMAS,
 )
 from .session import get_engine
@@ -119,6 +121,36 @@ def check_database_connection() -> dict[str, Any]:
                     {"indexes": list(PORTAL_INDEXES)},
                 )
             ]
+            rag_tables = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'rag'
+                          AND table_name = ANY(:tables)
+                        ORDER BY table_name
+                        """
+                    ),
+                    {"tables": list(RAG_TABLES)},
+                )
+            ]
+            rag_indexes = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = 'rag'
+                          AND indexname = ANY(:indexes)
+                        ORDER BY indexname
+                        """
+                    ),
+                    {"indexes": list(RAG_INDEXES)},
+                )
+            ]
             competitor_analysis_tables = [
                 row[0]
                 for row in conn.execute(
@@ -170,6 +202,10 @@ def check_database_connection() -> dict[str, Any]:
         "missing_portal_tables": sorted(set(PORTAL_TABLES) - set(portal_tables)),
         "portal_indexes": portal_indexes,
         "missing_portal_indexes": sorted(set(PORTAL_INDEXES) - set(portal_indexes)),
+        "rag_tables": rag_tables,
+        "missing_rag_tables": sorted(set(RAG_TABLES) - set(rag_tables)),
+        "rag_indexes": rag_indexes,
+        "missing_rag_indexes": sorted(set(RAG_INDEXES) - set(rag_indexes)),
         "competitor_analysis_tables": competitor_analysis_tables,
         "missing_competitor_analysis_tables": sorted(
             set(COMPETITOR_ANALYSIS_TABLES) - set(competitor_analysis_tables)

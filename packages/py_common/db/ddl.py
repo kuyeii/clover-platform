@@ -185,6 +185,63 @@ PORTAL_INDEXES: tuple[str, ...] = (
     "idx_feedback_submissions_lookup",
 )
 
+RAG_TABLES: tuple[str, ...] = (
+    "conversations",
+    "chat_turns",
+)
+
+CREATE_RAG_TABLE_SQLS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS rag.conversations (
+      id UUID PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      session_id UUID NOT NULL,
+      messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at_ms BIGINT NOT NULL,
+      updated_at_ms BIGINT NOT NULL,
+      pinned BOOLEAN NULL,
+      pinned_at_ms BIGINT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS rag.chat_turns (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL,
+      session_id UUID NOT NULL,
+      user_message TEXT NOT NULL,
+      assistant_message TEXT NOT NULL,
+      meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+)
+
+CREATE_RAG_INDEX_SQLS: tuple[str, ...] = (
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_conversations_updated_at
+      ON rag.conversations(updated_at_ms DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_conversations_pinned_at
+      ON rag.conversations(pinned_at_ms DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_chat_turns_session_created
+      ON rag.chat_turns(session_id, created_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_chat_turns_user_created
+      ON rag.chat_turns(user_id, created_at DESC)
+    """,
+)
+
+RAG_INDEXES: tuple[str, ...] = (
+    "idx_rag_conversations_updated_at",
+    "idx_rag_conversations_pinned_at",
+    "idx_rag_chat_turns_session_created",
+    "idx_rag_chat_turns_user_created",
+)
+
 COMPETITOR_ANALYSIS_TABLES: tuple[str, ...] = (
     "history_records",
     "storage_meta",

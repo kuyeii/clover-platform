@@ -106,6 +106,8 @@ LEGACY_IMPORTS = {
     "rag-web-search": {
         "fastapi": "fastapi",
         "uvicorn": "uvicorn",
+        "sqlalchemy": "SQLAlchemy",
+        "psycopg": "psycopg",
         "httpx": "httpx",
         "pydantic": "pydantic",
         "pydantic_settings": "pydantic-settings",
@@ -283,6 +285,7 @@ def _check_database(
     env_values: dict[str, Any],
     *,
     check_portal: bool,
+    check_rag: bool,
     check_competitor_analysis: bool,
 ) -> list[CheckResult]:
     result = check_database_connection()
@@ -333,6 +336,31 @@ def _check_database(
             )
         else:
             results.append(CheckResult("Portal PostgreSQL tables", "ok", "Portal tables and indexes exist"))
+
+    if check_rag:
+        missing_tables = result.get("missing_rag_tables", [])
+        missing_indexes = result.get("missing_rag_indexes", [])
+        if missing_tables or missing_indexes:
+            missing = [
+                *(f"rag.{table}" for table in missing_tables),
+                *(f"rag index {index}" for index in missing_indexes),
+            ]
+            results.append(
+                CheckResult(
+                    "RAG PostgreSQL tables",
+                    "error",
+                    f"Missing RAG database objects: {', '.join(missing)}",
+                    "python scripts/init_db.py && alembic upgrade head",
+                )
+            )
+        else:
+            results.append(
+                CheckResult(
+                    "RAG PostgreSQL tables",
+                    "ok",
+                    "RAG conversations and chat turn tables exist",
+                )
+            )
 
     if check_competitor_analysis:
         missing_tables = result.get("missing_competitor_analysis_tables", [])
@@ -566,8 +594,9 @@ def run_preflight(
 
     results: list[CheckResult] = []
     includes_portal = "portal" in selected
+    includes_rag = "rag-web-search" in selected
     includes_competitor_analysis = "competitor-analysis" in selected
-    includes_database = includes_portal or includes_competitor_analysis
+    includes_database = includes_portal or includes_rag or includes_competitor_analysis
 
     if includes_database:
         results.extend(_check_root_env(root, env_values))
@@ -592,6 +621,7 @@ def run_preflight(
                 root,
                 env_values,
                 check_portal=includes_portal,
+                check_rag=includes_rag,
                 check_competitor_analysis=includes_competitor_analysis,
             )
         )
