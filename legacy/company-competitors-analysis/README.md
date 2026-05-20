@@ -494,75 +494,19 @@ PostgreSQL 中主要包含：
 
 ## Docker 部署
 
-竞对分析历史记录写入 PostgreSQL 的 `competitor_analysis` schema。Docker 统一部署将在后续阶段处理。
+当前第 5-A 阶段不交付竞对分析 Docker 运行入口。竞对分析后端依赖 clover-platform monorepo 根目录的 `packages/py_common`、`config/apps.yaml` 和根级 Python 依赖，Docker 统一部署将在后续阶段处理。
 
-### 1. 准备环境变量
-
-```bash
-cp .env.example .env.local
-```
-
-编辑 `.env.local`，填入生产环境 Dify Workflow 地址和 API Key。不要提交 `.env`、`.env.local` 或任何包含真实密钥/数据库密码的环境文件。
-
-竞对分析后端通过 `DATABASE_URL` 或 `POSTGRES_*` 连接 PostgreSQL。运行前请先在 clover-platform 根目录执行：
+当前有效运行方式是在 clover-platform 根目录配置 `.env` / `DATABASE_URL` 后执行：
 
 ```bash
 python scripts/init_db.py
 alembic upgrade head
 python scripts/check_db.py
+python scripts/preflight.py --only competitor-analysis
+python scripts/dev.py --only competitor-analysis
 ```
 
-如果 Dify 运行在宿主机，容器内不能使用 `localhost` 访问宿主机服务。Mac/Windows Docker Desktop 可使用：
-
-```env
-WORKFLOW_URL=http://host.docker.internal/v1/workflows/run
-COMPANY_NAME_VALIDATION_URL=http://host.docker.internal/v1/workflows/run
-COMPANY_DETAIL_URL=http://host.docker.internal/v1/workflows/run
-COMPARE_REPORT_URL=http://host.docker.internal/v1/workflows/run
-SCORE_URL=http://host.docker.internal/v1/workflows/run
-```
-
-如果 Dify 是远程服务，直接填写远程地址即可。
-
-### 2. 构建并启动
-
-```bash
-docker compose up -d --build
-```
-
-访问：
-
-```text
-http://localhost:8788
-```
-
-### 3. 查看健康状态
-
-```bash
-curl http://localhost:8788/api/health
-```
-
-### 4. 查看日志
-
-```bash
-docker compose logs -f competitor-analysis
-```
-
-### 5. 停止服务
-
-```bash
-docker compose down
-```
-
-### Docker Compose 说明
-
-当前 `docker-compose.yml` 会：
-
-- 构建当前项目镜像。
-- 暴露宿主机端口 `8788`。
-- 读取 `.env.local`。
-- 设置 `STATIC_DIR=/app/dist`。
-- 需要连接外部 PostgreSQL，并确保已完成 `competitor_analysis` schema 初始化。
+不要提交 `.env`、`.env.local` 或任何包含真实密钥/数据库密码的环境文件。
 
 ## 常见问题
 
@@ -580,27 +524,7 @@ SCORE_API_KEY=...
 
 如果对比报告拆成 4 个子工作流，还需要配置对应的 `COMPARE_REPORT_PRODUCT_API_KEY`、`COMPARE_REPORT_TECH_API_KEY`、`COMPARE_REPORT_LATELY_API_KEY`、`COMPARE_REPORT_SUMMARY_API_KEY`。
 
-### 2. Docker 容器里无法访问 Dify
-
-如果 Dify 在宿主机运行，不要在容器中使用：
-
-```env
-WORKFLOW_URL=http://localhost/v1/workflows/run
-```
-
-应改为：
-
-```env
-WORKFLOW_URL=http://host.docker.internal/v1/workflows/run
-```
-
-Linux 环境可能还需要在运行容器时添加 host 映射，当前手动 `docker run` 可使用：
-
-```bash
---add-host=host.docker.internal:host-gateway
-```
-
-### 3. `npm run build` 报 Rollup optional dependency 缺失
+### 2. `npm run build` 报 Rollup optional dependency 缺失
 
 如果压缩包或跨平台拷贝时带了不完整的 `node_modules`，可能会出现类似错误：
 
@@ -616,7 +540,7 @@ npm ci
 npm run build
 ```
 
-### 4. 历史记录没有保存
+### 3. 历史记录没有保存
 
 检查：
 
@@ -624,7 +548,7 @@ npm run build
 - 是否已执行 `python scripts/init_db.py` 和 `alembic upgrade head`。
 - `python scripts/check_db.py` 是否能看到 `competitor_analysis.history_records`。
 
-### 5. 结果页刷新后找不到记录
+### 4. 结果页刷新后找不到记录
 
 结果页依赖后端历史接口：
 
