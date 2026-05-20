@@ -118,6 +118,11 @@ def _dev_value(dev: dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def _health_url(base_url: str, health_check: str | None) -> str:
+    check = str(health_check or "").strip()
+    return f"{base_url}{check}" if check else base_url
+
+
 def check_port_plan(
     apps_config: dict[str, Any],
     host: str = "127.0.0.1",
@@ -219,9 +224,35 @@ def check_port_plan(
                     "backend_url": f"http://127.0.0.1:{backend['port']}",
                     "url": f"http://127.0.0.1:{frontend['port']}",
                     "iframe_url": f"http://127.0.0.1:{frontend['port']}",
+                    "health_url": _health_url(
+                        f"http://127.0.0.1:{backend['port']}",
+                        dev.get("health_check") or app.get("legacy_health_check"),
+                    ),
                 }
             )
             plan["services"].extend([frontend, backend])
+
+        elif kind == "backend" and auto_start:
+            backend = _reserve_port(
+                label=f"{code} backend",
+                preferred_port=int(dev["backend_preferred_port"]),
+                port_range=dev["backend_port_range"],
+                host=host,
+                reserved=reserved,
+            )
+            backend_url = f"http://127.0.0.1:{backend['port']}"
+            app_plan.update(
+                {
+                    "backend_port": backend["port"],
+                    "backend_url": backend_url,
+                    "backend": backend,
+                    "health_url": _health_url(
+                        backend_url,
+                        dev.get("health_check") or app.get("legacy_health_check"),
+                    ),
+                }
+            )
+            plan["services"].append(backend)
 
         else:
             frontend = _static_port(
@@ -252,6 +283,10 @@ def check_port_plan(
                         "backend_port": backend["port"],
                         "backend_url": f"http://127.0.0.1:{backend['port']}",
                         "backend": backend,
+                        "health_url": _health_url(
+                            f"http://127.0.0.1:{backend['port']}",
+                            dev.get("health_check") or app.get("legacy_health_check"),
+                        ),
                     }
                 )
 

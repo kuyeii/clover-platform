@@ -94,6 +94,16 @@ PORTAL_IMPORTS = {
 }
 
 LEGACY_IMPORTS = {
+    "platform-api": {
+        "fastapi": "fastapi",
+        "uvicorn": "uvicorn",
+        "pydantic": "pydantic",
+        "pydantic_settings": "pydantic-settings",
+        "dotenv": "python-dotenv",
+        "sqlalchemy": "SQLAlchemy",
+        "psycopg": "psycopg",
+        "yaml": "PyYAML",
+    },
     "contract-review": {
         "fastapi": "fastapi",
         "uvicorn": "uvicorn",
@@ -133,6 +143,7 @@ LEGACY_IMPORTS = {
 
 MODULE_REQUIREMENTS = {
     "portal": "requirements.txt",
+    "platform-api": "requirements.txt",
     "contract-review": "requirements.txt",
     "rag-web-search": "requirements.txt",
     "competitor-analysis": "backend/requirements.txt",
@@ -141,6 +152,7 @@ MODULE_REQUIREMENTS = {
 
 ENTRY_FILES = {
     "portal": "backend/main.py",
+    "platform-api": "main.py",
     "contract-review": "web_api.py",
     "rag-web-search": "app/main.py",
     "competitor-analysis": "backend/server.py",
@@ -488,6 +500,16 @@ def _check_port_plan(
     return results
 
 
+def _selected_needs_node(apps_config: dict[str, Any], selected: set[str]) -> bool:
+    apps_by_code = app_by_code(apps_config)
+    for code in selected:
+        app = apps_by_code.get(code) or {}
+        kind = str((app.get("dev") or {}).get("kind") or "")
+        if kind != "backend":
+            return True
+    return False
+
+
 def _module_paths(app: dict[str, Any], repo_root: Path) -> tuple[Path, Path, Path]:
     code = str(app.get("code"))
     dev = app.get("dev") or {}
@@ -502,20 +524,29 @@ def _module_paths(app: dict[str, Any], repo_root: Path) -> tuple[Path, Path, Pat
 def _check_module_common(app: dict[str, Any], repo_root: Path) -> list[CheckResult]:
     code = str(app.get("code"))
     legacy_path, frontend_dir, backend_dir = _module_paths(app, repo_root)
-    install_dir = _relative(frontend_dir, repo_root)
-    results = [
-        _check_file(f"{code} frontend package.json", frontend_dir / "package.json", repo_root),
-        _check_dir(
-            f"{code} frontend node_modules",
-            frontend_dir / "node_modules",
-            repo_root,
-            fix_hint=f"cd {install_dir} && npm install",
-        ),
-    ]
+    dev = app.get("dev") or {}
+    kind = str(dev.get("kind") or "")
+    results: list[CheckResult] = []
+
+    if kind != "backend":
+        install_dir = _relative(frontend_dir, repo_root)
+        results.extend(
+            [
+                _check_file(f"{code} frontend package.json", frontend_dir / "package.json", repo_root),
+                _check_dir(
+                    f"{code} frontend node_modules",
+                    frontend_dir / "node_modules",
+                    repo_root,
+                    fix_hint=f"cd {install_dir} && npm install",
+                ),
+            ]
+        )
 
     requirement = MODULE_REQUIREMENTS.get(code)
     if requirement:
         requirement_path = (legacy_path if code != "rag-web-search" else backend_dir) / requirement
+        if code == "platform-api":
+            requirement_path = backend_dir / requirement
         if code == "bid-generator":
             requirement_path = repo_root / "legacy/bid-generator/pipt-flask/pyproject.toml"
         results.append(_check_file(f"{code} Python requirements", requirement_path, repo_root))
@@ -523,6 +554,8 @@ def _check_module_common(app: dict[str, Any], repo_root: Path) -> list[CheckResu
     entry = ENTRY_FILES.get(code)
     if entry:
         entry_path = (backend_dir / entry) if code in {"rag-web-search", "bid-generator"} else (legacy_path / entry)
+        if code == "platform-api":
+            entry_path = backend_dir / entry
         if code == "competitor-analysis":
             entry_path = legacy_path / entry
         if code == "portal":
@@ -530,7 +563,6 @@ def _check_module_common(app: dict[str, Any], repo_root: Path) -> list[CheckResu
         results.append(_check_file(f"{code} backend entry", entry_path, repo_root))
         results.append(_compile_file(f"{code} backend syntax", entry_path, repo_root))
 
-    dev = app.get("dev") or {}
     for label, command_key in (("backend", "backend_command"), ("frontend", "frontend_command")):
         command = str(dev.get(command_key) or "").strip()
         if not command:
@@ -576,12 +608,18 @@ def _check_legacy_module(app: dict[str, Any], repo_root: Path, env_values: dict[
     results = _check_module_common(app, repo_root)
     imports = LEGACY_IMPORTS.get(code, {})
     if imports:
+        missing_status: CheckStatus = "error" if code == "platform-api" else "warn"
+        fix_hint = (
+            "python -m pip install -r apps/api/requirements.txt"
+            if code == "platform-api"
+            else f"Install this module's Python dependencies before running {code}."
+        )
         results.append(
             _check_imports(
                 f"{code} backend Python dependencies",
                 imports,
-                missing_status="warn",
-                fix_hint=f"Install this module's Python dependencies before running {code}.",
+                missing_status=missing_status,
+                fix_hint=fix_hint,
             )
         )
     else:
@@ -677,8 +715,10 @@ def run_preflight(
     includes_bid_generator = "bid-generator" in selected
     includes_rag = "rag-web-search" in selected
     includes_competitor_analysis = "competitor-analysis" in selected
+    includes_platform_api = "platform-api" in selected
     includes_database = (
         includes_portal
+        or includes_platform_api
         or includes_contract_review
         or includes_bid_generator
         or includes_rag
@@ -698,7 +738,8 @@ def run_preflight(
             fix_hint="python -m pip install -r requirements-dev.txt",
         )
     )
-    results.extend([_check_command("node"), _check_command("npm")])
+    if _selected_needs_node(apps_config, selected):
+        results.extend([_check_command("node"), _check_command("npm")])
     results.append(_check_runtime(root))
     results.extend(_check_port_plan(apps_config, selected, skip, port_plan))
 
@@ -707,11 +748,11 @@ def run_preflight(
             _check_database(
                 root,
                 env_values,
-                check_portal=includes_portal,
-                check_contract_review=includes_contract_review,
-                check_bid_generator=includes_bid_generator,
-                check_rag=includes_rag,
-                check_competitor_analysis=includes_competitor_analysis,
+                check_portal=includes_portal or includes_platform_api,
+                check_contract_review=includes_contract_review or includes_platform_api,
+                check_bid_generator=includes_bid_generator or includes_platform_api,
+                check_rag=includes_rag or includes_platform_api,
+                check_competitor_analysis=includes_competitor_analysis or includes_platform_api,
             )
         )
 

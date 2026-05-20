@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run clover-platform development environment preflight checks.")
     parser.add_argument("--only", action="append", default=[], help="Only check selected app code or module key.")
-    parser.add_argument("--no-business", action="store_true", help="Check only Portal frontend/backend.")
+    parser.add_argument("--no-business", action="store_true", help="Check only Portal and platform-api.")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as failures.")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON.")
     return parser.parse_args()

@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 APP_ORDER: tuple[str, ...] = (
     "portal",
+    "platform-api",
     "contract-review",
     "rag-web-search",
     "competitor-analysis",
@@ -20,6 +21,8 @@ APP_ORDER: tuple[str, ...] = (
 
 APP_ALIASES: dict[str, str] = {
     "portal": "portal",
+    "platform-api": "platform-api",
+    "platform_api": "platform-api",
     "contract-review": "contract-review",
     "contract_review": "contract-review",
     "rag-web-search": "rag-web-search",
@@ -32,6 +35,7 @@ APP_ALIASES: dict[str, str] = {
 
 PYTHON_REQUIREMENTS_BY_APP: dict[str, tuple[str, ...]] = {
     "portal": ("legacy/portal-launchpad/requirements.txt",),
+    "platform-api": ("apps/api/requirements.txt",),
     "contract-review": ("legacy/contract_review/requirements.txt",),
     "rag-web-search": ("legacy/chat_with_rag_and_websearch/backend/requirements.txt",),
     "competitor-analysis": ("legacy/company-competitors-analysis/backend/requirements.txt",),
@@ -140,7 +144,7 @@ def ensure_pip(python: Path) -> None:
 
 def selected_apps(args: argparse.Namespace) -> tuple[str, ...]:
     if args.no_business:
-        return ("portal",)
+        return ("portal", "platform-api")
     if not args.only:
         return APP_ORDER
 
@@ -173,6 +177,8 @@ def install_frontend_dependencies(apps: tuple[str, ...], *, use_npm_install: boo
     if shutil.which("npm") is None:
         raise SystemExit("npm is not available on PATH. Install Node.js/npm first.")
     for app in apps:
+        if app not in FRONTEND_INSTALLS_BY_APP:
+            continue
         directory, default_command = FRONTEND_INSTALLS_BY_APP[app]
         cwd = REPO_ROOT / directory
         if not (cwd / "package.json").is_file():

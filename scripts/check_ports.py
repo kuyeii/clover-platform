@@ -33,6 +33,15 @@ def main() -> int:
             continue
 
         suffix = "auto" if app["auto_start"] else "manual"
+        if app["kind"] == "backend":
+            print(
+                f"- {app['code']} backend: preferred={app['backend']['preferred_port']} "
+                f"actual={app['backend_port']} url={app['backend_url']} startup={suffix}"
+            )
+            if app.get("health_url"):
+                print(f"  health: {app['health_url']}")
+            continue
+
         service_label = "frontend" if app["kind"] == "frontend_backend" else "iframe"
         print(
             f"- {app['code']} {service_label}: preferred={app['frontend']['preferred_port']} "

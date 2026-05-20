@@ -31,6 +31,34 @@ apps:
         PORTAL_API_PORT: "{backend_port}"
         PORTAL_FRONTEND_PORT: "{frontend_port}"
 
+  platform_api:
+    name: 统一后端
+    code: platform-api
+    module_key: platform_api
+    description: Clover Platform 统一后端基座。
+    enabled: true
+    legacy_path:
+    module_path: apps/api
+    route_path:
+    target_api_prefix: /api/v1/core
+    iframe_enabled: false
+    iframe_url_env:
+    permission_default: false
+    legacy_health_check: /api/v1/core/health
+    storage_namespace: core
+    workflow_refs: []
+    dev:
+      enabled: true
+      kind: backend
+      working_dir: apps/api
+      backend_working_dir: apps/api
+      python_bin_env: PLATFORM_API_PYTHON_BIN
+      prefer_local_python: false
+      backend_command: "{python} -m uvicorn main:app --host 0.0.0.0 --port {backend_port} --reload"
+      backend_preferred_port: 5220
+      backend_port_range: [5220, 5229]
+      health_check: /api/v1/core/health
+
   bid_generator:
     name: 标书生成
     code: bid-generator

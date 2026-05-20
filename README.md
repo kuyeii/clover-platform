@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 5-D 阶段：标书生成 pipt-lite PostgreSQL 持久化。
+当前处于第 6-A 阶段：统一后端基座 `apps/api`。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段只迁移标书生成 `pipt-lite` 当前 ORM 数据，不合并后端，不去掉 iframe，不迁移 PDF / DOCX / 图片 / raw_doc / kb_sync_status 等文件缓存。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座，但不迁移业务模块 API，不替换 legacy 后端，不去掉 iframe，不修改 Portal session / JWT。
 
 ## Legacy 项目
 
@@ -75,6 +75,57 @@ clover-platform/
 - 不迁移标书生成的文件缓存、Dify workflow、gateway-out、prompt-forge 或旧 LinCMS 数据层。
 - 不迁移 RAG 的 Dify 知识库数据、本地向量索引或文件缓存。
 - 不修改其他四个 legacy 项目的业务启动逻辑。
+
+## 第 6-A 阶段：统一后端基座
+
+第 6-A 新增 `apps/api`，作为统一 FastAPI 后端基座。当前它只提供 platform core 能力，为后续 Portal 后端能力迁入或 Portal 前端切换到统一后端做准备。
+
+当前提供接口：
+
+- `GET /api/v1/core/health`
+- `GET /api/v1/core/health/db`
+- `GET /api/v1/core/modules`
+- `GET /api/v1/core/modules/health`
+- `GET /api/v1/core/runtime/apps`
+
+所有新增接口主前缀为 `/api/v1/core`。接口默认返回统一响应结构：`success`、`data`、`message`、`request_id`；错误响应返回 `success: false`、`error.code`、`error.message`、`error.details`、`request_id`。`X-Request-ID` 请求头会被复用，否则由服务生成。
+
+当前边界保持不变：
+
+- 业务模块 API 尚未迁入 `apps/api`。
+- Portal 前端尚未切换到 `apps/api`。
+- iframe 仍保留。
+- Portal session 仍保留。
+- JWT 未修改。
+- legacy 后端仍继续运行。
+
+安装统一后端依赖：
+
+```bash
+python -m pip install -r apps/api/requirements.txt
+```
+
+启动统一后端：
+
+```bash
+python scripts/dev.py --only platform-api
+```
+
+启动 Portal + 统一后端，不启动四个业务模块：
+
+```bash
+python scripts/dev.py --no-business
+```
+
+启动全部默认开发服务：
+
+```bash
+python scripts/dev.py
+```
+
+`config/apps.yaml` 中新增 `platform_api`，应用编码为 `platform-api`，`dev.kind` 为 `backend`，默认后端端口为 `5220`，端口范围为 `5220-5229`，健康检查路径为 `/api/v1/core/health`。`runtime/ports.json` 会记录 `platform-api.backend_url` 和 `platform-api.health_url`，但不会生成 `iframe_url`，`/api/v1/core/runtime/apps` 也不会把 `platform-api` 返回为 Portal 菜单应用。
+
+下一步再逐步迁移 Portal 后端能力或业务模块 API 到 `apps/api`。
 
 ## 第 2 阶段：PostgreSQL 初始化
 

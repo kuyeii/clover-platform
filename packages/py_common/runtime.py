@@ -41,6 +41,7 @@ def build_ports_payload(
             continue
 
         dev = app.get("dev") or {}
+        kind = str(dev.get("kind") or "")
         frontend_url = plan.get("frontend_url") or plan.get("url") or plan.get("iframe_url")
         health_check = str(dev.get("health_check") or app.get("legacy_health_check") or "")
 
@@ -51,6 +52,16 @@ def build_ports_payload(
             "auto_start": bool(dev.get("enabled", False)),
             "dev_mode": "auto" if bool(dev.get("enabled", False)) else "manual",
         }
+        if kind == "backend":
+            if "backend_port" in plan:
+                app_payload["backend_port"] = plan["backend_port"]
+                app_payload["backend_url"] = plan["backend_url"]
+                app_payload["health_url"] = plan.get("health_url") or (
+                    f"{plan['backend_url']}{health_check}" if health_check else plan["backend_url"]
+                )
+            payload_apps[code] = app_payload
+            continue
+
         if "frontend_port" in plan:
             app_payload["frontend_port"] = plan["frontend_port"]
         if "port" in plan:

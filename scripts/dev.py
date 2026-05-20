@@ -22,7 +22,7 @@ from packages.py_common.runtime import build_ports_payload, write_ports_file
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start clover-platform development services.")
-    parser.add_argument("--no-business", action="store_true", help="Start only Portal frontend/backend.")
+    parser.add_argument("--no-business", action="store_true", help="Start only Portal and platform-api.")
     parser.add_argument("--write-ports-only", action="store_true", help="Write runtime/ports.json without starting services.")
     parser.add_argument("--only", action="append", default=[], help="Only start selected app code or module key.")
     parser.add_argument("--skip", action="append", default=[], help="Skip selected app code or module key.")
@@ -94,7 +94,7 @@ def should_start_app(
         return False
     if only and code not in only:
         return False
-    if no_business and code != "portal":
+    if no_business and code not in {"portal", "platform-api"}:
         return False
     return bool((app.get("dev") or {}).get("enabled", False))
 
@@ -135,6 +135,11 @@ def build_process_specs(
                 specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
             if frontend_command:
                 specs.append(ProcessSpec(f"{code}:frontend", frontend_command, frontend_cwd, env))
+        elif str(dev.get("kind") or "") == "backend":
+            backend_command = _format_value(str(dev.get("backend_command") or ""), app, plan)
+            backend_cwd = REPO_ROOT / str(dev.get("backend_working_dir") or dev.get("working_dir"))
+            if backend_command:
+                specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
         else:
             command = _format_value(str(dev.get("frontend_command") or ""), app, plan)
             if command:
