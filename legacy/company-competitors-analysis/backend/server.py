@@ -33,10 +33,6 @@ import repository
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = Path(__file__).resolve().parent
-DATA_DIR = BACKEND_DIR / "data"
-LEGACY_DATA_FILE = DATA_DIR / "history.json"
-LEGACY_INDEX_FILE = DATA_DIR / "index.json"
-LEGACY_RECORDS_DIR = DATA_DIR / "history"
 DEFAULT_WORKFLOW_URL = "http://localhost/v1/workflows/run"
 RETRY_HTTP_STATUS = {408, 425, 429, 500, 502, 503, 504}
 MAX_COMPETITOR_COUNT = 5
@@ -149,10 +145,6 @@ def get_timeout_seconds(names: Iterable[str] | str, fallback: int = DEFAULT_DIFY
     return max(1, timeout)
 
 
-def safe_record_file_name(record_id: Any) -> str:
-    return f"{re.sub(r'[^a-zA-Z0-9_-]', '_', str(record_id))}.json"
-
-
 def close_db_connection() -> None:
     repository.close_db_connection()
 
@@ -166,10 +158,6 @@ def ensure_storage() -> None:
             return
         repository.ensure_storage()
         _STORAGE_READY = True
-
-
-def read_json_file(file_path: Path) -> Any:
-    return json.loads(file_path.read_text(encoding="utf-8"))
 
 
 def json_dumps(data: Any) -> str:
@@ -199,66 +187,6 @@ def save_history_record(record: Any) -> Dict[str, Any]:
         raise AppError("缺少必要字段 id/createdAt", status_code=400, code="BAD_REQUEST")
 
     return repository.save_history_record(record, max_items=MAX_ITEMS)
-
-
-def read_legacy_index_records() -> List[Dict[str, Any]]:
-    try:
-        index_items = read_json_file(LEGACY_INDEX_FILE)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        index_items = []
-    if not isinstance(index_items, list):
-        index_items = []
-
-    records: List[Dict[str, Any]] = []
-    for meta in index_items:
-        record_id = meta.get("id") if isinstance(meta, dict) else ""
-        if not record_id:
-            continue
-        try:
-            parsed = read_json_file(LEGACY_RECORDS_DIR / safe_record_file_name(record_id))
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            continue
-        if isinstance(parsed, dict) and parsed.get("id"):
-            records.append(parsed)
-    return records
-
-
-def read_legacy_flat_records() -> List[Dict[str, Any]]:
-    try:
-        parsed = read_json_file(LEGACY_DATA_FILE)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [item for item in parsed if isinstance(item, dict) and item.get("id")]
-
-
-def read_legacy_directory_records() -> List[Dict[str, Any]]:
-    if not LEGACY_RECORDS_DIR.exists():
-        return []
-    records: List[Dict[str, Any]] = []
-    files = sorted(LEGACY_RECORDS_DIR.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
-    for file_path in files:
-        try:
-            parsed = read_json_file(file_path)
-        except (json.JSONDecodeError, OSError):
-            continue
-        if isinstance(parsed, dict) and parsed.get("id"):
-            records.append(parsed)
-    return records
-
-
-def load_legacy_json_records() -> List[Dict[str, Any]]:
-    records = read_legacy_index_records() or read_legacy_flat_records() or read_legacy_directory_records()
-    deduped: Dict[str, Dict[str, Any]] = {}
-    ordered: List[Dict[str, Any]] = []
-    for record in records:
-        record_id = str(record.get("id") or "")
-        if not record_id or record_id in deduped:
-            continue
-        deduped[record_id] = record
-        ordered.append(record)
-    return ordered[:MAX_ITEMS] if MAX_ITEMS > 0 else []
 
 
 def migrate_legacy_if_needed() -> None:
