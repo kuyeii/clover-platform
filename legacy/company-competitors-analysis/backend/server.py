@@ -189,12 +189,6 @@ def save_history_record(record: Any) -> Dict[str, Any]:
     return repository.save_history_record(record, max_items=MAX_ITEMS)
 
 
-def migrate_legacy_if_needed() -> None:
-    # Deprecated in stage 5-A: historical SQLite/JSON data is not migrated.
-    ensure_storage()
-    repository.set_storage_meta("legacy_migration_skipped", "1")
-
-
 def read_records() -> List[Dict[str, Any]]:
     return repository.read_records(max_items=MAX_ITEMS)
 
@@ -2786,7 +2780,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 
 def start() -> None:
-    migrate_legacy_if_needed()
+    ensure_storage()
     httpd = ThreadingHTTPServer((HOST, PORT), ApiHandler)
     print(f"Backend server is running at http://{HOST}:{PORT}")
     try:
