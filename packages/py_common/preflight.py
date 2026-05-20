@@ -97,6 +97,8 @@ LEGACY_IMPORTS = {
     "contract-review": {
         "fastapi": "fastapi",
         "uvicorn": "uvicorn",
+        "sqlalchemy": "SQLAlchemy",
+        "psycopg": "psycopg",
         "docx": "python-docx",
         "requests": "requests",
         "json_repair": "json_repair",
@@ -285,6 +287,7 @@ def _check_database(
     env_values: dict[str, Any],
     *,
     check_portal: bool,
+    check_contract_review: bool,
     check_rag: bool,
     check_competitor_analysis: bool,
 ) -> list[CheckResult]:
@@ -336,6 +339,31 @@ def _check_database(
             )
         else:
             results.append(CheckResult("Portal PostgreSQL tables", "ok", "Portal tables and indexes exist"))
+
+    if check_contract_review:
+        missing_tables = result.get("missing_contract_review_tables", [])
+        missing_indexes = result.get("missing_contract_review_indexes", [])
+        if missing_tables or missing_indexes:
+            missing = [
+                *(f"contract_review.{table}" for table in missing_tables),
+                *(f"contract_review index {index}" for index in missing_indexes),
+            ]
+            results.append(
+                CheckResult(
+                    "contract-review PostgreSQL tables",
+                    "error",
+                    f"Missing contract_review database objects: {', '.join(missing)}",
+                    "python scripts/init_db.py && alembic upgrade head",
+                )
+            )
+        else:
+            results.append(
+                CheckResult(
+                    "contract-review PostgreSQL tables",
+                    "ok",
+                    "Contract review run metadata and artifact tables exist",
+                )
+            )
 
     if check_rag:
         missing_tables = result.get("missing_rag_tables", [])
@@ -594,9 +622,10 @@ def run_preflight(
 
     results: list[CheckResult] = []
     includes_portal = "portal" in selected
+    includes_contract_review = "contract-review" in selected
     includes_rag = "rag-web-search" in selected
     includes_competitor_analysis = "competitor-analysis" in selected
-    includes_database = includes_portal or includes_rag or includes_competitor_analysis
+    includes_database = includes_portal or includes_contract_review or includes_rag or includes_competitor_analysis
 
     if includes_database:
         results.extend(_check_root_env(root, env_values))
@@ -621,6 +650,7 @@ def run_preflight(
                 root,
                 env_values,
                 check_portal=includes_portal,
+                check_contract_review=includes_contract_review,
                 check_rag=includes_rag,
                 check_competitor_analysis=includes_competitor_analysis,
             )

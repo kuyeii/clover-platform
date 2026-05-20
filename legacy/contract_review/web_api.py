@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -27,11 +28,9 @@ from src.text_patch_ops import build_structured_patch_ops
 from src.document_ingest import DocumentIngestError, SUPPORTED_UPLOAD_EXTENSIONS, get_libreoffice_diagnostics, is_valid_docx_file, normalize_upload_to_docx
 from src.analysis_scope import analysis_scope_label, normalize_analysis_scope
 from src.parse_outputs import _load_json_with_repair, strip_markdown_json
-from src.sqlite_store import (
-    get_db_path,
+from src.review_store import (
     get_review_meta,
-    import_legacy_meta_files,
-    init_db,
+    init_storage,
     list_review_meta,
     load_json_artifact_by_path,
     store_json_artifact_by_path,
@@ -48,14 +47,6 @@ _ACTIVE_REVIEW_LOCK = threading.Lock()
 _ACTIVE_REVIEW_RUN_ID: str | None = None
 _AI_REWRITE_LOCK = threading.Lock()
 _AI_REWRITE_IN_FLIGHT: set[str] = set()
-
-
-def _db_path() -> Path:
-    configured = os.getenv("SQLITE_DB_PATH") or os.getenv("CONTRACT_REVIEW_DB_PATH")
-    if configured:
-        return get_db_path(configured)
-    # 默认与 data 目录放在一起；单元测试 monkeypatch WEB_META_ROOT 时也会自动隔离 DB。
-    return WEB_META_ROOT.parent / "contract_review.sqlite3"
 
 
 def _run_lock(run_id: str) -> threading.RLock:
@@ -77,7 +68,7 @@ def _atomic_write_text(path: Path, content: str) -> None:
 
 def _running_review_meta() -> dict[str, Any] | None:
     try:
-        for item in list_review_meta(limit=20, db_path=_db_path()):
+        for item in list_review_meta(limit=20):
             if str(item.get("status") or "").strip().lower() in {"queued", "running"}:
                 return item
     except Exception:
@@ -88,8 +79,7 @@ def _running_review_meta() -> dict[str, Any] | None:
 for path in (RUN_ROOT, UPLOAD_ROOT, WEB_META_ROOT):
     path.mkdir(parents=True, exist_ok=True)
 
-init_db(_db_path())
-import_legacy_meta_files(db_path=_db_path(), web_meta_root=WEB_META_ROOT)
+init_storage()
 
 app = FastAPI(title="Contract Review Web API", version="1.0.0")
 app.add_middleware(
@@ -2110,9 +2100,9 @@ def _meta_path(run_id: str) -> Path:
 
 
 def _write_meta(run_id: str, payload: dict[str, Any]) -> None:
-    # SQLite 是运行记录的主存储；默认不再依赖 data/web_meta/*.json。
+    # PostgreSQL 是运行记录的主存储；默认不再依赖 data/web_meta/*.json。
     next_payload = dict(payload or {})
-    current = upsert_review_meta(run_id, next_payload, db_path=_db_path())
+    current = upsert_review_meta(run_id, next_payload)
     # 兼容旧部署：需要继续生成 JSON 影子文件时可设置 MIRROR_LEGACY_JSON=1。
     if os.getenv("MIRROR_LEGACY_JSON", "0").strip().lower() in {"1", "true", "yes", "on"}:
         path = _meta_path(run_id)
@@ -2122,8 +2112,8 @@ def _write_meta(run_id: str, payload: dict[str, Any]) -> None:
 
 def _write_json_artifact(path: Path, payload: Any) -> None:
     _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
-    if os.getenv("MIRROR_RUN_ARTIFACTS_TO_SQLITE", "0").strip().lower() in {"1", "true", "yes", "on"}:
-        store_json_artifact_by_path(path, payload, db_path=_db_path(), run_root=RUN_ROOT)
+    if os.getenv("MIRROR_RUN_ARTIFACTS_TO_DB", "0").strip().lower() in {"1", "true", "yes", "on"}:
+        store_json_artifact_by_path(path, payload, run_root=RUN_ROOT)
 
 
 def _parse_iso_datetime(value: str | None) -> float:
@@ -2219,7 +2209,7 @@ def _repair_run_state_if_outputs_ready(
     """Repair a stale queued/running DB state from durable output files.
 
     Dify/app.py may already have generated all result artifacts while the final
-    SQLite status update is blocked by concurrent GET/history requests. This
+    metadata update is blocked by concurrent GET/history requests. This
     function lets the next status/result request promote the run to completed
     based on files that are already safely on disk.
     """
@@ -2227,7 +2217,7 @@ def _repair_run_state_if_outputs_ready(
     if not run_id:
         return meta
 
-    current = dict(meta or get_review_meta(run_id, db_path=_db_path()) or {})
+    current = dict(meta or get_review_meta(run_id) or {})
     current.setdefault("run_id", run_id)
     current_status = str(current.get("status") or "").strip().lower()
     if current_status in {"completed", "failed"} and not force:
@@ -2255,7 +2245,7 @@ def _repair_run_state_if_outputs_ready(
         }
         current.update(patch)
         if persist:
-            return upsert_review_meta(run_id, current, db_path=_db_path())
+            return upsert_review_meta(run_id, current)
         return current
 
     # Do not mark a run complete merely because risk_result_validated.json
@@ -2288,12 +2278,12 @@ def _repair_run_state_if_outputs_ready(
 
     current.update(patch)
     if persist:
-        return upsert_review_meta(run_id, current, db_path=_db_path())
+        return upsert_review_meta(run_id, current)
     return current
 
 
 def _read_meta(run_id: str) -> dict[str, Any]:
-    payload = get_review_meta(run_id, db_path=_db_path())
+    payload = get_review_meta(run_id)
     if payload is None:
         # 兼容尚未迁移的老版本 JSON 元数据。
         path = _meta_path(run_id)
@@ -2339,17 +2329,17 @@ def _read_meta(run_id: str) -> dict[str, Any]:
 def _safe_json(path: Path, *, persist: bool = False) -> Any:
     if path.exists():
         payload = json.loads(path.read_text(encoding="utf-8"))
-        # GET/status/history/result 请求默认只读，避免读取文件时反向写 SQLite
+        # GET/status/history/result 请求默认只读，避免读取文件时反向写数据库
         # 造成锁竞争。只有明确传 persist=True 时才同步到 artifacts 表。
         if persist:
-            store_json_artifact_by_path(path, payload, db_path=_db_path(), run_root=RUN_ROOT)
+            store_json_artifact_by_path(path, payload, run_root=RUN_ROOT)
         return payload
-    return load_json_artifact_by_path(path, db_path=_db_path(), run_root=RUN_ROOT)
+    return load_json_artifact_by_path(path, run_root=RUN_ROOT)
 
 
 def _repair_stale_runs_on_startup(limit: int = 200) -> None:
     try:
-        items = list_review_meta(limit=limit, db_path=_db_path())
+        items = list_review_meta(limit=limit)
     except Exception:
         return
     for item in items:
@@ -3915,9 +3905,9 @@ def _to_history_item(meta: dict[str, Any]) -> dict[str, Any]:
 
 
 def _list_history_items(limit: int) -> list[dict[str, Any]]:
-    # 历史列表默认只读 SQLite。仅当 SQLite 为空时读取旧版 web_meta 文件，
+    # 历史列表默认只读 PostgreSQL。仅当数据库为空时读取旧版 web_meta 文件，
     # 兼容未迁移数据；这个兜底路径仍保持只读，不反向写库。
-    raw_items = list_review_meta(limit=limit, db_path=_db_path())
+    raw_items = list_review_meta(limit=limit)
     if not raw_items and WEB_META_ROOT.exists():
         legacy_paths = sorted(WEB_META_ROOT.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
         for path in legacy_paths:
@@ -4049,7 +4039,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
         },
     )
 
-    cmd = ["python", "app.py", str(source_docx), "--run-id", run_id]
+    cmd = [sys.executable, "app.py", str(source_docx), "--run-id", run_id]
     try:
         proc = subprocess.Popen(
             cmd,
@@ -4144,7 +4134,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
     )
 
     export_cmd = [
-        "python",
+        sys.executable,
         "-m",
         "src.docx_comments",
         str(source_docx),
@@ -4217,7 +4207,7 @@ def _run_pipeline(*, run_id: str, file_path: Path, file_name: str, review_side: 
                 },
             )
         except Exception:
-            # 如果 SQLite 此刻也不可写，至少把错误落到 run 目录，便于排查。
+            # 如果数据库此刻也不可写，至少把错误落到 run 目录，便于排查。
             try:
                 error_dir = RUN_ROOT / run_id
                 error_dir.mkdir(parents=True, exist_ok=True)
@@ -4298,7 +4288,7 @@ async def create_review(
 
     with _ACTIVE_REVIEW_LOCK:
         if _ACTIVE_REVIEW_RUN_ID:
-            active_meta = get_review_meta(_ACTIVE_REVIEW_RUN_ID, db_path=_db_path()) or {}
+            active_meta = get_review_meta(_ACTIVE_REVIEW_RUN_ID) or {}
             if str(active_meta.get("status") or "").strip().lower() in {"queued", "running"}:
                 raise HTTPException(status_code=409, detail="当前已有合同正在审查，请等待完成后再发起新的审查。")
             _ACTIVE_REVIEW_RUN_ID = None
@@ -4420,7 +4410,7 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
 
     patched_docx = run_dir / "ai_patched.docx"
     patch_cmd = [
-        "python",
+        sys.executable,
         "-m",
         "src.docx_apply_patches",
         str(source_doc),
@@ -4440,7 +4430,7 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
 
     out_path = run_dir / "reviewed_comments.docx"
     comment_cmd = [
-        "python",
+        sys.executable,
         "-m",
         "src.docx_comments",
         str(patched_docx),

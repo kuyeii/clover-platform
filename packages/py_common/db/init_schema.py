@@ -6,12 +6,16 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from .ddl import (
+    CONTRACT_REVIEW_INDEXES,
+    CONTRACT_REVIEW_TABLES,
     CORE_INDEXES,
     CORE_TABLES,
     COMPETITOR_ANALYSIS_INDEXES,
     COMPETITOR_ANALYSIS_TABLES,
     CREATE_COMPETITOR_ANALYSIS_INDEX_SQLS,
     CREATE_COMPETITOR_ANALYSIS_TABLE_SQLS,
+    CREATE_CONTRACT_REVIEW_INDEX_SQLS,
+    CREATE_CONTRACT_REVIEW_TABLE_SQLS,
     CREATE_CORE_INDEX_SQLS,
     CREATE_CORE_TABLE_SQLS,
     CREATE_EXTENSION_SQL,
@@ -37,6 +41,8 @@ class InitResult:
     core_indexes: tuple[str, ...]
     portal_tables: tuple[str, ...]
     portal_indexes: tuple[str, ...]
+    contract_review_tables: tuple[str, ...]
+    contract_review_indexes: tuple[str, ...]
     rag_tables: tuple[str, ...]
     rag_indexes: tuple[str, ...]
     competitor_analysis_tables: tuple[str, ...]
@@ -61,6 +67,10 @@ def init_database_schema(engine: Engine) -> InitResult:
             _execute(conn, statement)
         for statement in CREATE_PORTAL_INDEX_SQLS:
             _execute(conn, statement)
+        for statement in CREATE_CONTRACT_REVIEW_TABLE_SQLS:
+            _execute(conn, statement)
+        for statement in CREATE_CONTRACT_REVIEW_INDEX_SQLS:
+            _execute(conn, statement)
         for statement in CREATE_RAG_TABLE_SQLS:
             _execute(conn, statement)
         for statement in CREATE_RAG_INDEX_SQLS:
@@ -80,6 +90,8 @@ def init_database_schema(engine: Engine) -> InitResult:
         core_indexes=CORE_INDEXES,
         portal_tables=PORTAL_TABLES,
         portal_indexes=PORTAL_INDEXES,
+        contract_review_tables=CONTRACT_REVIEW_TABLES,
+        contract_review_indexes=CONTRACT_REVIEW_INDEXES,
         rag_tables=RAG_TABLES,
         rag_indexes=RAG_INDEXES,
         competitor_analysis_tables=COMPETITOR_ANALYSIS_TABLES,

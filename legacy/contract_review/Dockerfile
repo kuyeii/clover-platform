@@ -3,11 +3,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app \
-    SQLITE_DB_PATH=/app/data/contract_review.sqlite3 \
+    PYTHONPATH=/app:/app/legacy/contract_review \
     RUN_ROOT=/app/data/runs
 
-WORKDIR /app
+WORKDIR /app/legacy/contract_review
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -18,11 +17,15 @@ RUN apt-get update \
       libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY requirements-dev.txt /app/requirements-dev.txt
+COPY legacy/contract_review/requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip \
+    && python -m pip install -r /app/requirements-dev.txt \
     && python -m pip install -r requirements.txt
 
-COPY . ./
+COPY packages /app/packages
+COPY config /app/config
+COPY legacy/contract_review /app/legacy/contract_review
 RUN mkdir -p /app/data/runs /app/data/uploads /app/data/web_meta
 
 EXPOSE 8000

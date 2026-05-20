@@ -8,7 +8,23 @@ from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+
+
+def _find_repo_root() -> Path:
+    current = Path(__file__).resolve()
+    for candidate in (current.parent, *current.parents):
+        if (
+            (candidate / "config" / "apps.yaml").is_file()
+            and (candidate / "packages" / "py_common").is_dir()
+            and (candidate / "legacy" / "contract_review").is_dir()
+        ):
+            return candidate
+    return BASE_DIR
+
+
+REPO_ROOT = _find_repo_root()
+load_dotenv(REPO_ROOT / ".env", override=False)
+load_dotenv(BASE_DIR / ".env", override=False)
 
 
 
@@ -28,7 +44,6 @@ class Settings:
     dify_max_concurrency: int = int(os.getenv("DIFY_MAX_CONCURRENCY", "6"))
     clause_split_max_concurrency: int = int(os.getenv("CLAUSE_SPLIT_MAX_CONCURRENCY", "3"))
     run_root: Path = Path(os.getenv("RUN_ROOT", "data/runs"))
-    sqlite_db_path: Path = Path(os.getenv("SQLITE_DB_PATH", "data/contract_review.sqlite3"))
     debug_save_intermediate: bool = os.getenv("DEBUG_SAVE_INTERMEDIATE", "1") == "1"
     fast_screen_enabled: bool = os.getenv("FAST_SCREEN_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
     fast_screen_max_candidates: str = str(os.getenv("FAST_SCREEN_MAX_CANDIDATES", "12"))

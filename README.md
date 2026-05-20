@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入 RAG 问答本地持久化迁移阶段。Portal、竞对分析和 RAG 问答的指定运行时数据已切换到 PostgreSQL，其他业务项目仍保持 legacy 状态。
+当前阶段已进入合同审查 PostgreSQL 持久化迁移阶段。Portal、竞对分析、RAG 问答和合同审查的指定运行时数据已切换到 PostgreSQL，标书生成仍保持 legacy 数据层状态。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 5-B 阶段：RAG 问答 PostgreSQL 持久化。
+当前处于第 5-C 阶段：合同审查 PostgreSQL 持久化。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段只迁移 RAG 问答本地对话列表和问答 turn 记录，不合并后端，不去掉 iframe，不迁移 Dify 知识库或其他模块数据库。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段只迁移合同审查运行元数据和结构化 artifact 索引，不合并后端，不去掉 iframe，不迁移 DOCX / 上传文件 / data/runs 运行产物。
 
 ## Legacy 项目
 
@@ -72,7 +72,7 @@ clover-platform/
 - 不接 MinIO。
 - 不升级 React / Vite / Tailwind。
 - 不重构业务代码。
-- 不迁移合同审查、标书生成的数据层。
+- 不迁移标书生成的数据层。
 - 不迁移 RAG 的 Dify 知识库数据、本地向量索引或文件缓存。
 - 不修改其他四个 legacy 项目的业务启动逻辑。
 
@@ -280,7 +280,7 @@ RAG 问答在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端
 
 Portal 前端启动后会请求 `/api/runtime/apps`。接口可用时，用返回的 `iframeUrl` 覆盖 `src/config/apps.config.ts` 中的静态 URL；接口失败或 `runtime/ports.json` 不存在时，继续使用静态配置兜底。
 
-当前仍未去 iframe，仍未合并五个后端，合同审查和标书生成的数据层仍未迁移。如果某个业务模块未自动启动，需要手动启动并确保端口与 `runtime/ports.json` 一致。
+当前仍未去 iframe，仍未合并五个后端，标书生成的数据层仍未迁移。如果某个业务模块未自动启动，需要手动启动并确保端口与 `runtime/ports.json` 一致。
 
 ### 第 4.2 阶段：统一开发环境依赖与启动前检查
 
@@ -392,7 +392,7 @@ python scripts/dev.py --only competitor-analysis
 python scripts/dev.py
 ```
 
-Portal iframe 集成不变。合同审查和标书生成数据库尚未迁移，仍保持 legacy 状态。
+Portal iframe 集成不变。合同审查数据库在第 5-C 阶段迁移，标书生成数据库尚未迁移，仍保持 legacy 状态。
 
 ## 第 5-B 阶段：RAG 问答 PostgreSQL 持久化
 
@@ -421,8 +421,39 @@ python scripts/dev.py --only rag-web-search
 python scripts/dev.py
 ```
 
-Portal iframe 集成不变。合同审查和标书生成数据库尚未迁移，仍保持 legacy 状态。
+Portal iframe 集成不变。合同审查数据库在第 5-C 阶段迁移，标书生成数据库尚未迁移，仍保持 legacy 状态。
+
+## 第 5-C 阶段：合同审查 PostgreSQL 持久化
+
+第 5-C 阶段只迁移合同审查 `contract-review` 的运行元数据和结构化 artifact 索引。合同审查后端现在使用 PostgreSQL 18 的 `contract_review` schema，不再在运行时创建 `data/contract_review.sqlite3`，也不再使用 SQLite 作为主存储。
+
+新增表：
+
+- `contract_review.review_runs`
+- `contract_review.review_json_artifacts`
+- `contract_review.review_text_artifacts`
+- `contract_review.review_file_assets`
+
+旧 SQLite / JSON 历史数据不迁移、不删除。上传文件、DOCX 导出文件和 `data/runs` 运行产物仍保留在文件系统，本阶段不接 MinIO。
+
+新环境初始化：
+
+```bash
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+python scripts/preflight.py --only contract-review
+```
+
+运行方式不变：
+
+```bash
+python scripts/dev.py --only contract-review
+python scripts/dev.py
+```
+
+Portal iframe 集成不变。标书生成数据库尚未迁移，仍保持 legacy 状态。
 
 ## 下一阶段计划
 
-第 5-B 阶段完成后，后续再进入其他业务模块数据库迁移、统一后端接入与进一步去 iframe。当前仍不在本阶段合并后端或迁移合同审查、标书生成数据库。
+第 5-C 阶段完成后，后续再进入其他业务模块数据库迁移、统一后端接入与进一步去 iframe。当前仍不在本阶段合并后端或迁移标书生成数据库。

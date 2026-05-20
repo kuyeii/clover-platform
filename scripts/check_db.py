@@ -99,6 +99,28 @@ def main() -> int:
         print("Portal indexes are missing. Run: python scripts/init_db.py && alembic upgrade head")
         return 2
 
+    print("Contract review tables:")
+    for table in result["contract_review_tables"]:
+        print(f"  - contract_review.{table}")
+
+    if result["missing_contract_review_tables"]:
+        print("Missing contract_review tables:")
+        for table in result["missing_contract_review_tables"]:
+            print(f"  - contract_review.{table}")
+        print("Contract review tables are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
+    print("Contract review indexes:")
+    for index in result["contract_review_indexes"]:
+        print(f"  - contract_review.{index}")
+
+    if result["missing_contract_review_indexes"]:
+        print("Missing contract_review indexes:")
+        for index in result["missing_contract_review_indexes"]:
+            print(f"  - contract_review.{index}")
+        print("Contract review indexes are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
     print("RAG tables:")
     for table in result["rag_tables"]:
         print(f"  - rag.{table}")

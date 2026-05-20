@@ -185,6 +185,92 @@ PORTAL_INDEXES: tuple[str, ...] = (
     "idx_feedback_submissions_lookup",
 )
 
+CONTRACT_REVIEW_TABLES: tuple[str, ...] = (
+    "review_runs",
+    "review_json_artifacts",
+    "review_text_artifacts",
+    "review_file_assets",
+)
+
+CREATE_CONTRACT_REVIEW_TABLE_SQLS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS contract_review.review_runs (
+      run_id TEXT PRIMARY KEY,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT,
+      file_name TEXT,
+      review_side TEXT,
+      contract_type_hint TEXT,
+      analysis_scope TEXT,
+      analysis_scope_label TEXT,
+      step TEXT,
+      progress INTEGER,
+      error TEXT,
+      warning TEXT,
+      run_dir TEXT,
+      document_ready BOOLEAN,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS contract_review.review_json_artifacts (
+      run_id TEXT NOT NULL,
+      artifact_name TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (run_id, artifact_name),
+      FOREIGN KEY (run_id) REFERENCES contract_review.review_runs(run_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS contract_review.review_text_artifacts (
+      run_id TEXT NOT NULL,
+      artifact_name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (run_id, artifact_name),
+      FOREIGN KEY (run_id) REFERENCES contract_review.review_runs(run_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS contract_review.review_file_assets (
+      run_id TEXT NOT NULL,
+      asset_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      mime_type TEXT,
+      file_size BIGINT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (run_id, asset_name),
+      FOREIGN KEY (run_id) REFERENCES contract_review.review_runs(run_id) ON DELETE CASCADE
+    )
+    """,
+)
+
+CREATE_CONTRACT_REVIEW_INDEX_SQLS: tuple[str, ...] = (
+    """
+    CREATE INDEX IF NOT EXISTS idx_contract_review_runs_updated_at
+      ON contract_review.review_runs(updated_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_contract_review_runs_status
+      ON contract_review.review_runs(status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_contract_review_json_artifacts_run
+      ON contract_review.review_json_artifacts(run_id)
+    """,
+)
+
+CONTRACT_REVIEW_INDEXES: tuple[str, ...] = (
+    "idx_contract_review_runs_updated_at",
+    "idx_contract_review_runs_status",
+    "idx_contract_review_json_artifacts_run",
+)
+
 RAG_TABLES: tuple[str, ...] = (
     "conversations",
     "chat_turns",

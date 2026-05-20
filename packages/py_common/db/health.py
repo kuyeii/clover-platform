@@ -7,6 +7,8 @@ from sqlalchemy import text
 from .ddl import (
     COMPETITOR_ANALYSIS_INDEXES,
     COMPETITOR_ANALYSIS_TABLES,
+    CONTRACT_REVIEW_INDEXES,
+    CONTRACT_REVIEW_TABLES,
     CORE_INDEXES,
     CORE_TABLES,
     MODULE_META,
@@ -121,6 +123,36 @@ def check_database_connection() -> dict[str, Any]:
                     {"indexes": list(PORTAL_INDEXES)},
                 )
             ]
+            contract_review_tables = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'contract_review'
+                          AND table_name = ANY(:tables)
+                        ORDER BY table_name
+                        """
+                    ),
+                    {"tables": list(CONTRACT_REVIEW_TABLES)},
+                )
+            ]
+            contract_review_indexes = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = 'contract_review'
+                          AND indexname = ANY(:indexes)
+                        ORDER BY indexname
+                        """
+                    ),
+                    {"indexes": list(CONTRACT_REVIEW_INDEXES)},
+                )
+            ]
             rag_tables = [
                 row[0]
                 for row in conn.execute(
@@ -202,6 +234,10 @@ def check_database_connection() -> dict[str, Any]:
         "missing_portal_tables": sorted(set(PORTAL_TABLES) - set(portal_tables)),
         "portal_indexes": portal_indexes,
         "missing_portal_indexes": sorted(set(PORTAL_INDEXES) - set(portal_indexes)),
+        "contract_review_tables": contract_review_tables,
+        "missing_contract_review_tables": sorted(set(CONTRACT_REVIEW_TABLES) - set(contract_review_tables)),
+        "contract_review_indexes": contract_review_indexes,
+        "missing_contract_review_indexes": sorted(set(CONTRACT_REVIEW_INDEXES) - set(contract_review_indexes)),
         "rag_tables": rag_tables,
         "missing_rag_tables": sorted(set(RAG_TABLES) - set(rag_tables)),
         "rag_indexes": rag_indexes,

@@ -1,14 +1,14 @@
 services:
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: legacy/contract_review/Dockerfile
     env_file:
       - .env
+      - ../../.env
     environment:
-      PYTHONPATH: /app
+      PYTHONPATH: /app:/app/legacy/contract_review
       RUN_ROOT: /app/data/runs
-      SQLITE_DB_PATH: /app/data/contract_review.sqlite3
     volumes:
       - ./data:/app/data
     ports:
