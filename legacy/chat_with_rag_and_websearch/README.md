@@ -1,6 +1,6 @@
 # 基于 LLM 的聊天应用（前后端分离）
 
-前端为仿 ChatGPT 主页风格的会话界面（Vite + React + Tailwind）；后端为 **FastAPI**，按你在 `.env` 中配置的上游 **工作流 / 编排 API**，以 `response_mode: streaming` 拉取 SSE，将其中 **`event: text_chunk`** 的增量文本转发给浏览器，并把每一轮用户问题与助手完整回复以 JSON 落在项目根的 **`data/`** 目录。
+前端为仿 ChatGPT 主页风格的会话界面（Vite + React + Tailwind）；后端为 **FastAPI**，按你在 `.env` 中配置的上游 **工作流 / 编排 API**，以 `response_mode: streaming` 拉取 SSE，将其中 **`event: text_chunk`** 的增量文本转发给浏览器，并把前端会话列表和每一轮问答记录写入 clover-platform 的 PostgreSQL `rag` schema。
 
 ## 后续较为关键的TODO
 - 增加单次对话中对先前对话内容的记忆功能
@@ -16,15 +16,15 @@
 | 联网检索开关 | 底部「联网」开关对应上游 `inputs.allow_search`：**开**=`"1"`，**关**=`"0"` |
 | 等待提示 | 已发送且尚未收到首段流式正文时，在输入框上方展示「正在分析问题与检索资料」与转圈占位 |
 | 输入法友好 | **Enter** 发送；**Shift+Enter**、**Ctrl+Enter / ⌘+Enter** 换行；输入法选词过程的回车不会误触发送 |
-| 多会话与后端历史 | 侧边栏「新聊天」「搜索聊天」「最近」同上；**会话列表与消息**在后端按「每会话一个 JSON」落在 `data/conversations_ui/`（与 `DATA_DIR` 对齐，最多 80 条；旧版浏览器 localStorage 可在首次空库时**自动迁移一次**后清除） |
-| 后端按轮归档 | 流式结束后每轮一问一答另存：`data/users/{user_id}/sessions/{session_id}/<uuid>.json`（与前端 `sessionId` 对齐，与 UI 会话列表为两套存储） |
+| 多会话与后端历史 | 侧边栏「新聊天」「搜索聊天」「最近」同上；**会话列表与消息**写入 PostgreSQL `rag.conversations`，最多同步 80 条 |
+| 后端按轮归档 | 流式结束后每轮一问一答写入 PostgreSQL `rag.chat_turns`（与前端 `sessionId` 对齐） |
 | 知识库（侧栏「知识库管理」） | 列表/删除、**文本创建**、**文件上传**：由后端代理 Dify Dataset API，`dataset` 密钥仅存服务端；文本与文件接口均会在索引完成后一并返回 |
 
 ## 目录结构
 
 - `frontend/`：React + Vite + TypeScript + Tailwind
 - `backend/`：FastAPI、HTTP 上游客户端、`environment.yml`（Conda）、`pyproject.toml`（Python ≥3.11）
-- `data/`：运行时数据（已通过 `.gitignore` 忽略 `*.json`，保留 `.gitkeep`）；其中 `conversations_ui/` 保存前端侧边栏所列会话，`users/...` 保存按轮的问答归档
+- `data/`：保留 legacy 目录占位；当前对话列表和问答 turn 记录写入 PostgreSQL，不迁移旧本地历史数据
 
 ## 环境要求
 
@@ -33,19 +33,35 @@
 
 若仅有系统自带的旧版 Python（如 macOS CLI 自带的 3.9），建议使用 **Conda**（见下文 `environment.yml`）或单独安装 3.11+，并为项目**新建**虚拟环境。
 
-## 配置说明（`backend/.env`）
+## 配置说明（根目录 `.env` / `backend/.env`）
 
-从 `backend/.env.example` 复制为 `.env`，至少填写：
+数据库连接优先从 `clover-platform/.env` 读取，也兼容 `backend/.env`。单独运行 RAG 后端前，应先在 monorepo 根目录完成数据库初始化：
+
+```bash
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+```
+
+必须配置 `DATABASE_URL`，或配置 `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD`。RAG 当前使用：
+
+- `rag.conversations`
+- `rag.chat_turns`
+
+从 `backend/.env.example` 复制为 `.env` 时，至少填写：
 
 | 变量 | 说明 |
 |------|------|
+| `DATABASE_URL` | PostgreSQL 连接串；优先使用，也可放在 clover-platform 根目录 `.env` |
 | `UPSTREAM_URL` | 工作流运行地址，例如 `http://localhost/v1/workflows/run`（端口、路径与实际服务一致） |
 | `UPSTREAM_BEARER_TOKEN` | 仅填密钥本体，形如 **`app-XXX`**；**不要**写 `Bearer ` 前缀，服务端会拼装 `Authorization: Bearer …` |
 | `DIFY_API_BASE_URL` | Dify OpenAPI 根路径（无末尾 `/`），如 `http://localhost/v1`，与 Dataset / 知识库 REST 前缀一致 |
 | `DIFY_DATASET_API_KEY` | Dify **知识库 Dataset API** 密钥，形如 **`dataset-XXX`**；**不要**写 `Bearer ` 前缀。用于侧栏「知识库管理」相关接口的后端转发 |
 | `DIFY_DEFAULT_DATASET_ID` | 当前应用默认操作的知识库 **UUID**（列表、删除、按文本/文件创建文档均使用该库） |
 
-常用可选项：`UPSTREAM_TIMEOUT_SECONDS`、`WORKFLOW_REMOTE_USER`（请求体里的 `user`）、`WORKFLOW_QUESTION_INPUT_KEY` / `WORKFLOW_ALLOW_SEARCH_INPUT_KEY`（与上游 `inputs` 字段名一致）、`DATA_DIR`、`CORS_ORIGINS`、`DEFAULT_USER_ID`（归档目录中的用户目录名，默认为 `user`）。
+常用可选项：`UPSTREAM_TIMEOUT_SECONDS`、`WORKFLOW_REMOTE_USER`（请求体里的 `user`）、`WORKFLOW_QUESTION_INPUT_KEY` / `WORKFLOW_ALLOW_SEARCH_INPUT_KEY`（与上游 `inputs` 字段名一致）、`CORS_ORIGINS`、`DEFAULT_USER_ID`（问答 turn 记录里的默认用户，默认为 `user`）。
+
+Dify 知识库文档仍通过 Dify Dataset API 管理，本模块只代理相关接口，不把文档、分段或 Dify 元数据同步到 PostgreSQL。旧 SQLite / JSON 历史数据不迁移；本地向量索引或文件缓存如存在也保持原状。
 
 **依赖说明：** `python-multipart` 已写入 `backend/requirements.txt`。FastAPI 解析 **`multipart/form-data`**（如「上传文件至知识库」）时必须安装该包；与浏览器里「拖拽」还是「点击选文件」无关，二者都是 multipart 上传。
 
@@ -101,6 +117,8 @@ python run.py
 
 默认 **`http://127.0.0.1:8000`**；健康检查：`GET /api/v1/health`。若报错 *Form data requires "python-multipart"*，说明当前环境中未安装该依赖，在项目 venv / conda 内执行：`pip install python-multipart` 或重装 `requirements.txt`。
 
+如果启动时报缺少 `rag.conversations` 或 `rag.chat_turns`，请回到 clover-platform 根目录执行 `python scripts/init_db.py` 和 `alembic upgrade head`。
+
 ### 2. 前端
 
 ```bash
@@ -146,14 +164,14 @@ npm run preview
 
 ### `POST /api/v1/sessions`
 
-返回新的 `session_id`（可选用；当前前端将 `sessionId` 写在各会话的 JSON 文档中并通过下方接口同步）。
+返回新的 `session_id`（可选用；当前前端将 `sessionId` 写在各会话对象中并通过下方接口同步）。
 
 ### 前端会话列表（侧边栏「最近」）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/v1/conversations` | 读取全部会话对象；`activeConversationId` 字段恒为 `null`（历史兼容性保留） |
-| `PUT` | `/api/v1/conversations/sync` | 请求体：`{ "conversations": [ ... ], "activeConversationId": "<uuid>" }`；写入 `data/conversations_ui/<conversation_id>.json`；**当前会话仅存在于浏览器实例**，整页刷新或新开标签都会在本地先插入一条空白会话；请求体中的 `activeConversationId` 仍会校验但不落盘为全局状态；最多保留 80 条，多余文件会删除 |
+| `PUT` | `/api/v1/conversations/sync` | 请求体：`{ "conversations": [ ... ], "activeConversationId": "<uuid>" }`；写入 `rag.conversations`；**当前会话仅存在于浏览器实例**，整页刷新或新开标签都会在本地先插入一条空白会话；请求体中的 `activeConversationId` 仍会校验但不落盘为全局状态；最多保留 80 条，多余记录会删除 |
 
 ### 知识库代理（节选，均需配置 `DIFY_*`）
 
@@ -173,10 +191,10 @@ npm run preview
 | 修改 Token/URL 不生效 | 是否未重启后端 |
 | 浏览器跨域 | `CORS_ORIGINS` 是否包含前端页面来源（默认含 `http://localhost:5173`） |
 | 后端启动报错 `python-multipart` | 在**运行后端的同一个 Python 环境**内执行 `pip install -r backend/requirements.txt` |
+| 后端启动报缺少 RAG 表 | 在 clover-platform 根目录执行 `python scripts/init_db.py && alembic upgrade head`，再运行 `python scripts/check_db.py` |
 
 ## 后续扩展（占位）
 
 - 多上游编排：在 `backend/app/services/` 增加管道，路由层保持稳定。
-- 登录与多用户：`user_id`、`DEFAULT_USER_ID` 与归档路径已分层，可接鉴权后再写入。
-- 数据库：以实现类接口替换 `json_store.py` 的按轮归档、`conversation_store.py` 的会话列表落盘即可。
+- 登录与多用户：`user_id`、`DEFAULT_USER_ID` 已进入 `rag.chat_turns`，可接鉴权后再写入真实用户标识。
 - Docker：可按部署环境另行补充 `Dockerfile` / Compose。
