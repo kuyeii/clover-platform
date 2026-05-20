@@ -1,120 +1,85 @@
-"""前端对话列表：SQLite 持久化（每条会话一行，messages 存 JSON 列）。"""
+"""前端对话列表：PostgreSQL 持久化。"""
 
 from __future__ import annotations
 
 import json
-import sqlite3
-from contextlib import contextmanager
-from pathlib import Path
-from typing import Iterator
+from typing import Any, Mapping
+
+from sqlalchemy import text
 
 from app.config import Settings
 from app.schemas.conversations import ChatMessagePersist, ConversationPersist
-from app.services.json_store import resolve_data_dir
-
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS conversations (
-    id TEXT PRIMARY KEY NOT NULL,
-    title TEXT NOT NULL DEFAULT '',
-    session_id TEXT NOT NULL,
-    messages_json TEXT NOT NULL DEFAULT '[]',
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    pinned INTEGER,
-    pinned_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
-    ON conversations(updated_at DESC);
-"""
-
-
-def database_path(settings: Settings) -> Path:
-    return resolve_data_dir(settings) / "conversations.sqlite"
-
-
-@contextmanager
-def _connect(settings: Settings) -> Iterator[sqlite3.Connection]:
-    path = database_path(settings)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+from app.services.repository import ensure_rag_storage, transaction
 
 
 def init_database(settings: Settings) -> None:
-    with _connect(settings) as conn:
-        conn.executescript(_SCHEMA_SQL)
+    ensure_rag_storage(settings)
 
 
 def _messages_to_json(messages: list[ChatMessagePersist]) -> str:
     return json.dumps(
         [m.model_dump(mode="json", by_alias=True) for m in messages],
         ensure_ascii=False,
+        separators=(",", ":"),
     )
 
 
-def _row_to_conversation(row: sqlite3.Row) -> ConversationPersist:
-    pinned_raw = row["pinned"]
+def _json_value(value: Any, fallback: Any) -> Any:
+    if value is None:
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return fallback
+    return fallback
+
+
+def _row_to_conversation(row: Mapping[str, Any]) -> ConversationPersist:
     return ConversationPersist.model_validate(
         {
-            "id": row["id"],
+            "id": str(row["id"]),
             "title": row["title"],
-            "sessionId": row["session_id"],
-            "messages": json.loads(row["messages_json"]),
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-            "pinned": True if pinned_raw == 1 else None,
-            "pinnedAt": row["pinned_at"],
+            "sessionId": str(row["session_id"]),
+            "messages": _json_value(row["messages"], []),
+            "createdAt": row["created_at_ms"],
+            "updatedAt": row["updated_at_ms"],
+            "pinned": True if row["pinned"] is True else None,
+            "pinnedAt": row["pinned_at_ms"],
         }
     )
 
 
-def _upsert(conn: sqlite3.Connection, conv: ConversationPersist) -> None:
-    pinned_val = 1 if conv.pinned else None
-    conn.execute(
-        """
-        INSERT INTO conversations (
-            id, title, session_id, messages_json,
-            created_at, updated_at, pinned, pinned_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            title = excluded.title,
-            session_id = excluded.session_id,
-            messages_json = excluded.messages_json,
-            created_at = excluded.created_at,
-            updated_at = excluded.updated_at,
-            pinned = excluded.pinned,
-            pinned_at = excluded.pinned_at
-        """,
-        (
-            conv.id,
-            conv.title,
-            conv.sessionId,
-            _messages_to_json(conv.messages),
-            conv.createdAt,
-            conv.updatedAt,
-            pinned_val,
-            conv.pinnedAt,
-        ),
-    )
+def _upsert_params(conv: ConversationPersist) -> dict[str, Any]:
+    return {
+        "id": conv.id,
+        "title": conv.title,
+        "session_id": conv.sessionId,
+        "messages": _messages_to_json(conv.messages),
+        "created_at_ms": conv.createdAt,
+        "updated_at_ms": conv.updatedAt,
+        "pinned": True if conv.pinned else None,
+        "pinned_at_ms": conv.pinnedAt,
+    }
 
 
 def list_conversations(settings: Settings) -> list[ConversationPersist]:
-    with _connect(settings) as conn:
-        conn.executescript(_SCHEMA_SQL)
+    init_database(settings)
+    with transaction(settings) as conn:
         rows = conn.execute(
-            "SELECT * FROM conversations ORDER BY updated_at DESC"
-        ).fetchall()
-    return [_row_to_conversation(r) for r in rows]
+            text(
+                """
+                SELECT
+                  id, title, session_id, messages,
+                  created_at_ms, updated_at_ms, pinned, pinned_at_ms
+                FROM rag.conversations
+                ORDER BY updated_at_ms DESC
+                """
+            )
+        ).mappings().all()
+    return [_row_to_conversation(row) for row in rows]
 
 
 def sync_conversations(
@@ -122,15 +87,42 @@ def sync_conversations(
     conversations: list[ConversationPersist],
     allowed_ids: set[str],
 ) -> None:
-    with _connect(settings) as conn:
-        conn.executescript(_SCHEMA_SQL)
-        if not allowed_ids:
-            conn.execute("DELETE FROM conversations")
-            return
-        for conv in conversations:
-            _upsert(conn, conv)
-        placeholders = ",".join("?" * len(allowed_ids))
+    init_database(settings)
+    if not allowed_ids:
+        with transaction(settings) as conn:
+            conn.execute(text("DELETE FROM rag.conversations"))
+        return
+
+    with transaction(settings) as conn:
         conn.execute(
-            f"DELETE FROM conversations WHERE id NOT IN ({placeholders})",
-            list(allowed_ids),
+            text(
+                """
+                INSERT INTO rag.conversations (
+                  id, title, session_id, messages,
+                  created_at_ms, updated_at_ms, pinned, pinned_at_ms
+                )
+                VALUES (
+                  CAST(:id AS uuid), :title, CAST(:session_id AS uuid), CAST(:messages AS jsonb),
+                  :created_at_ms, :updated_at_ms, :pinned, :pinned_at_ms
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                  title = EXCLUDED.title,
+                  session_id = EXCLUDED.session_id,
+                  messages = EXCLUDED.messages,
+                  created_at_ms = EXCLUDED.created_at_ms,
+                  updated_at_ms = EXCLUDED.updated_at_ms,
+                  pinned = EXCLUDED.pinned,
+                  pinned_at_ms = EXCLUDED.pinned_at_ms
+                """
+            ),
+            [_upsert_params(conv) for conv in conversations],
+        )
+        conn.execute(
+            text(
+                """
+                DELETE FROM rag.conversations
+                WHERE NOT (id = ANY(CAST(:allowed_ids AS uuid[])))
+                """
+            ),
+            {"allowed_ids": list(allowed_ids)},
         )

@@ -1,4 +1,4 @@
-"""前端对话列表：读写 SQLite（见 conversation_db）。"""
+"""前端对话列表：读写 PostgreSQL（见 conversation_db）。"""
 
 from __future__ import annotations
 

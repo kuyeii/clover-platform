@@ -1,13 +1,48 @@
 from functools import lru_cache
+import sys
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _find_monorepo_root(start: Path) -> Path:
+    for candidate in (start, *start.parents):
+        if (
+            (candidate / "config" / "apps.yaml").is_file()
+            and (candidate / "packages" / "py_common").is_dir()
+            and (candidate / "legacy" / "chat_with_rag_and_websearch").is_dir()
+        ):
+            return candidate
+    return start
+
+
+MONOREPO_ROOT = _find_monorepo_root(BACKEND_ROOT)
+if str(MONOREPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(MONOREPO_ROOT))
+
+
+def _load_env_files() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+
+    for env_file in (MONOREPO_ROOT / ".env", BACKEND_ROOT / ".env"):
+        if env_file.is_file():
+            load_dotenv(env_file, override=False)
+
+
+_load_env_files()
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -70,6 +105,13 @@ class Settings(BaseSettings):
         description="Default dataset (knowledge base) UUID for server-side document APIs.",
     )
 
+    database_url: str | None = Field(default=None, alias="DATABASE_URL")
+    postgres_host: str | None = Field(default=None, alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, alias="POSTGRES_PORT")
+    postgres_db: str | None = Field(default=None, alias="POSTGRES_DB")
+    postgres_user: str | None = Field(default=None, alias="POSTGRES_USER")
+    postgres_password: str | None = Field(default=None, alias="POSTGRES_PASSWORD")
+
     @field_validator("dify_api_base_url", mode="before")
     @classmethod
     def normalize_dify_api_base_url(cls, v: object) -> str:
@@ -81,8 +123,33 @@ class Settings(BaseSettings):
             return s if s else default
         return default
 
-    data_dir: Path = Field(default=Path("../data"), alias="DATA_DIR")
     default_user_id: str = Field(default="user", alias="DEFAULT_USER_ID")
+
+    def resolved_database_url(self) -> str:
+        if self.database_url:
+            return self.database_url
+
+        missing = [
+            name
+            for name, value in (
+                ("POSTGRES_HOST", self.postgres_host),
+                ("POSTGRES_DB", self.postgres_db),
+                ("POSTGRES_USER", self.postgres_user),
+                ("POSTGRES_PASSWORD", self.postgres_password),
+            )
+            if not value
+        ]
+        if missing:
+            joined = ", ".join(missing)
+            raise ValueError(
+                "DATABASE_URL is missing and PostgreSQL connection settings are incomplete. "
+                f"Missing: {joined}"
+            )
+
+        user = quote_plus(self.postgres_user or "")
+        password = quote_plus(self.postgres_password or "")
+        db = quote_plus(self.postgres_db or "")
+        return f"postgresql+psycopg://{user}:{password}@{self.postgres_host}:{self.postgres_port}/{db}"
 
 
 @lru_cache

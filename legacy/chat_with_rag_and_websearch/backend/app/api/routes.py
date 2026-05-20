@@ -10,8 +10,8 @@ from fastapi.responses import StreamingResponse
 from app.config import Settings, get_settings
 from app.observability import MetricsHooks, log_duration_ms, logger, new_request_id
 from app.schemas.chat import ChatStreamRequest, SessionCreateResponse
-from app.services.json_store import save_turn
 from app.services.llm_client import stream_workflow_answer
+from app.services.turn_store import save_turn
 
 router = APIRouter(prefix="/api/v1")
 
