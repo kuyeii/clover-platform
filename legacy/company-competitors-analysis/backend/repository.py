@@ -9,6 +9,7 @@ from typing import Any, Iterator, Mapping
 from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
+from sqlalchemy.engine import make_url
 
 
 def _find_repo_root() -> Path:
@@ -30,6 +31,7 @@ if str(REPO_ROOT) not in sys.path:
 load_dotenv(REPO_ROOT / ".env")
 
 from packages.py_common.db.session import get_engine  # noqa: E402
+from packages.py_common.config import get_settings  # noqa: E402
 
 
 @contextmanager
@@ -55,6 +57,14 @@ def _json_value(value: Any, fallback: Any) -> Any:
     return fallback
 
 
+def _safe_database_target() -> str:
+    try:
+        url = make_url(get_settings().resolved_database_url())
+    except Exception as exc:
+        return f"unresolved database URL ({exc})"
+    return f"host={url.host}, port={url.port or 5432}, db={url.database}, user={url.username}"
+
+
 def _record_from_row(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -71,6 +81,7 @@ def ensure_storage() -> None:
                     SELECT table_name
                     FROM (VALUES
                       ('history_records'),
+                      ('storage_meta'),
                       ('company_profiles'),
                       ('company_validation_queries')
                     ) AS required(table_name)
@@ -79,13 +90,42 @@ def ensure_storage() -> None:
                 )
             ).scalars().all()
     except Exception as exc:
-        raise RuntimeError("Cannot connect to PostgreSQL for competitor-analysis storage.") from exc
+        raise RuntimeError(
+            f"Cannot connect to PostgreSQL for competitor-analysis storage ({_safe_database_target()})."
+        ) from exc
 
     if missing:
         joined = ", ".join(f"competitor_analysis.{name}" for name in missing)
         raise RuntimeError(
             f"Missing competitor_analysis PostgreSQL tables: {joined}. "
             "Run: python scripts/init_db.py && alembic upgrade head"
+        )
+
+
+def get_storage_meta(key: str) -> str:
+    ensure_storage()
+    with _connect() as conn:
+        value = conn.execute(
+            text("SELECT value FROM competitor_analysis.storage_meta WHERE key = :key"),
+            {"key": key},
+        ).scalar_one_or_none()
+    return str(value) if value is not None else ""
+
+
+def set_storage_meta(key: str, value: str) -> None:
+    ensure_storage()
+    with _connect() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO competitor_analysis.storage_meta (key, value, updated_at)
+                VALUES (:key, :value, now())
+                ON CONFLICT (key) DO UPDATE SET
+                  value = EXCLUDED.value,
+                  updated_at = EXCLUDED.updated_at
+                """
+            ),
+            {"key": key, "value": value},
         )
 
 

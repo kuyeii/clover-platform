@@ -187,6 +187,7 @@ PORTAL_INDEXES: tuple[str, ...] = (
 
 COMPETITOR_ANALYSIS_TABLES: tuple[str, ...] = (
     "history_records",
+    "storage_meta",
     "company_profiles",
     "company_validation_queries",
 )
@@ -201,6 +202,13 @@ CREATE_COMPETITOR_ANALYSIS_TABLE_SQLS: tuple[str, ...] = (
       input_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       record_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       sort_order BIGINT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS competitor_analysis.storage_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """,

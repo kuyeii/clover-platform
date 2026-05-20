@@ -70,6 +70,7 @@ python scripts/check_db.py
 
 ```text
 competitor_analysis.history_records
+competitor_analysis.storage_meta
 competitor_analysis.company_profiles
 competitor_analysis.company_validation_queries
 ```

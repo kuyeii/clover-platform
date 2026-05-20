@@ -264,6 +264,7 @@ def load_legacy_json_records() -> List[Dict[str, Any]]:
 def migrate_legacy_if_needed() -> None:
     # Deprecated in stage 5-A: historical SQLite/JSON data is not migrated.
     ensure_storage()
+    repository.set_storage_meta("legacy_migration_skipped", "1")
 
 
 def read_records() -> List[Dict[str, Any]]:

@@ -487,6 +487,7 @@ application/x-ndjson; charset=utf-8
 PostgreSQL 中主要包含：
 
 - `history_records`：历史分析记录
+- `storage_meta`：存储层元数据
 - `company_profiles`：企业基础信息缓存
 - `company_validation_queries`：企业名称校验查询缓存
 

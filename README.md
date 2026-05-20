@@ -371,6 +371,7 @@ python scripts/dev.py --skip bid-generator
 新增表：
 
 - `competitor_analysis.history_records`
+- `competitor_analysis.storage_meta`
 - `competitor_analysis.company_profiles`
 - `competitor_analysis.company_validation_queries`
 
