@@ -31,5 +31,6 @@ faker
 exrex
 psutil
 psycopg2
+psycopg[binary]>=3.1
 python-docx>=1.1.0
 docxcompose>=1.4.0

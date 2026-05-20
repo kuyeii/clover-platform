@@ -118,7 +118,7 @@ class BatchDesensitizeResponse(BaseModel):
 
 
 class RestoreRequest(BaseModel):
-    """文本还原请求 (需对接 SQLite 中台)"""
+    """文本还原请求 (需对接 PostgreSQL 映射表)"""
     session_id: str = Field(..., description="当时脱敏时使用的会话 ID")
     text: str = Field(..., description="含有占位符的脱敏文本")
 

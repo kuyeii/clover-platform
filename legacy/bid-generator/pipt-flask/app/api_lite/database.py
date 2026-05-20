@@ -5,35 +5,81 @@ pipt-lite 数据库模块
 """
 
 import hashlib
+import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote_plus
 
-from sqlalchemy import Column, String, Integer, DateTime, Text, create_engine, func, event
+from dotenv import load_dotenv
+from sqlalchemy import Column, DateTime, Index, Integer, String, Text, create_engine, func, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# 数据库文件路径：默认固定在 pipt-flask 目录下，避免从仓库根目录启动时落到另一份 SQLite（缺表）
+_log = logging.getLogger(__name__)
 _PKG_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_DB = _PKG_ROOT / "pipt_mappings.db"
-DB_PATH = Path(os.getenv("PIPT_DB_PATH", str(_DEFAULT_DB))).resolve()
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+SCHEMA_NAME = "bid_generator"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _find_repo_root(start: Path | None = None) -> Path:
+    current = (start or _PKG_ROOT).resolve()
+    for candidate in (current, *current.parents):
+        if (
+            (candidate / "config" / "apps.yaml").is_file()
+            and (candidate / "packages" / "py_common").is_dir()
+            and (candidate / "legacy" / "bid-generator").is_dir()
+        ):
+            return candidate
+    raise RuntimeError(f"Cannot locate clover-platform root from {current}")
+
+
+def _load_env_files() -> None:
+    repo_root = _find_repo_root()
+    load_dotenv(repo_root / ".env", override=False)
+    load_dotenv(_PKG_ROOT / ".env", override=False)
+
+
+def _build_database_url() -> str:
+    _load_env_files()
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        return database_url
+
+    required = {
+        "POSTGRES_HOST": os.getenv("POSTGRES_HOST"),
+        "POSTGRES_DB": os.getenv("POSTGRES_DB"),
+        "POSTGRES_USER": os.getenv("POSTGRES_USER"),
+        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+    }
+    missing = [key for key, value in required.items() if not value]
+    if missing:
+        raise RuntimeError(
+            "PostgreSQL connection settings are incomplete. "
+            "Set DATABASE_URL or POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, and POSTGRES_PASSWORD. "
+            f"Missing: {', '.join(missing)}"
+        )
+
+    user = quote_plus(required["POSTGRES_USER"] or "")
+    password = quote_plus(required["POSTGRES_PASSWORD"] or "")
+    host = required["POSTGRES_HOST"]
+    port = int(os.getenv("POSTGRES_PORT", "5432"))
+    database = quote_plus(required["POSTGRES_DB"] or "")
+    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
+
+
+DATABASE_URL = _build_database_url()
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    echo=False
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=5,
+    echo=False,
 )
-
-
-@event.listens_for(engine, "connect")
-def _set_sqlite_pragmas(dbapi_connection, connection_record):
-    """SQLite 单机生产加固：WAL + busy_timeout，降低写冲突与锁等待失败。"""
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL;")
-    cursor.execute("PRAGMA busy_timeout=5000;")
-    cursor.execute("PRAGMA synchronous=NORMAL;")
-    cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -102,13 +148,18 @@ class MappingRecord(Base):
     新代码应优先使用 EntityRegistry。
     """
     __tablename__ = "mapping_records"
+    __table_args__ = (
+        Index("idx_bid_mapping_records_session_id", "session_id"),
+        Index("idx_bid_mapping_records_placeholder", "placeholder"),
+        {"schema": SCHEMA_NAME},
+    )
 
     id = Column(String, primary_key=True, default=lambda: uuid.uuid4().hex)
-    session_id = Column(String, index=True, nullable=False, doc="工作流或会话的唯一标识")
-    placeholder = Column(String, index=True, nullable=False, doc="占位符，如 {{__PIPT_name_1__}}")
+    session_id = Column(String, nullable=False, doc="工作流或会话的唯一标识")
+    placeholder = Column(String, nullable=False, doc="占位符，如 {{__PIPT_name_1__}}")
     original_text = Column(String, nullable=False, doc="脱敏前的原始明文")
     entity_type = Column(String, nullable=False, doc="实体类别，如 name, phone")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
 
 
 class EntityRegistry(Base):
@@ -118,17 +169,23 @@ class EntityRegistry(Base):
     original_text_enc 字段由 Fernet 加密存储。
     """
     __tablename__ = "entity_registry"
+    __table_args__ = (
+        Index("idx_bid_entity_registry_entity_key", "entity_key"),
+        Index("idx_bid_entity_registry_placeholder", "placeholder"),
+        Index("idx_bid_entity_registry_entity_type", "entity_type"),
+        {"schema": SCHEMA_NAME},
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    entity_key = Column(String, unique=True, index=True, nullable=False,
+    entity_key = Column(String, unique=True, nullable=False,
                         doc="SHA256(original_text + '|' + entity_type)，永不存原文")
     entity_type = Column(String, nullable=False, doc="name / org / phone / ...")
     original_text_enc = Column(String, nullable=False, doc="Fernet 加密后的原始明文")
-    placeholder = Column(String, unique=True, index=True, nullable=False,
+    placeholder = Column(String, unique=True, nullable=False,
                          doc="{{__PIPT_org_1__}}，全局唯一")
     global_index = Column(Integer, nullable=False, doc="同 entity_type 下的全局序号")
-    first_seen_at = Column(DateTime, default=datetime.utcnow)
-    hit_count = Column(Integer, default=1, doc="被引用次数，供审计")
+    first_seen_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
+    hit_count = Column(Integer, nullable=False, server_default="1", default=1, doc="被引用次数，供审计")
 
 
 class ImageRegistry(Base):
@@ -137,38 +194,55 @@ class ImageRegistry(Base):
     并与全局占位符关联。该占位符可无损向外丢给云端 LLM 和 Dify 知识库。
     """
     __tablename__ = "image_registry"
+    __table_args__ = (
+        Index("idx_bid_image_registry_image_hash", "image_hash"),
+        Index("idx_bid_image_registry_project_id", "project_id"),
+        Index("idx_bid_image_registry_placeholder", "placeholder"),
+        {"schema": SCHEMA_NAME},
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    image_hash = Column(String, unique=True, index=True, nullable=False, doc="图片的散列值，防文件重复（如MD5/SHA256）")
-    project_id = Column(String, index=True, nullable=True, doc="归属项目 ID")
+    image_hash = Column(String, unique=True, nullable=False, doc="图片的散列值，防文件重复（如MD5/SHA256）")
+    project_id = Column(String, nullable=True, doc="归属项目 ID")
     abs_path = Column(String, nullable=False, doc="本地服务器永久化物理路径")
     preview_url = Column(String, nullable=False, doc="供前端直接访问的图片源路由")
-    placeholder = Column(String, unique=True, index=True, nullable=False, doc="抛送给外部模型的空壳占位符，例如 __PRO_IMG_7b8a9c__")
+    placeholder = Column(String, unique=True, nullable=False, doc="抛送给外部模型的空壳占位符，例如 __PRO_IMG_7b8a9c__")
     vlm_caption = Column(String, nullable=True, doc="基于本地 VLM 在需要时所生成的描述。纯粹本地算力")
-    is_reference_only = Column(Integer, default=1, doc="标志该图是做引用查询 还是真要塞回排版")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    is_reference_only = Column(Integer, nullable=False, server_default="1", default=1, doc="标志该图是做引用查询 还是真要塞回排版")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
 
 
 
 class ProjectRecord(Base):
     """项目记录表 — 与前端 Project interface 完全对齐"""
     __tablename__ = "projects"
+    __table_args__ = (
+        Index("idx_bid_projects_created_at", "created_at"),
+        Index("idx_bid_projects_updated_at", "updated_at"),
+        Index("idx_bid_projects_status", "status"),
+        {"schema": SCHEMA_NAME},
+    )
 
     id = Column(String, primary_key=True, doc="项目 ID，如 proj_1710000000000")
     name = Column(String, nullable=False, doc="项目名")
-    status = Column(String, nullable=False, default="uploading", doc="项目状态")
-    data = Column(Text, nullable=False, default="{}", doc="完整项目 JSON 数据")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    status = Column(String, nullable=False, server_default="uploading", default="uploading", doc="项目状态")
+    data = Column(Text, nullable=False, server_default="{}", default="{}", doc="完整项目 JSON 数据")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now, onupdate=_utc_now)
 
 
 def init_db():
-    """初始化数据库连同表结构（含后续新增的 ORM 表，如 image_registry）"""
-    import logging
-
-    _log = logging.getLogger(__name__)
-    Base.metadata.create_all(bind=engine)
-    _log.info("SQLite 路径: %s，已执行 create_all", DB_PATH)
+    """初始化 PostgreSQL schema 与 ORM 表，作为统一初始化后的兼容兜底。"""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA_NAME}"'))
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        raise RuntimeError(
+            "pipt-lite PostgreSQL 初始化失败，请检查 DATABASE_URL 或 POSTGRES_* 配置，并执行 "
+            "python scripts/init_db.py && alembic upgrade head"
+        ) from exc
+    _log.info("pipt-lite PostgreSQL schema %s 已执行 create_all 兼容检查", SCHEMA_NAME)
 
 
 def get_db():

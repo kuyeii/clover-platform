@@ -5,6 +5,8 @@ from typing import Any
 from sqlalchemy import text
 
 from .ddl import (
+    BID_GENERATOR_INDEXES,
+    BID_GENERATOR_TABLES,
     COMPETITOR_ANALYSIS_INDEXES,
     COMPETITOR_ANALYSIS_TABLES,
     CONTRACT_REVIEW_INDEXES,
@@ -153,6 +155,36 @@ def check_database_connection() -> dict[str, Any]:
                     {"indexes": list(CONTRACT_REVIEW_INDEXES)},
                 )
             ]
+            bid_generator_tables = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'bid_generator'
+                          AND table_name = ANY(:tables)
+                        ORDER BY table_name
+                        """
+                    ),
+                    {"tables": list(BID_GENERATOR_TABLES)},
+                )
+            ]
+            bid_generator_indexes = [
+                row[0]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = 'bid_generator'
+                          AND indexname = ANY(:indexes)
+                        ORDER BY indexname
+                        """
+                    ),
+                    {"indexes": list(BID_GENERATOR_INDEXES)},
+                )
+            ]
             rag_tables = [
                 row[0]
                 for row in conn.execute(
@@ -238,6 +270,10 @@ def check_database_connection() -> dict[str, Any]:
         "missing_contract_review_tables": sorted(set(CONTRACT_REVIEW_TABLES) - set(contract_review_tables)),
         "contract_review_indexes": contract_review_indexes,
         "missing_contract_review_indexes": sorted(set(CONTRACT_REVIEW_INDEXES) - set(contract_review_indexes)),
+        "bid_generator_tables": bid_generator_tables,
+        "missing_bid_generator_tables": sorted(set(BID_GENERATOR_TABLES) - set(bid_generator_tables)),
+        "bid_generator_indexes": bid_generator_indexes,
+        "missing_bid_generator_indexes": sorted(set(BID_GENERATOR_INDEXES) - set(bid_generator_indexes)),
         "rag_tables": rag_tables,
         "missing_rag_tables": sorted(set(RAG_TABLES) - set(rag_tables)),
         "rag_indexes": rag_indexes,

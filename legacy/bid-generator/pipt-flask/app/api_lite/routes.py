@@ -1012,7 +1012,7 @@ def _restore_locator_cache_from_disk(project_id: str) -> bool:
         return False
     docx_path = PRO_ENGINE_ROOT / "data" / "docx_cache" / f"{project_id}.docx"
     if not docx_path.exists():
-        # 兼容兜底：若原始 DOCX 不在磁盘，尝试用 SQLite 快照恢复块索引
+        # 兼容兜底：若原始 DOCX 不在磁盘，尝试用项目快照恢复块索引
         db_blocks = _load_doc_blocks_snapshot(project_id)
         if db_blocks:
             _locator_cache[project_id] = {
@@ -1021,7 +1021,7 @@ def _restore_locator_cache_from_disk(project_id: str) -> bool:
                 "doc_blocks": db_blocks,
                 "snapshot_only": True,
             }
-            logger.info(f"[{project_id}] 已从 SQLite 快照恢复 doc_blocks: {len(db_blocks)} 个")
+            logger.info(f"[{project_id}] 已从项目快照恢复 doc_blocks: {len(db_blocks)} 个")
             return True
         return False
     try:
@@ -1501,7 +1501,7 @@ def _extract_raw_text_with_images(filename: str, content_bytes: bytes, use_visio
                         if not tag_desc or "无法提取" in tag_desc or len(tag_desc) < 4:
                             tag_desc = "本地配图"
 
-                        # 注入 SQLite 图片注册表保护池
+                        # 注入 PostgreSQL 图片注册表保护池
                         from app.api_lite.database import SessionLocal, ImageRegistry
                         db = SessionLocal()
                         try:

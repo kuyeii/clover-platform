@@ -23,6 +23,9 @@
  │  /api/...        │  ← 所有业务接口均以 /api 开头
  └────────┬─────────┘
           │
+          ├──── PostgreSQL 18（bid_generator schema）
+          │         mapping_records · entity_registry · image_registry · projects
+          │
           ├──── NER + 脱敏引擎（DesensitizeEngine，基于 HanLP）
           │         /api/desensitize · /api/recognize · /api/restore
           │
@@ -122,9 +125,10 @@
 | 数据类型 | 处理方式 |
 |----------|----------|
 | 招标文件原文 | NER 脱敏，占位符替换后传给 Dify |
-| 脱敏映射表 `mapping_table` | **仅存 localStorage**，绝不上传任何外部服务 |
+| 脱敏映射表 `mapping_table` | 前端保留项目内映射；pipt-lite 同步写入 PostgreSQL `bid_generator.mapping_records` / `entity_registry` 用于服务端还原 |
 | 投标人信息 `bidderInfo` | **仅存 localStorage**，以 `{{__BIDDER_*__}}` 占位符形式注入提示词，最终在本地还原 |
 | Dify 工作流 API Key | 仅存 `.env`，不进入版本库 |
+| 图片 / DOCX / PDF / raw_doc / kb_sync_status 缓存 | 继续保留在文件系统，不写入 PostgreSQL |
 
 ---
 
@@ -146,7 +150,27 @@
 | 文件 | 用途 |
 |------|------|
 | `config.yaml` | 脱敏 profile、工作流 enabled 开关、Dify 基础配置 |
-| `.env` | **Dify API 密钥**（`DIFY_WORKFLOW_*`），不得提交版本库 |
+| `.env` | PostgreSQL 连接信息、`PIPT_DB_KEY` 和 **Dify API 密钥**（`DIFY_WORKFLOW_*`），不得提交版本库 |
+
+pipt-lite 运行时从 `clover-platform` 根目录 `.env` 或环境变量读取 PostgreSQL 连接：
+
+```bash
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_DB=app_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=change-me
+# 或直接配置 DATABASE_URL=postgresql+psycopg://...
+```
+
+当前使用的表：
+
+- `bid_generator.mapping_records`
+- `bid_generator.entity_registry`
+- `bid_generator.image_registry`
+- `bid_generator.projects`
+
+`PIPT_DB_KEY` 用于加密 `bid_generator.entity_registry.original_text_enc`；开发环境可不配置，`PIPT_ENV=production` 时必须配置。旧映射库历史数据不迁移，PDF / DOCX / 图片 / raw_doc / kb_sync_status 文件缓存仍保留在文件系统。
 
 `.env` 中当前纳管的核心密钥如下：
 
@@ -176,9 +200,16 @@ cd pipt-flask
 pip install -r requirements-lite.txt
 pip install pdfplumber python-docx python-dotenv openpyxl
 
-# 配置密钥
+# 配置 PostgreSQL、PIPT_DB_KEY 与 Dify 密钥
 cp ../.env.example ../.env
-# 编辑 .env，填入 DIFY_WORKFLOW_* 密钥
+# 编辑 .env，填入 POSTGRES_* 或 DATABASE_URL，以及 DIFY_WORKFLOW_* 密钥
+
+# 在 clover-platform 根目录初始化数据库
+cd ../..
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
+cd legacy/bid-generator/pipt-flask
 
 # 启动（开发模式，支持热重载）
 python main_lite.py

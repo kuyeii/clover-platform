@@ -121,6 +121,28 @@ def main() -> int:
         print("Contract review indexes are missing. Run: python scripts/init_db.py && alembic upgrade head")
         return 2
 
+    print("Bid generator tables:")
+    for table in result["bid_generator_tables"]:
+        print(f"  - bid_generator.{table}")
+
+    if result["missing_bid_generator_tables"]:
+        print("Missing bid_generator tables:")
+        for table in result["missing_bid_generator_tables"]:
+            print(f"  - bid_generator.{table}")
+        print("Bid generator tables are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
+    print("Bid generator indexes:")
+    for index in result["bid_generator_indexes"]:
+        print(f"  - bid_generator.{index}")
+
+    if result["missing_bid_generator_indexes"]:
+        print("Missing bid_generator indexes:")
+        for index in result["missing_bid_generator_indexes"]:
+            print(f"  - bid_generator.{index}")
+        print("Bid generator indexes are missing. Run: python scripts/init_db.py && alembic upgrade head")
+        return 2
+
     print("RAG tables:")
     for table in result["rag_tables"]:
         print(f"  - rag.{table}")

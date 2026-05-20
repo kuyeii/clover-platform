@@ -9,7 +9,21 @@
 1. **NER 识别 + 脱敏**：招标文件上传时自动脱敏，保护供应商/人员隐私
 2. **需求提取**：当前代码仍兼容调用 Dify `requirement_extractor` 历史工作流，从招标文件中提取结构化需求
 3. **大纲生成**：调用 Dify `structure_generator` 工作流，生成含一级+二级标题和 `writingHint` 的大纲
-4. **系统配置**：读写 `config.yaml` · 工作流状态查询
+4. **项目与映射持久化**：写入 PostgreSQL 18 的 `bid_generator` schema
+5. **系统配置**：读写 `config.yaml` · 工作流状态查询
+
+## 数据库
+
+pipt-lite 当前运行数据使用 `clover-platform` PostgreSQL：
+
+- `bid_generator.mapping_records`
+- `bid_generator.entity_registry`
+- `bid_generator.image_registry`
+- `bid_generator.projects`
+
+后端从 `clover-platform` 根目录 `.env` 或环境变量读取 `DATABASE_URL`；没有 `DATABASE_URL` 时使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD` 组装连接。单独运行本目录时也可参考 `.env.example` 放置本地开发变量。
+
+`PIPT_DB_KEY` 用于加密 `bid_generator.entity_registry.original_text_enc`。开发环境未配置时会降级为明文并给出 warning；`PIPT_ENV=production` 时必须配置。旧映射库历史数据不迁移，PDF / DOCX / 图片 / raw_doc / kb_sync_status 等缓存继续保留在文件系统。
 
 ## API 接口
 
@@ -97,10 +111,14 @@ Content-Type: application/json
 pip install -r requirements-lite.txt
 pip install pdfplumber python-docx python-dotenv
 
-# 配置密钥（在项目根目录）
-# 编辑 .env，填入 DIFY_WORKFLOW_* 变量
+# 在 clover-platform 根目录配置 PostgreSQL、PIPT_DB_KEY 和 Dify 密钥
+# 编辑 .env，填入 POSTGRES_* 或 DATABASE_URL，以及 DIFY_WORKFLOW_* 变量
+python scripts/init_db.py
+alembic upgrade head
+python scripts/check_db.py
 
 # 启动服务
+cd legacy/bid-generator/pipt-flask
 python main_lite.py
 # API Doc: http://localhost:5000/apidoc
 ```

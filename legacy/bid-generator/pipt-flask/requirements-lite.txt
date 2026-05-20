@@ -5,6 +5,9 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 pydantic>=2.0
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+python-dotenv>=1.0
 
 # === NER / NLP ===
 # torch 需根据环境单独安装（CPU 版本）
@@ -15,6 +18,7 @@ transformers==4.34.1
 # === 脱敏相关 ===
 gmssl>=3.2.2           # SM4 对称加密
 faker>=22.0            # 假名化
+cryptography>=42.0     # Fernet 字段加密
 
 # === 数据处理 ===
 pandas==2.2.3

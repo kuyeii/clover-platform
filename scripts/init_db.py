@@ -49,6 +49,10 @@ def main() -> int:
         print("Ensured contract_review indexes")
         for index in result.contract_review_indexes:
             print(f"Ensured index: contract_review.{index}")
+        print("Ensured bid_generator tables")
+        print("Ensured bid_generator indexes")
+        for index in result.bid_generator_indexes:
+            print(f"Ensured index: bid_generator.{index}")
         print("Ensured rag tables")
         print("Ensured rag indexes")
         for index in result.rag_indexes:

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 项目数据 REST API — 替代前端 localStorage
-提供项目 CRUD 接口，数据持久化到 SQLite
+提供项目 CRUD 接口，数据持久化到 PostgreSQL
 """
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +17,10 @@ from .database import get_db, ProjectRecord
 
 logger = logging.getLogger("project-api")
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 # ── Pydantic 模型 ──────────────────────────────────
@@ -117,7 +121,7 @@ def update_project(project_id: str, body: ProjectUpdate, db: Session = Depends(g
     if body.data is not None:
         record.data = json.dumps(body.data, ensure_ascii=False)
 
-    record.updated_at = datetime.utcnow()
+    record.updated_at = _utc_now()
     db.commit()
     db.refresh(record)
     return _to_response(record)
@@ -164,7 +168,7 @@ def patch_project(project_id: str, body: ProjectPatch, db: Session = Depends(get
                 data.pop(key, None)
 
     record.data = json.dumps(data, ensure_ascii=False)
-    record.updated_at = datetime.utcnow()
+    record.updated_at = _utc_now()
     db.commit()
     db.refresh(record)
     return _to_response(record)
@@ -195,7 +199,7 @@ def get_project_mappings(project_id: str, db: Session = Depends(get_db)):
 
 @router.post("/batch", status_code=201)
 def batch_create_projects(projects: list[ProjectCreate], db: Session = Depends(get_db)):
-    """批量创建项目（用于 localStorage → SQLite 迁移）"""
+    """批量创建项目（用于 localStorage → PostgreSQL 同步）"""
     created = 0
     for proj in projects:
         existing = db.query(ProjectRecord).filter(ProjectRecord.id == proj.id).first()
@@ -204,7 +208,7 @@ def batch_create_projects(projects: list[ProjectCreate], db: Session = Depends(g
             existing.name = proj.name
             existing.status = proj.status
             existing.data = json.dumps(proj.data, ensure_ascii=False)
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = _utc_now()
         else:
             record = ProjectRecord(
                 id=proj.id,

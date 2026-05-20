@@ -125,6 +125,9 @@ LEGACY_IMPORTS = {
         "fastapi": "fastapi",
         "uvicorn": "uvicorn",
         "pydantic": "pydantic",
+        "sqlalchemy": "SQLAlchemy",
+        "psycopg": "psycopg",
+        "dotenv": "python-dotenv",
     },
 }
 
@@ -288,6 +291,7 @@ def _check_database(
     *,
     check_portal: bool,
     check_contract_review: bool,
+    check_bid_generator: bool,
     check_rag: bool,
     check_competitor_analysis: bool,
 ) -> list[CheckResult]:
@@ -362,6 +366,31 @@ def _check_database(
                     "contract-review PostgreSQL tables",
                     "ok",
                     "Contract review run metadata and artifact tables exist",
+                )
+            )
+
+    if check_bid_generator:
+        missing_tables = result.get("missing_bid_generator_tables", [])
+        missing_indexes = result.get("missing_bid_generator_indexes", [])
+        if missing_tables or missing_indexes:
+            missing = [
+                *(f"bid_generator.{table}" for table in missing_tables),
+                *(f"bid_generator index {index}" for index in missing_indexes),
+            ]
+            results.append(
+                CheckResult(
+                    "bid-generator PostgreSQL tables",
+                    "error",
+                    f"Missing bid_generator database objects: {', '.join(missing)}",
+                    "python scripts/init_db.py && alembic upgrade head",
+                )
+            )
+        else:
+            results.append(
+                CheckResult(
+                    "bid-generator PostgreSQL tables",
+                    "ok",
+                    "pipt-lite mapping, entity, image, and project tables exist",
                 )
             )
 
@@ -582,6 +611,28 @@ def _check_legacy_module(app: dict[str, Any], repo_root: Path, env_values: dict[
                     "Restore legacy/bid-generator/gateway-out/fonts/SimSun.ttf if document export requires SimSun.",
                 )
             )
+        env_name = str(env_values.get("PIPT_ENV") or "").strip().lower()
+        has_key = bool(env_values.get("PIPT_DB_KEY"))
+        if env_name in {"prod", "production"} and not has_key:
+            results.append(
+                CheckResult(
+                    "bid-generator PIPT_DB_KEY",
+                    "error",
+                    "PIPT_ENV=production requires PIPT_DB_KEY for original_text_enc encryption",
+                    "Set PIPT_DB_KEY to a Fernet key in the runtime environment.",
+                )
+            )
+        elif has_key:
+            results.append(CheckResult("bid-generator PIPT_DB_KEY", "ok", "PIPT_DB_KEY is configured"))
+        else:
+            results.append(
+                CheckResult(
+                    "bid-generator PIPT_DB_KEY",
+                    "warn",
+                    "PIPT_DB_KEY is not configured; pipt-lite stores original_text_enc as plaintext in development",
+                    "Generate a Fernet key before production: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+                )
+            )
 
     hint = CONFIG_HINTS.get(code)
     if hint:
@@ -623,9 +674,16 @@ def run_preflight(
     results: list[CheckResult] = []
     includes_portal = "portal" in selected
     includes_contract_review = "contract-review" in selected
+    includes_bid_generator = "bid-generator" in selected
     includes_rag = "rag-web-search" in selected
     includes_competitor_analysis = "competitor-analysis" in selected
-    includes_database = includes_portal or includes_contract_review or includes_rag or includes_competitor_analysis
+    includes_database = (
+        includes_portal
+        or includes_contract_review
+        or includes_bid_generator
+        or includes_rag
+        or includes_competitor_analysis
+    )
 
     if includes_database:
         results.extend(_check_root_env(root, env_values))
@@ -651,6 +709,7 @@ def run_preflight(
                 env_values,
                 check_portal=includes_portal,
                 check_contract_review=includes_contract_review,
+                check_bid_generator=includes_bid_generator,
                 check_rag=includes_rag,
                 check_competitor_analysis=includes_competitor_analysis,
             )

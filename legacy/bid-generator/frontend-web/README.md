@@ -55,6 +55,8 @@ src/services/
 
 在 `clover-platform` 统一启动器中会注入 `VITE_API_BASE_URL=http://127.0.0.1:<标书生成后端端口>`。单独启动本前端时不设置该变量，仍默认访问 `http://localhost:5000/api`。
 
+项目列表与服务端映射数据由 pipt-lite 后端写入 PostgreSQL `bid_generator` schema；前端 API 路径和请求结构不变。脱敏设置和投标人信息仍按现有逻辑保存在浏览器本地。
+
 ## 快速启动
 
 ```bash
