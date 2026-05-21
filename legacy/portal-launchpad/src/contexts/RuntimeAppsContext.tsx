@@ -9,6 +9,18 @@ interface RuntimeAppsContextValue {
 }
 
 const RuntimeAppsContext = createContext<RuntimeAppsContextValue | undefined>(undefined);
+const RUNTIME_APPS_STORAGE_KEY = "portal.launchpad.runtimeApps.v1";
+
+function cacheRuntimeApps(apps: ToolkitApp[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(RUNTIME_APPS_STORAGE_KEY, JSON.stringify(apps));
+  } catch {
+    // Runtime app caching is only an optimization for cross-page API discovery.
+  }
+}
 
 function mergeRuntimeApps(runtimeApps: RuntimeAppConfig[]) {
   const runtimeByCode = new Map(runtimeApps.map((app) => [app.code, app]));
@@ -23,6 +35,7 @@ function mergeRuntimeApps(runtimeApps: RuntimeAppConfig[]) {
       ...app,
       name: runtimeApp.name || app.name,
       url: runtimeApp.iframeUrl || runtimeApp.url || app.url,
+      backendUrl: runtimeApp.backendUrl || app.backendUrl,
       healthUrl: runtimeApp.healthUrl || app.healthUrl,
       status: runtimeApp.enabled ? app.status : "offline",
     } satisfies ToolkitApp;
@@ -38,12 +51,15 @@ export function RuntimeAppsProvider({ children }: { children: ReactNode }) {
     fetchRuntimeApps()
       .then((runtimeApps) => {
         if (!cancelled) {
-          setApps(mergeRuntimeApps(runtimeApps));
+          const mergedApps = mergeRuntimeApps(runtimeApps);
+          setApps(mergedApps);
+          cacheRuntimeApps(mergedApps);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setApps(appsConfig);
+          cacheRuntimeApps(appsConfig);
         }
       });
 

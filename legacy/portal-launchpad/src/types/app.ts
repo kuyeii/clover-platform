@@ -25,6 +25,7 @@ export interface ToolkitApp {
   ctaLabel: string;
   backgroundImage: string;
   url: string;
+  backendUrl?: string;
   healthUrl: string;
   status: AppStatus;
   healthStatus: HealthStatus;

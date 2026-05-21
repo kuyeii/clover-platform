@@ -77,10 +77,87 @@ export type DownloadDocumentResult = {
   filename: string;
 };
 
-function getApiBase(): string {
+type CachedRuntimeApp = {
+  code?: string;
+  id?: string;
+  url?: string;
+  backendUrl?: string;
+  backend_url?: string;
+  healthUrl?: string;
+  health_url?: string;
+};
+
+const RUNTIME_APPS_STORAGE_KEY = "portal.launchpad.runtimeApps.v1";
+let runtimeKnowledgeApiBase: string | null = null;
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/$/, "");
+}
+
+function baseFromHealthUrl(healthUrl?: string): string {
+  if (!healthUrl) return "";
+  return healthUrl.replace(/\/api\/v1\/health\/?$/, "").replace(/\/health\/?$/, "");
+}
+
+function resolveRagBackendBase(apps: CachedRuntimeApp[]): string {
+  const ragApp = apps.find((app) => (app.id || app.code) === "rag-web-search");
+  if (!ragApp) return "";
+  return trimTrailingSlash(
+    ragApp.backendUrl ||
+      ragApp.backend_url ||
+      baseFromHealthUrl(ragApp.healthUrl || ragApp.health_url) ||
+      "",
+  );
+}
+
+function getCachedRagBackendBase(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(RUNTIME_APPS_STORAGE_KEY);
+    if (!raw) return "";
+    const apps = JSON.parse(raw) as CachedRuntimeApp[];
+    return Array.isArray(apps) ? resolveRagBackendBase(apps) : "";
+  } catch {
+    return "";
+  }
+}
+
+async function fetchRagBackendBase(): Promise<string> {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const response = await fetch("/api/runtime/apps", {
+      headers: { accept: "application/json" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) return "";
+    const payload = (await response.json()) as { apps?: CachedRuntimeApp[] };
+    const apps = Array.isArray(payload.apps) ? payload.apps : [];
+    const base = resolveRagBackendBase(apps);
+    if (base) {
+      runtimeKnowledgeApiBase = base;
+    }
+    return base;
+  } catch {
+    return "";
+  }
+}
+
+async function getApiBase(): Promise<string> {
   const env = import.meta.env;
-  const base = env.VITE_KNOWLEDGE_API_BASE_URL ?? env.VITE_API_BASE_URL ?? "";
-  return String(base).replace(/\/$/, "");
+  const base =
+    env.VITE_KNOWLEDGE_API_BASE_URL ||
+    runtimeKnowledgeApiBase ||
+    getCachedRagBackendBase() ||
+    (await fetchRagBackendBase()) ||
+    env.VITE_API_BASE_URL ||
+    "";
+  return trimTrailingSlash(String(base));
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {
@@ -94,12 +171,20 @@ async function readError(response: Response, fallback: string): Promise<string> 
   return fallback;
 }
 
+async function readJson<T>(response: Response, fallback: string): Promise<T> {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(fallback);
+  }
+  return (await response.json()) as T;
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBase()}${path}`, init);
+  const response = await fetch(`${await getApiBase()}${path}`, init);
   if (!response.ok) {
     throw new Error(await readError(response, `请求失败（HTTP ${response.status}）`));
   }
-  return (await response.json()) as T;
+  return readJson<T>(response, "知识库接口返回了非 JSON 响应，请确认 RAG 后端已启动。");
 }
 
 export function fetchKnowledgeDocuments(): Promise<KnowledgeDocumentsResponse> {
@@ -133,7 +218,7 @@ export function createFileDocument(file: File): Promise<CreateDocumentResult> {
 
 export async function deleteKnowledgeDocument(documentId: string): Promise<void> {
   const response = await fetch(
-    `${getApiBase()}/api/v1/knowledge/documents/${encodeURIComponent(documentId)}`,
+    `${await getApiBase()}/api/v1/knowledge/documents/${encodeURIComponent(documentId)}`,
     { method: "DELETE" },
   );
   if (!response.ok && response.status !== 204) {
@@ -146,7 +231,7 @@ export async function downloadKnowledgeDocument(
   format: "markdown" | "json" = "markdown",
 ): Promise<DownloadDocumentResult> {
   const response = await fetch(
-    `${getApiBase()}/api/v1/knowledge/documents/${encodeURIComponent(documentId)}/download?format=${format}`,
+    `${await getApiBase()}/api/v1/knowledge/documents/${encodeURIComponent(documentId)}/download?format=${format}`,
   );
   if (!response.ok) {
     throw new Error(await readError(response, `下载失败（HTTP ${response.status}）`));

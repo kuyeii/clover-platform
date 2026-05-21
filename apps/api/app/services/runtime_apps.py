@@ -46,6 +46,8 @@ def _fallback_app_payload(app: dict[str, Any]) -> dict[str, Any] | None:
         "code": app.get("code"),
         "name": app.get("name"),
         "routePath": app.get("route_path") or "",
+        "frontendUrl": iframe_url,
+        "backendUrl": _localhost_url(backend_port),
         "iframeUrl": iframe_url,
         "url": iframe_url,
         "healthUrl": f"{_localhost_url(backend_port)}{health_check}",
@@ -86,6 +88,8 @@ def get_runtime_apps_payload() -> dict[str, Any]:
                     "code": code,
                     "name": app.get("name"),
                     "routePath": app.get("route_path") or "",
+                    "frontendUrl": iframe_url,
+                    "backendUrl": backend_url,
                     "iframeUrl": iframe_url,
                     "url": iframe_url,
                     "healthUrl": health_url

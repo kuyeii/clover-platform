@@ -225,6 +225,8 @@ export async function fetchUsageSummaries() {
 export interface RuntimeAppConfig {
   code: ToolkitApp["id"];
   name: string;
+  frontendUrl?: string;
+  backendUrl?: string;
   iframeUrl: string;
   url?: string;
   healthUrl?: string;

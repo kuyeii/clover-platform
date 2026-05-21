@@ -41,6 +41,8 @@ def _static_app_payload(app: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "code": app.get("code"),
         "name": app.get("name"),
+        "frontendUrl": _fallback_url(frontend_port),
+        "backendUrl": _fallback_url(backend_port),
         "iframeUrl": _fallback_url(frontend_port),
         "url": _fallback_url(frontend_port),
         "healthUrl": f"{_fallback_url(backend_port)}{app.get('legacy_health_check') or ''}",
@@ -75,6 +77,8 @@ def get_runtime_apps_payload() -> dict[str, Any]:
                 {
                     "code": code,
                     "name": app.get("name"),
+                    "frontendUrl": iframe_url,
+                    "backendUrl": backend_url,
                     "iframeUrl": iframe_url,
                     "url": iframe_url,
                     "healthUrl": health_url
