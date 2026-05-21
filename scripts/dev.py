@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 from packages.py_common.apps import auto_start_codes, resolve_app_tokens, select_app_codes
 from packages.py_common.config.loader import load_apps_config
 from packages.py_common.ports import PortAllocationError, check_port_plan
-from packages.py_common.preflight import run_preflight
 from packages.py_common.process_manager import ProcessManager, ProcessSpec
 from packages.py_common.runtime import build_ports_payload, write_ports_file
 
@@ -187,6 +186,8 @@ def main() -> int:
         return 1
 
     if not args.write_ports_only and not args.skip_preflight:
+        from packages.py_common.preflight import run_preflight
+
         preflight_report = run_preflight(
             REPO_ROOT,
             apps_config,
