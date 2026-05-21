@@ -97,6 +97,7 @@ LEGACY_IMPORTS = {
     "platform-api": {
         "fastapi": "fastapi",
         "uvicorn": "uvicorn",
+        "multipart": "python-multipart",
         "pydantic": "pydantic",
         "pydantic_settings": "pydantic-settings",
         "dotenv": "python-dotenv",

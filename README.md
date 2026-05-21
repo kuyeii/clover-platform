@@ -150,6 +150,8 @@ python scripts/dev.py
 
 第 6-B 边界：
 
+以下为该阶段完成时的历史边界说明。
+
 - Portal 前端在第 6-B 时仍继续调用 legacy `/api/auth`、`/api/users`、`/api/app-usage` 和 `/ws/app-usage`。
 - legacy Portal 后端仍保留并可独立运行。
 - feedback 暂未迁入 `apps/api`。
@@ -169,6 +171,8 @@ python scripts/dev.py
 Portal 前端的 platform API client 默认使用相对路径 `/api/v1/core`，可用 `VITE_PLATFORM_API_BASE_URL` 覆盖为完整地址，例如 `http://127.0.0.1:5220/api/v1/core`。WebSocket 默认使用 `/ws/core`，可用 `VITE_PLATFORM_WS_BASE_URL` 覆盖。Vite 开发代理中 `/api/v1/core` 和 `/ws/core` 指向 platform-api，legacy `/api` 和 `/ws` 仍指向 Portal legacy 后端，避免 feedback 被误切。
 
 第 6-C 边界：
+
+以下为该阶段完成时的历史边界说明。
 
 - feedback 暂时仍走 legacy Portal 后端。
 - knowledgeService 仍通过 runtime apps 获取 RAG 的 `backendUrl`，知识库 API 不发送到 platform-api。
