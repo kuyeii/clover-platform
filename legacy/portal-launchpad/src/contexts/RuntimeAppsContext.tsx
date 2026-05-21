@@ -10,6 +10,7 @@ interface RuntimeAppsContextValue {
 
 const RuntimeAppsContext = createContext<RuntimeAppsContextValue | undefined>(undefined);
 const RUNTIME_APPS_STORAGE_KEY = "portal.launchpad.runtimeApps.v1";
+const RUNTIME_APPS_RETRY_DELAY_MS = 1_000;
 
 function cacheRuntimeApps(apps: ToolkitApp[]) {
   if (typeof window === "undefined") {
@@ -47,24 +48,51 @@ export function RuntimeAppsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: number | undefined;
 
-    fetchRuntimeApps()
-      .then((runtimeApps) => {
-        if (!cancelled) {
-          const mergedApps = mergeRuntimeApps(runtimeApps);
-          setApps(mergedApps);
-          cacheRuntimeApps(mergedApps);
+    const applyFallback = () => {
+      if (cancelled) {
+        return;
+      }
+      setApps(appsConfig);
+      cacheRuntimeApps(appsConfig);
+    };
+
+    const loadRuntimeApps = async (allowRetry: boolean) => {
+      try {
+        const runtimeApps = await fetchRuntimeApps();
+        if (cancelled) {
+          return;
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setApps(appsConfig);
-          cacheRuntimeApps(appsConfig);
+        const mergedApps = mergeRuntimeApps(runtimeApps);
+        setApps(mergedApps);
+        cacheRuntimeApps(mergedApps);
+      } catch (error) {
+        if (cancelled) {
+          return;
         }
-      });
+
+        if (allowRetry) {
+          console.warn("Runtime apps 请求失败，将在 1 秒后重试。", error);
+          retryTimer = window.setTimeout(() => {
+            retryTimer = undefined;
+            void loadRuntimeApps(false);
+          }, RUNTIME_APPS_RETRY_DELAY_MS);
+          return;
+        }
+
+        console.warn("Runtime apps 重试失败，使用静态应用配置。", error);
+        applyFallback();
+      }
+    };
+
+    void loadRuntimeApps(true);
 
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
     };
   }, []);
 
