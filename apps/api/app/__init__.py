@@ -5,6 +5,7 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.competitor_analysis import router as competitor_analysis_router
 from app.api.app_usage import websocket_router
 from app.api.router import router
 from app.core.config import API_PREFIX, SERVICE_TITLE, get_api_settings
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(router, prefix=API_PREFIX)
+    app.include_router(competitor_analysis_router, prefix="/api/v1", tags=["competitor-analysis-proxy"])
     app.include_router(websocket_router)
 
     @app.on_event("startup")

@@ -7,3 +7,4 @@ python-dotenv
 SQLAlchemy
 psycopg[binary]
 PyYAML
+httpx
