@@ -112,12 +112,11 @@ portal-launchpad/
 
 Portal 前端核心平台接口已切到 apps/api：
 
-- auth/users/app-usage/runtime apps 走 `/api/v1/core`
+- auth/users/app-usage/runtime apps/feedback 走 `/api/v1/core`
 - app-usage WebSocket 走 `/ws/core/app-usage`
-- feedback 仍走 legacy Portal 后端 `/api/tickets` 和 `/api/feature-requests`
 - 业务模块 API 仍由各模块后端处理，iframe 仍保留
 
-本地 Vite 代理会把 `/api/v1/core` 和 `/ws/core` 转发到 platform-api，把 legacy `/api` 和 `/ws` 继续转发到 Portal 后端。可用 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL` 覆盖 platform-api 地址；如果跳过 platform-api，Portal 前端登录、用户管理、应用占用和 runtime apps 可能不可用。
+本地 Vite 代理会把 `/api/v1/core` 和 `/ws/core` 转发到 platform-api，把 legacy `/api` 和 `/ws` 继续转发到 Portal 后端。可用 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL` 覆盖 platform-api 地址；如果跳过 platform-api，Portal 前端登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。
 
 静态兜底 URL 会在浏览器运行时根据 Portal 访问域名自动生成：
 - 本地访问 `http://localhost:5200` 时，模块地址为 `http://localhost:181xx`

@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 6-C 中 Portal 前端核心平台能力已切到这里，但仍不承载合同审查、RAG、竞对分析或标书生成的业务 API。
+`apps/api` 是 Clover Platform 统一后端基座。第 6-D 中 Portal 前端核心平台能力和 feedback 能力已切到这里，但仍不承载合同审查、RAG、竞对分析或标书生成的业务 API。
 
 ## 当前职责
 
@@ -10,7 +10,7 @@
 - 复用 `packages/py_common` 的配置、数据库健康检查、模块注册、运行时端口能力。
 - 复用 Portal session token、`Authorization: Bearer <token>` 和 `X-Portal-Client-Id`。
 - 提供统一响应 envelope、request id middleware、统一 404 / 422 / 500 错误响应和基础日志。
-- 为 Portal 前端提供 auth、users、app-usage、runtime apps 和 `/ws/core/app-usage`。
+- 为 Portal 前端提供 auth、users、app-usage、runtime apps、feedback 和 `/ws/core/app-usage`。
 
 ## 当前接口
 
@@ -32,6 +32,12 @@
 - `DELETE /api/v1/core/app-usage/{app_code}/leave`
 - `DELETE /api/v1/core/app-usage/leave-all`
 - `POST /api/v1/core/app-usage/leave-all-beacon`
+- `GET /api/v1/core/tickets/submission-context`
+- `GET /api/v1/core/tickets/captcha`
+- `POST /api/v1/core/tickets`
+- `GET /api/v1/core/feature-requests/submission-context`
+- `GET /api/v1/core/feature-requests/captcha`
+- `POST /api/v1/core/feature-requests`
 - `WS /ws/core/app-usage`
 
 ## 响应格式
@@ -95,7 +101,7 @@ python scripts/dev.py --only platform-api
 python scripts/dev.py --no-business
 ```
 
-`--no-business` 会启动 Portal 前后端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用和 runtime apps 可能不可用。feedback 暂时仍走 legacy Portal 后端，业务模块 API 仍走各 legacy 模块后端。
+`--no-business` 会启动 Portal 前后端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。业务模块 API 仍走各 legacy 模块后端。
 
 生成 platform-api 端口规划：
 

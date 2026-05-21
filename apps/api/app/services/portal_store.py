@@ -585,3 +585,43 @@ def build_usage_summary(conn: PortalConnection, current_user_id: str) -> list[di
             }
         )
     return summaries
+
+
+def count_recent_feedback_submissions(
+    conn: PortalConnection,
+    *,
+    kind: str,
+    user_id: str,
+    submitted_after: datetime,
+) -> int:
+    row = conn.one(
+        """
+        SELECT COUNT(*) AS count
+        FROM portal.feedback_submissions
+        WHERE kind = :kind
+          AND user_id = :user_id
+          AND submitted_at > :submitted_after
+        """,
+        {"kind": kind, "user_id": user_id, "submitted_after": submitted_after},
+    )
+    return int(row["count"]) if row else 0
+
+
+def _parse_feedback_submitted_at(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def record_feedback_submission(
+    conn: PortalConnection,
+    *,
+    kind: str,
+    user_id: str,
+    submitted_at: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO portal.feedback_submissions (kind, user_id, submitted_at)
+        VALUES (:kind, :user_id, :submitted_at)
+        """,
+        {"kind": kind, "user_id": user_id, "submitted_at": _parse_feedback_submitted_at(submitted_at)},
+    )

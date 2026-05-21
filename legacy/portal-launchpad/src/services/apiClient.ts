@@ -79,7 +79,21 @@ function joinUrl(baseUrl: string, path: string) {
 }
 
 function getPlatformApiBaseUrl() {
-  const baseUrl = import.meta.env.VITE_PLATFORM_API_BASE_URL || "/api/v1/core";
+  const configuredBaseUrl = String(import.meta.env.VITE_PLATFORM_API_BASE_URL || "");
+  if (configuredBaseUrl && typeof window !== "undefined" && import.meta.env.DEV) {
+    try {
+      const url = new URL(configuredBaseUrl, window.location.origin);
+      const isLocalPage = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+      const isLocalApi = /^(localhost|127\.0\.0\.1)$/.test(url.hostname);
+      if (isLocalPage && isLocalApi && url.origin !== window.location.origin) {
+        return "/api/v1/core";
+      }
+    } catch {
+      // Fall through to the configured platform API URL.
+    }
+  }
+
+  const baseUrl = configuredBaseUrl || "/api/v1/core";
   return trimTrailingSlash(String(baseUrl));
 }
 
@@ -115,36 +129,6 @@ export function getAppUsageWebSocketUrl() {
   return joinUrl(getPlatformWsBaseUrl(), "/app-usage");
 }
 
-async function legacyApiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getAuthToken();
-  const headers = new Headers(init.headers);
-  headers.set("accept", "application/json");
-  headers.set("x-portal-client-id", getClientId());
-
-  if (init.body && !headers.has("content-type")) {
-    headers.set("content-type", "application/json");
-  }
-
-  if (token) {
-    headers.set("authorization", `Bearer ${token}`);
-  }
-
-  const response = await fetch(path, {
-    ...init,
-    headers,
-    credentials: "same-origin",
-  });
-  const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json") ? await response.json() : null;
-
-  if (!response.ok) {
-    const message = data?.error?.message || `请求失败：${response.status}`;
-    throw new ApiError(message, response.status, data?.error?.code);
-  }
-
-  return data as T;
-}
-
 async function platformApiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers(init.headers);
@@ -164,7 +148,7 @@ async function platformApiFetch<T>(path: string, init: RequestInit = {}): Promis
     response = await fetch(joinUrl(getPlatformApiBaseUrl(), path), {
       ...init,
       headers,
-      credentials: "same-origin",
+      credentials: "include",
     });
   } catch (error) {
     const message =
@@ -197,7 +181,11 @@ async function platformApiFetch<T>(path: string, init: RequestInit = {}): Promis
   return envelope.data as T;
 }
 
-async function legacyApiFormDataFetch<T>(path: string, formData: FormData, method: string = "POST"): Promise<T> {
+async function platformApiFormDataFetch<T>(
+  path: string,
+  formData: FormData,
+  method: string = "POST",
+): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers();
   headers.set("accept", "application/json");
@@ -207,21 +195,43 @@ async function legacyApiFormDataFetch<T>(path: string, formData: FormData, metho
     headers.set("authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(path, {
-    method,
-    headers,
-    body: formData,
-    credentials: "same-origin",
-  });
+  let response: Response;
+  try {
+    response = await fetch(joinUrl(getPlatformApiBaseUrl(), path), {
+      method,
+      headers,
+      body: formData,
+      credentials: "include",
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? `平台 API 不可用：${error.message}`
+        : "平台 API 不可用，请确认 apps/api 已启动。";
+    throw new ApiError(message, 0);
+  }
   const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json") ? await response.json() : null;
+  const envelope = contentType.includes("application/json") ? await response.json() : null;
 
   if (!response.ok) {
-    const message = data?.error?.message || `请求失败：${response.status}`;
-    throw new ApiError(message, response.status, data?.error?.code);
+    const message =
+      envelope?.error?.message ||
+      (response.status >= 500
+        ? "平台 API 不可用，请确认 apps/api 已启动。"
+        : `请求失败：${response.status}`);
+    throw new ApiError(message, response.status, envelope?.error?.code);
   }
 
-  return data as T;
+  if (envelope?.success === false) {
+    const message = envelope?.error?.message || "请求失败，请稍后重试。";
+    throw new ApiError(message, response.status, envelope?.error?.code);
+  }
+
+  if (!envelope || envelope.success !== true) {
+    throw new ApiError("平台接口返回了无法识别的响应。", response.status);
+  }
+
+  return envelope.data as T;
 }
 
 export interface FeedbackSubmissionContext {
@@ -231,19 +241,19 @@ export interface FeedbackSubmissionContext {
 }
 
 export async function fetchTicketSubmissionContext() {
-  return legacyApiFetch<FeedbackSubmissionContext>("/api/tickets/submission-context");
+  return platformApiFetch<FeedbackSubmissionContext>("/tickets/submission-context");
 }
 
 export async function fetchFeatureRequestSubmissionContext() {
-  return legacyApiFetch<FeedbackSubmissionContext>("/api/feature-requests/submission-context");
+  return platformApiFetch<FeedbackSubmissionContext>("/feature-requests/submission-context");
 }
 
 export async function fetchTicketCaptcha() {
-  return legacyApiFetch<{ code: string; hint: string }>("/api/tickets/captcha");
+  return platformApiFetch<{ code: string; hint: string }>("/tickets/captcha");
 }
 
 export async function fetchFeatureRequestCaptcha() {
-  return legacyApiFetch<{ code: string; hint: string }>("/api/feature-requests/captcha");
+  return platformApiFetch<{ code: string; hint: string }>("/feature-requests/captcha");
 }
 
 export interface FeedbackSubmitResult {
@@ -253,11 +263,11 @@ export interface FeedbackSubmitResult {
 }
 
 export async function submitTicket(formData: FormData) {
-  return legacyApiFormDataFetch<FeedbackSubmitResult>("/api/tickets", formData, "POST");
+  return platformApiFormDataFetch<FeedbackSubmitResult>("/tickets", formData, "POST");
 }
 
 export async function submitFeatureRequest(formData: FormData) {
-  return legacyApiFormDataFetch<FeedbackSubmitResult>("/api/feature-requests", formData, "POST");
+  return platformApiFormDataFetch<FeedbackSubmitResult>("/feature-requests", formData, "POST");
 }
 
 export async function loginByPassword(account: string, password: string) {
