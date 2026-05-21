@@ -477,9 +477,16 @@ def _check_port_plan(
     selected: set[str],
     skip: set[str] | None,
     port_plan: dict[str, Any] | None,
+    *,
+    include_portal_backend: bool = True,
 ) -> list[CheckResult]:
     try:
-        plan = port_plan or check_port_plan(apps_config, include_codes=selected, exclude_codes=skip)
+        plan = port_plan or check_port_plan(
+            apps_config,
+            include_codes=selected,
+            exclude_codes=skip,
+            include_portal_backend=include_portal_backend,
+        )
     except PortAllocationError as exc:
         return [CheckResult("port plan", "error", str(exc), "Stop the process using the configured port range or adjust config/apps.yaml.")]
     except (OSError, ValueError) as exc:
@@ -604,6 +611,38 @@ def _check_portal(app: dict[str, Any], repo_root: Path, env_values: dict[str, An
     return results
 
 
+def _check_portal_frontend(app: dict[str, Any], repo_root: Path) -> list[CheckResult]:
+    code = str(app.get("code"))
+    dev = app.get("dev") or {}
+    frontend_dir = repo_root / str(dev.get("frontend_working_dir") or dev.get("working_dir") or app.get("legacy_path"))
+    install_dir = _relative(frontend_dir, repo_root)
+    results: list[CheckResult] = [
+        _check_file(f"{code} frontend package.json", frontend_dir / "package.json", repo_root),
+        _check_dir(
+            f"{code} frontend node_modules",
+            frontend_dir / "node_modules",
+            repo_root,
+            fix_hint=f"cd {install_dir} && npm install",
+        ),
+    ]
+
+    command = str(dev.get("frontend_command") or "").strip()
+    if command:
+        command_name = command.split()[0].strip('"')
+        if shutil.which(command_name):
+            results.append(CheckResult(f"{code} frontend command", "ok", f"{command_name} found"))
+        else:
+            results.append(
+                CheckResult(
+                    f"{code} frontend command",
+                    "error",
+                    f"{command_name} is not available on PATH",
+                    f"Install {command_name} and ensure it is available on PATH.",
+                )
+            )
+    return results
+
+
 def _check_legacy_module(app: dict[str, Any], repo_root: Path, env_values: dict[str, Any]) -> list[CheckResult]:
     code = str(app.get("code"))
     results = _check_module_common(app, repo_root)
@@ -703,6 +742,7 @@ def run_preflight(
     exclude_codes: set[str] | None = None,
     strict: bool = False,
     port_plan: dict[str, Any] | None = None,
+    include_portal_backend: bool = True,
 ) -> PreflightReport:
     root = Path(repo_root).resolve()
     selected = include_codes or auto_start_codes(apps_config)
@@ -742,7 +782,15 @@ def run_preflight(
     if _selected_needs_node(apps_config, selected):
         results.extend([_check_command("node"), _check_command("npm")])
     results.append(_check_runtime(root))
-    results.extend(_check_port_plan(apps_config, selected, skip, port_plan))
+    results.extend(
+        _check_port_plan(
+            apps_config,
+            selected,
+            skip,
+            port_plan,
+            include_portal_backend=include_portal_backend,
+        )
+    )
 
     if includes_database:
         results.extend(
@@ -764,7 +812,10 @@ def run_preflight(
             results.append(CheckResult(code, "error", "Selected app is not present in config/apps.yaml"))
             continue
         if code == "portal":
-            results.extend(_check_portal(app, root, env_values))
+            if include_portal_backend:
+                results.extend(_check_portal(app, root, env_values))
+            else:
+                results.extend(_check_portal_frontend(app, root))
         else:
             results.extend(_check_legacy_module(app, root, env_values))
 

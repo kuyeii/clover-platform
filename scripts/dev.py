@@ -21,7 +21,11 @@ from packages.py_common.runtime import build_ports_payload, write_ports_file
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start clover-platform development services.")
-    parser.add_argument("--no-business", action="store_true", help="Start only Portal and platform-api.")
+    parser.add_argument(
+        "--no-business",
+        action="store_true",
+        help="Start Portal frontend and platform-api without business modules.",
+    )
     parser.add_argument("--write-ports-only", action="store_true", help="Write runtime/ports.json without starting services.")
     parser.add_argument("--only", action="append", default=[], help="Only start selected app code or module key.")
     parser.add_argument("--skip", action="append", default=[], help="Skip selected app code or module key.")
@@ -143,10 +147,11 @@ def build_process_specs(
         if code == "portal":
             _inject_portal_platform_env(env, port_plan)
             frontend_command = _format_value(str(dev["frontend_command"]), app, plan)
-            backend_command = _format_value(str(dev["backend_command"]), app, plan)
             frontend_cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))
-            backend_cwd = REPO_ROOT / str(dev.get("backend_working_dir") or dev.get("working_dir"))
-            specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
+            if not no_business:
+                backend_command = _format_value(str(dev["backend_command"]), app, plan)
+                backend_cwd = REPO_ROOT / str(dev.get("backend_working_dir") or dev.get("working_dir"))
+                specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
             specs.append(ProcessSpec(f"{code}:frontend", frontend_command, frontend_cwd, env))
         elif str(dev.get("kind") or "") == "frontend_backend":
             backend_command = _format_value(str(dev.get("backend_command") or ""), app, plan)
@@ -203,6 +208,7 @@ def main() -> int:
             apps_config,
             include_codes=include_codes,
             exclude_codes=skip,
+            include_portal_backend=not args.no_business,
         )
     except (OSError, ValueError, PortAllocationError) as exc:
         print(str(exc), file=sys.stderr)
@@ -217,6 +223,7 @@ def main() -> int:
             include_codes=include_codes or auto_start_codes(apps_config),
             exclude_codes=skip,
             port_plan=port_plan,
+            include_portal_backend=not args.no_business,
         )
         print(preflight_report.format_text())
         if not preflight_report.ok:

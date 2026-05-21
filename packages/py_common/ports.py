@@ -130,6 +130,7 @@ def check_port_plan(
     include_module_keys: set[str] | None = None,
     exclude_codes: set[str] | None = None,
     exclude_module_keys: set[str] | None = None,
+    include_portal_backend: bool = True,
 ) -> dict[str, Any]:
     apps = apps_config.get("apps") or {}
     if not isinstance(apps, dict):
@@ -179,24 +180,31 @@ def check_port_plan(
                 host=host,
                 reserved=reserved,
             )
-            backend = _reserve_port(
-                label="portal backend",
-                preferred_port=int(dev.get("backend_preferred_port", 5210)),
-                port_range=dev.get("backend_port_range", [5210, 5219]),
-                host=host,
-                reserved=reserved,
-            )
             app_plan.update(
                 {
                     "frontend_port": frontend["port"],
-                    "backend_port": backend["port"],
                     "frontend": frontend,
-                    "backend": backend,
                     "frontend_url": f"http://localhost:{frontend['port']}",
-                    "backend_url": f"http://localhost:{backend['port']}",
                 }
             )
-            plan["services"].extend([frontend, backend])
+            plan["services"].append(frontend)
+
+            if include_portal_backend:
+                backend = _reserve_port(
+                    label="portal backend",
+                    preferred_port=int(dev.get("backend_preferred_port", 5210)),
+                    port_range=dev.get("backend_port_range", [5210, 5219]),
+                    host=host,
+                    reserved=reserved,
+                )
+                app_plan.update(
+                    {
+                        "backend_port": backend["port"],
+                        "backend": backend,
+                        "backend_url": f"http://localhost:{backend['port']}",
+                    }
+                )
+                plan["services"].append(backend)
 
         elif kind == "frontend_backend" and auto_start:
             frontend = _reserve_port(

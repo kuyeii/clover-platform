@@ -89,7 +89,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-business",
         action="store_true",
-        help="Forward --no-business to preflight/dev.py for Portal + platform-api setup checks or startup.",
+        help="Forward --no-business to preflight/dev.py for Portal frontend + platform-api setup checks or startup.",
     )
     parser.add_argument(
         "--npm-install",
@@ -159,11 +159,18 @@ def selected_apps(args: argparse.Namespace) -> tuple[str, ...]:
     return tuple(code for code in APP_ORDER if code in selected)
 
 
-def install_python_dependencies(python: Path, apps: tuple[str, ...]) -> None:
+def install_python_dependencies(
+    python: Path,
+    apps: tuple[str, ...],
+    *,
+    include_portal_backend: bool = True,
+) -> None:
     ensure_pip(python)
     _run([str(python), "-m", "pip", "install", "--upgrade", "pip"])
     requirements = ["requirements-dev.txt"]
     for app in apps:
+        if app == "portal" and not include_portal_backend:
+            continue
         requirements.extend(PYTHON_REQUIREMENTS_BY_APP.get(app, ()))
 
     for requirement in requirements:
@@ -227,7 +234,7 @@ def main() -> int:
 
     if not args.skip_python:
         ensure_venv(python)
-        install_python_dependencies(python, apps)
+        install_python_dependencies(python, apps, include_portal_backend=not args.no_business)
     elif not python.is_file():
         python = Path(sys.executable)
         print(f"==> Skipping .venv setup; using current Python: {python}")

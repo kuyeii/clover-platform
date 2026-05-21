@@ -23,7 +23,7 @@ python scripts/check_ports.py
 python scripts/dev.py --no-business
 ```
 
-启动器会生成 `runtime/ports.json`，并把 Portal 前后端和 platform-api 端口写入该文件。`--no-business` 启动 Portal 前后端 + platform-api，不启动四个业务模块；Portal 前端核心平台 API 需要 platform-api。
+启动器会生成 `runtime/ports.json`。`--no-business` 默认启动 Portal 前端 + platform-api，不启动 legacy Portal 后端和四个业务模块；Portal 前端核心平台 API 和 feedback 需要 platform-api。
 
 `scripts/dev.py` 不是 Docker 生产部署入口，正式 Docker / Docker Compose 进程生命周期会在后续部署阶段单独处理。
 
@@ -51,7 +51,7 @@ PORTAL_PYTHON_BIN=../../.venv/bin/python npm run dev
 默认访问地址：
 
 - 前端：`http://localhost:5200`
-- 后端：`http://localhost:5210`
+- legacy Portal 后端：`http://localhost:5210`（`--only portal` 或全量启动时使用）
 - platform-api：`http://localhost:5220`
 - 接口文档：`http://localhost:5210/docs`
 - platform-api 文档：`http://localhost:5220/docs`
@@ -116,7 +116,7 @@ Portal 前端核心平台接口已切到 apps/api：
 - app-usage WebSocket 走 `/ws/core/app-usage`
 - 业务模块 API 仍由各模块后端处理，iframe 仍保留
 
-本地 Vite 代理会把 `/api/v1/core` 和 `/ws/core` 转发到 platform-api，把 legacy `/api` 和 `/ws` 继续转发到 Portal 后端。可用 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL` 覆盖 platform-api 地址；如果跳过 platform-api，Portal 前端登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。
+本地 Vite 代理会把 `/api/v1/core` 和 `/ws/core` 转发到 platform-api，把 legacy `/api` 和 `/ws` 继续转发到 Portal 后端作为过渡兼容 fallback。可用 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL` 覆盖 platform-api 地址；如果跳过 platform-api，Portal 前端登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。
 
 静态兜底 URL 会在浏览器运行时根据 Portal 访问域名自动生成：
 - 本地访问 `http://localhost:5200` 时，模块地址为 `http://localhost:181xx`
@@ -143,7 +143,7 @@ Portal 前端核心平台接口已切到 apps/api：
 
 ## Portal PostgreSQL 后端
 
-Portal 后端当前使用 PostgreSQL，数据库配置来自 `clover-platform` 根目录 `.env` 或环境变量。用户认证、用户管理、应用权限、应用占用状态和反馈提交都通过 `/api/*` 维护。
+Portal legacy 后端当前使用 PostgreSQL，数据库配置来自 `clover-platform` 根目录 `.env` 或环境变量。它仍保留旧 `/api/*` 能力用于回滚和过渡兼容；当前 Portal 前端默认不再通过 legacy 后端处理登录、用户管理、应用占用、runtime apps 或 feedback。
 
 当前开发环境 PostgreSQL 示例配置：
 
@@ -251,7 +251,15 @@ python scripts/dev.py --write-ports-only
 python scripts/dev.py --no-business
 ```
 
-`--write-ports-only` 只生成 `runtime/ports.json`，不启动进程。`--no-business` 启动 Portal 前后端 + platform-api，不启动四个业务模块。
+`--write-ports-only` 只生成 `runtime/ports.json`，不启动进程。`--no-business` 启动 Portal 前端 + platform-api，不启动 legacy Portal 后端和四个业务模块。
+
+如需回滚或排查 legacy Portal 后端，可使用：
+
+```bash
+python scripts/dev.py --only portal
+```
+
+该命令仍启动 legacy Portal 前后端。
 
 `scripts/dev.py` 默认会先执行 preflight。如新环境提示缺少 root infrastructure dependency，请在 `clover-platform` 根目录执行：
 

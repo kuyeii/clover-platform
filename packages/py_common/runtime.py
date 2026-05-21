@@ -30,14 +30,17 @@ def build_ports_payload(
             continue
 
         if code == "portal":
-            payload_apps[code] = {
+            portal_payload = {
                 "code": code,
                 "name": app.get("name"),
                 "frontend_port": plan["frontend_port"],
-                "backend_port": plan["backend_port"],
                 "frontend_url": plan["frontend_url"],
-                "backend_url": plan["backend_url"],
             }
+            if "backend_port" in plan:
+                portal_payload["backend_port"] = plan["backend_port"]
+            if "backend_url" in plan:
+                portal_payload["backend_url"] = plan["backend_url"]
+            payload_apps[code] = portal_payload
             continue
 
         dev = app.get("dev") or {}

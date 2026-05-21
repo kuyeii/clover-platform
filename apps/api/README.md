@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 6-D 中 Portal 前端核心平台能力和 feedback 能力已切到这里，但仍不承载合同审查、RAG、竞对分析或标书生成的业务 API。
+`apps/api` 是 Clover Platform 统一后端基座。第 6-E 后 Portal 前端核心平台能力和 feedback 能力默认依赖这里，legacy Portal 后端只作为回滚和过渡兼容保留；当前仍不承载合同审查、RAG、竞对分析或标书生成的业务 API。
 
 ## 当前职责
 
@@ -101,7 +101,7 @@ python scripts/dev.py --only platform-api
 python scripts/dev.py --no-business
 ```
 
-`--no-business` 会启动 Portal 前后端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。业务模块 API 仍走各 legacy 模块后端。
+`--no-business` 会启动 Portal 前端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。业务模块 API 仍走各 legacy 模块后端。legacy Portal 后端不在 `--no-business` 默认链路中启动，可通过 `python scripts/dev.py --only portal` 保留回滚和兼容排查路径。
 
 生成 platform-api 端口规划：
 
