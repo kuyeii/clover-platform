@@ -89,7 +89,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-business",
         action="store_true",
-        help="Forward --no-business to preflight/dev.py for Portal-only setup checks or startup.",
+        help="Forward --no-business to preflight/dev.py for Portal + platform-api setup checks or startup.",
     )
     parser.add_argument(
         "--npm-install",
