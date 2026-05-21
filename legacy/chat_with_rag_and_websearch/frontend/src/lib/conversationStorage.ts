@@ -1,5 +1,6 @@
 import type { Conversation } from "@/types/conversation";
 import type { ChatMessage, UserTurnSnapshot } from "@/types/chat";
+import { isUuid, newClientId } from "@/lib/id";
 
 /** 仅在从浏览器 localStorage 一次性迁移时使用（旧版本） */
 const LEGACY_STORAGE_KEY = "chat_llm_conversations_v1";
@@ -23,7 +24,7 @@ function normalizeAssistantSnapshot(
   raw: unknown,
 ): UserTurnSnapshot["assistant"] | null {
   if (!isRecord(raw)) return null;
-  const id = typeof raw.id === "string" ? raw.id : crypto.randomUUID();
+  const id = typeof raw.id === "string" ? raw.id : newClientId("snapshot");
   const content = typeof raw.content === "string" ? raw.content : "";
   return {
     id,
@@ -48,7 +49,7 @@ function normalizeEditHistory(raw: unknown): UserTurnSnapshot[] | undefined {
 
 function normalizeLoadedMessage(m: unknown): ChatMessage | null {
   if (!isRecord(m)) return null;
-  const id = typeof m.id === "string" ? m.id : crypto.randomUUID();
+  const id = typeof m.id === "string" ? m.id : newClientId("msg");
   const role = m.role === "user" || m.role === "assistant" ? m.role : null;
   const content = typeof m.content === "string" ? m.content : "";
   if (!role) return null;
@@ -89,8 +90,14 @@ function normalizeLoadedMessage(m: unknown): ChatMessage | null {
 
 function normalizeConversation(raw: unknown): Conversation | null {
   if (!isRecord(raw)) return null;
-  const id = typeof raw.id === "string" ? raw.id : crypto.randomUUID();
-  const sessionId = typeof raw.sessionId === "string" ? raw.sessionId : crypto.randomUUID();
+  const id =
+    typeof raw.id === "string" && isUuid(raw.id)
+      ? raw.id
+      : newClientId("conversation");
+  const sessionId =
+    typeof raw.sessionId === "string" && isUuid(raw.sessionId)
+      ? raw.sessionId
+      : newClientId("session");
   const title = typeof raw.title === "string" ? raw.title : "";
   const createdAt = typeof raw.createdAt === "number" ? raw.createdAt : Date.now();
   const updatedAt = typeof raw.updatedAt === "number" ? raw.updatedAt : createdAt;
@@ -236,9 +243,9 @@ export function findFirstMatchingMessageId(
 export function createEmptyConversation(): Conversation {
   const now = Date.now();
   return {
-    id: crypto.randomUUID(),
+    id: newClientId("conversation"),
     title: "",
-    sessionId: crypto.randomUUID(),
+    sessionId: newClientId("session"),
     messages: [],
     createdAt: now,
     updatedAt: now,

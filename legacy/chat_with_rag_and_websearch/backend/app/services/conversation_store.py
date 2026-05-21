@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.config import Settings
 from app.schemas.conversations import (
@@ -14,11 +14,14 @@ from app.schemas.conversations import (
 from app.services import conversation_db
 
 
-def _parse_uuid(value: str, field_name: str) -> UUID:
+def _coerce_uuid_string(value: str, field_name: str) -> str:
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{field_name} 不能为空")
     try:
-        return UUID(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field_name} 不是合法 UUID") from exc
+        return str(UUID(text))
+    except ValueError:
+        return str(uuid5(NAMESPACE_URL, f"rag:{field_name}:{text}"))
 
 
 def read_bootstrap(settings: Settings) -> ConversationsBootstrapResponse:
@@ -51,16 +54,21 @@ def _trim_for_sync(
 
 
 def apply_sync(settings: Settings, body: ConversationsSyncRequest) -> None:
-    trimmed, allowed_ids = _trim_for_sync(body)
+    trimmed, _allowed_ids = _trim_for_sync(body)
 
     if not trimmed:
         conversation_db.sync_conversations(settings, [], set())
         return
 
-    _parse_uuid(body.activeConversationId, "activeConversationId")
+    normalized = [
+        c.model_copy(
+            update={
+                "id": _coerce_uuid_string(c.id, "id"),
+                "sessionId": _coerce_uuid_string(c.sessionId, "sessionId"),
+            }
+        )
+        for c in trimmed
+    ]
+    allowed_ids = {c.id for c in normalized}
 
-    for c in trimmed:
-        _parse_uuid(c.id, "id")
-        _parse_uuid(c.sessionId, "sessionId")
-
-    conversation_db.sync_conversations(settings, trimmed, allowed_ids)
+    conversation_db.sync_conversations(settings, normalized, allowed_ids)

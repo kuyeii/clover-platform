@@ -1,5 +1,106 @@
 workflows:
-  contract_review: {}
-  bid_generator: {}
-  rag_qa: {}
-  competitor_analysis: {}
+  contract_review:
+    dify_base_url_env: DIFY_BASE_URL
+    clause_split:
+      api_key_env: DIFY_CLAUSE_WORKFLOW_API_KEY
+    anchored_risk:
+      api_key_env: DIFY_ANCHORED_RISK_WORKFLOW_API_KEY
+      fallback_api_key_env: DIFY_RISK_WORKFLOW_API_KEY
+    missing_multi_risk:
+      api_key_env: DIFY_MISSING_MULTI_RISK_WORKFLOW_API_KEY
+      fallback_api_key_env: DIFY_RISK_WORKFLOW_API_KEY
+    fast_screen:
+      enabled_env: FAST_SCREEN_ENABLED
+      api_key_env: DIFY_FAST_SCREEN_WORKFLOW_API_KEY
+      max_candidates_env: FAST_SCREEN_MAX_CANDIDATES
+    rewrite:
+      api_key_env: DIFY_REWRITE_WORKFLOW_API_KEY
+    aggregate_rewrite:
+      api_key_env: DIFY_AGGREGATE_REWRITE_WORKFLOW_API_KEY
+      fallback_api_key_env: DIFY_REWRITE_WORKFLOW_API_KEY
+    runtime:
+      review_side_env: REVIEW_SIDE
+      contract_type_hint_env: CONTRACT_TYPE_HINT
+      request_timeout_env: REQUEST_TIMEOUT_SECONDS
+      dify_max_concurrency_env: DIFY_MAX_CONCURRENCY
+      clause_split_max_concurrency_env: CLAUSE_SPLIT_MAX_CONCURRENCY
+  bid_generator:
+    dify_api_url_env: DIFY_API_URL
+    dataset:
+      id_env: DIFY_BID_BASE_ID
+      api_key_env: DIFY_DATASET_API_KEY
+    managed:
+      structure_generator:
+        api_key_env: DIFY_WORKFLOW_STRUCTURE_GENERATOR
+      content_writer:
+        api_key_env: DIFY_WORKFLOW_CONTENT_WRITER
+      content_group_writer:
+        api_key_env: DIFY_WORKFLOW_CONTENT_GROUP_WRITER
+      content_rewrite:
+        api_key_env: DIFY_WORKFLOW_CONTENT_REWRITE
+      response_content_writer:
+        api_key_env: DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER
+      diagram_generator:
+        api_key_env: DIFY_WORKFLOW_DIAGRAM_GENERATOR
+      doc_analysis:
+        api_key_env: DIFY_WORKFLOW_DOC_ANALYSIS
+    legacy:
+      requirement_extractor:
+        api_key_env: DIFY_WORKFLOW_REQUIREMENT_EXTRACTOR
+      blueprint_generator:
+        api_key_env: DIFY_WORKFLOW_BLUEPRINT_GENERATOR
+      group_review_writer:
+        api_key_env: DIFY_WORKFLOW_GROUP_REVIEW_WRITER
+      attachment_generator:
+        api_key_env: DIFY_WORKFLOW_ATTACHMENT_GENERATOR
+      scoring_assistant:
+        api_key_env: DIFY_WORKFLOW_SCORING_ASSISTANT
+  rag_qa:
+    workflow:
+      url_env: UPSTREAM_URL
+      api_key_env: UPSTREAM_BEARER_TOKEN
+      timeout_env: UPSTREAM_TIMEOUT_SECONDS
+      user_env: WORKFLOW_REMOTE_USER
+      inputs:
+        question_key_env: WORKFLOW_QUESTION_INPUT_KEY
+        allow_search_key_env: WORKFLOW_ALLOW_SEARCH_INPUT_KEY
+        history_key_env: WORKFLOW_HISTORY_INPUT_KEY
+    dataset:
+      api_base_url_env: DIFY_API_BASE_URL
+      api_key_env: DIFY_DATASET_API_KEY
+      default_dataset_id_env: DIFY_DEFAULT_DATASET_ID
+  competitor_analysis:
+    default:
+      url_env: WORKFLOW_URL
+      api_key_env: WORKFLOW_API_KEY
+      user_env: WORKFLOW_USER
+    company_name_validation:
+      url_env: COMPANY_NAME_VALIDATION_URL
+      api_key_env: COMPANY_NAME_VALIDATION_API_KEY
+      user_env: COMPANY_NAME_VALIDATION_USER
+    company_detail:
+      url_env: COMPANY_DETAIL_URL
+      api_key_env: COMPANY_DETAIL_API_KEY
+      user_env: COMPANY_DETAIL_USER
+      timeout_env: COMPANY_DETAIL_TIMEOUT_SECONDS
+    compare_report:
+      url_env: COMPARE_REPORT_URL
+      api_key_env: COMPARE_REPORT_API_KEY
+      user_env: COMPARE_REPORT_USER
+      product:
+        url_env: COMPARE_REPORT_PRODUCT_URL
+        api_key_env: COMPARE_REPORT_PRODUCT_API_KEY
+      tech:
+        url_env: COMPARE_REPORT_TECH_URL
+        api_key_env: COMPARE_REPORT_TECH_API_KEY
+      lately:
+        url_env: COMPARE_REPORT_LATELY_URL
+        api_key_env: COMPARE_REPORT_LATELY_API_KEY
+      summary:
+        url_env: COMPARE_REPORT_SUMMARY_URL
+        api_key_env: COMPARE_REPORT_SUMMARY_API_KEY
+    score:
+      url_env: SCORE_URL
+      api_key_env: SCORE_API_KEY
+      user_env: SCORE_USER
+    timeout_env: DIFY_WORKFLOW_TIMEOUT_SECONDS

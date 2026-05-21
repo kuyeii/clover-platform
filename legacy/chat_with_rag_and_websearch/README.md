@@ -171,7 +171,7 @@ npm run preview
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/v1/conversations` | 读取全部会话对象；`activeConversationId` 字段恒为 `null`（历史兼容性保留） |
-| `PUT` | `/api/v1/conversations/sync` | 请求体：`{ "conversations": [ ... ], "activeConversationId": "<uuid>" }`；写入 `rag.conversations`；**当前会话仅存在于浏览器实例**，整页刷新或新开标签都会在本地先插入一条空白会话；请求体中的 `activeConversationId` 仍会校验但不落盘为全局状态；最多保留 80 条，多余记录会删除 |
+| `PUT` | `/api/v1/conversations/sync` | 请求体：`{ "conversations": [ ... ], "activeConversationId": "<client-id>" }`；写入 `rag.conversations`；**当前会话仅存在于浏览器实例**，整页刷新或新开标签都会在本地先插入一条空白会话；请求体中的 `activeConversationId` 仅为历史兼容字段，不落盘为全局状态；最多保留 80 条，多余记录会删除；历史非 UUID 会话/session ID 会稳定映射为 UUID 后写入 PostgreSQL |
 
 ### 知识库代理（节选，均需配置 `DIFY_*`）
 

@@ -8,6 +8,9 @@ json_repair>=0.30.0
 
 lxml>=5.2.0
 pdf2docx>=0.5.8
+# pdf2docx pulls opencv-python-headless. 4.12+ requires NumPy 2, while
+# bid-generator currently pins NumPy 1.26.4 in the shared dev venv.
+opencv-python-headless<4.12
 PyMuPDF>=1.23.0
 
 fastapi>=0.115.0

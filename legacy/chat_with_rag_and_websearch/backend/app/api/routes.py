@@ -3,7 +3,7 @@ import json
 import time
 import uuid
 from typing import Annotated
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -32,11 +32,14 @@ def _sse_data(obj: dict) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
 
-def _validate_uuid(value: str, field_name: str) -> None:
+def _coerce_uuid_string(value: str, field_name: str) -> str:
+    text = str(value).strip()
+    if not text:
+        raise HTTPException(status_code=400, detail=f"{field_name} 不能为空")
     try:
-        UUID(str(value))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=f"{field_name} 不是合法 UUID") from exc
+        return str(UUID(text))
+    except ValueError:
+        return str(uuid5(NAMESPACE_URL, f"rag:{field_name}:{text}"))
 
 
 @router.post("/chat/stream")
@@ -46,8 +49,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     request_id = new_request_id()
     user_id = (body.user_id or settings.default_user_id).strip() or settings.default_user_id
-    session_id = body.session_id or str(uuid.uuid4())
-    _validate_uuid(session_id, "session_id")
+    session_id = _coerce_uuid_string(body.session_id or str(uuid.uuid4()), "session_id")
     user_message = body.message
     allow_search = "1" if body.allow_search else "0"
     history = body.history

@@ -24,13 +24,14 @@ import {
 } from "@/lib/conversationStorage";
 import { buildChatHistoryPayload } from "@/lib/chatHistory";
 import { getActiveUserContent } from "@/lib/messageTurns";
+import { newClientId } from "@/lib/id";
 import type { ChatMessage } from "@/types/chat";
 import type { Conversation } from "@/types/conversation";
 
 const SYNC_DEBOUNCE_MS = 450;
 
 function newId() {
-  return crypto.randomUUID();
+  return newClientId("msg");
 }
 
 function buildUserMessageAfterEdit(
