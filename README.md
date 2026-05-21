@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入标书生成 pipt-lite PostgreSQL 持久化迁移阶段。Portal、竞对分析、RAG 问答、合同审查和标书生成 pipt-lite 的指定运行时数据已切换到 PostgreSQL。
+当前阶段已进入第 6-A：统一后端基座 apps/api 建设。Portal、竞对分析、RAG 问答、合同审查和标书生成 pipt-lite 的指定运行时数据已切换到 PostgreSQL；当前仍保留 legacy 后端与 iframe 过渡模式。
 
 ## 项目目标
 
