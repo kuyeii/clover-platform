@@ -1,3 +1,5 @@
+import { fetchRuntimeApps } from "./apiClient";
+
 export type KnowledgeDocumentItem = {
   id: string;
   name: string;
@@ -131,13 +133,7 @@ async function fetchRagBackendBase(): Promise<string> {
   }
 
   try {
-    const response = await fetch("/api/runtime/apps", {
-      headers: { accept: "application/json" },
-      credentials: "same-origin",
-    });
-    if (!response.ok) return "";
-    const payload = (await response.json()) as { apps?: CachedRuntimeApp[] };
-    const apps = Array.isArray(payload.apps) ? payload.apps : [];
+    const apps = await fetchRuntimeApps();
     const base = resolveRagBackendBase(apps);
     if (base) {
       runtimeKnowledgeApiBase = base;

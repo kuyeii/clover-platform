@@ -66,6 +66,28 @@ def _format_env(env_config: dict[str, Any], app: dict[str, Any], plan: dict[str,
     return {key: _format_value(str(value), app, plan) for key, value in env_config.items()}
 
 
+def _inject_portal_platform_env(env: dict[str, str], port_plan: dict[str, Any]) -> None:
+    platform_plan = (port_plan.get("apps") or {}).get("platform-api")
+    if not isinstance(platform_plan, dict):
+        return
+
+    backend_url = str(platform_plan.get("backend_url") or "").rstrip("/")
+    backend_port = platform_plan.get("backend_port")
+    if not backend_url and backend_port:
+        backend_url = f"http://127.0.0.1:{backend_port}"
+    if not backend_url:
+        return
+
+    ws_url = backend_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+    env.setdefault("PLATFORM_API_PORT", str(backend_port or ""))
+    env.setdefault("PLATFORM_API_URL", backend_url)
+    env.setdefault("PLATFORM_WS_URL", ws_url)
+    env.setdefault("VITE_PLATFORM_API_BASE_URL", f"{backend_url}/api/v1/core")
+    env.setdefault("VITE_PLATFORM_WS_BASE_URL", f"{ws_url}/ws/core")
+    env.setdefault("VITE_PLATFORM_API_PROXY_TARGET", backend_url)
+    env.setdefault("VITE_PLATFORM_WS_PROXY_TARGET", ws_url)
+
+
 def _port_plan_include_codes(
     apps_config: dict[str, Any],
     *,
@@ -119,6 +141,7 @@ def build_process_specs(
 
         env = _format_env(dev.get("env") or {}, app, plan)
         if code == "portal":
+            _inject_portal_platform_env(env, port_plan)
             frontend_command = _format_value(str(dev["frontend_command"]), app, plan)
             backend_command = _format_value(str(dev["backend_command"]), app, plan)
             frontend_cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))

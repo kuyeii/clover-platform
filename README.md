@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入第 6-B：Portal 核心后端能力并行迁入 apps/api。Portal auth、users、app-usage 和 app-usage WebSocket 已在统一后端提供兼容实现；当前仍保留 legacy 后端、Portal 前端 legacy API 调用与 iframe 过渡模式。
+当前阶段已进入第 6-C：Portal 前端核心平台能力已切到 apps/api。Portal auth、users、app-usage、runtime apps 使用 `/api/v1/core`，app-usage WebSocket 使用 `/ws/core/app-usage`；当前仍保留 legacy 后端、feedback legacy API 调用与 iframe 过渡模式。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 6-B 阶段：Portal 核心后端能力并行迁入 `apps/api`。
+当前处于第 6-C 阶段：Portal 前端核心平台 API 切换到 `apps/api`。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API，但不迁移业务模块 API，不切 Portal 前端，不替换 legacy 后端，不去掉 iframe，不修改 Portal session / JWT。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端，但不迁移 feedback 或业务模块 API，不替换 legacy 后端，不去掉 iframe，不修改 Portal session / JWT。
 
 ## Legacy 项目
 
@@ -148,15 +148,34 @@ python scripts/dev.py
 - `POST /api/v1/core/app-usage/leave-all-beacon`
 - `WS /ws/core/app-usage`
 
-当前边界保持不变：
+第 6-B 边界：
 
-- Portal 前端仍继续调用 legacy `/api/auth`、`/api/users`、`/api/app-usage` 和 `/ws/app-usage`。
+- Portal 前端在第 6-B 时仍继续调用 legacy `/api/auth`、`/api/users`、`/api/app-usage` 和 `/ws/app-usage`。
 - legacy Portal 后端仍保留并可独立运行。
 - feedback 暂未迁入 `apps/api`。
 - JWT / session 机制未修改，继续复用 Portal session token 和 `Authorization: Bearer <token>`。
 - 业务模块 API 未迁入 `apps/api`，数据库表结构未变更。
 
-下一阶段可以考虑 Portal 前端从 legacy API 逐步切到 `apps/api`。
+## 第 6-C 阶段：Portal 前端核心 API 切换到 apps/api
+
+第 6-C 将 Portal 前端核心平台能力切到统一后端：
+
+- auth 使用 `/api/v1/core/auth/*`。
+- users 使用 `/api/v1/core/users` 和 `/api/v1/core/users/{user_id}`。
+- app-usage HTTP 使用 `/api/v1/core/app-usage/*`。
+- runtime apps 使用 `/api/v1/core/runtime/apps`。
+- app-usage WebSocket 使用 `/ws/core/app-usage`，消息结构继续保持 legacy 兼容，不使用统一 envelope。
+
+Portal 前端的 platform API client 默认使用相对路径 `/api/v1/core`，可用 `VITE_PLATFORM_API_BASE_URL` 覆盖为完整地址，例如 `http://127.0.0.1:5220/api/v1/core`。WebSocket 默认使用 `/ws/core`，可用 `VITE_PLATFORM_WS_BASE_URL` 覆盖。Vite 开发代理中 `/api/v1/core` 和 `/ws/core` 指向 platform-api，legacy `/api` 和 `/ws` 仍指向 Portal legacy 后端，避免 feedback 被误切。
+
+第 6-C 边界：
+
+- feedback 暂时仍走 legacy Portal 后端。
+- knowledgeService 仍通过 runtime apps 获取 RAG 的 `backendUrl`，知识库 API 不发送到 platform-api。
+- 四个业务模块 API 未迁入 `apps/api`。
+- iframe 仍保留。
+- legacy Portal 后端仍保留。
+- JWT / session 机制未修改，继续复用 Portal session token 和 `Authorization: Bearer <token>`。
 
 ## 第 2 阶段：PostgreSQL 初始化
 
@@ -386,7 +405,7 @@ RAG 问答在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端
 
 `runtime/ports.json` 由启动器生成，不提交 Git。它记录 Portal 前后端端口，以及四个 iframe 模块的开发 URL。Portal 后端通过 `GET /api/runtime/apps` 读取该文件并只返回前端需要的 `code`、`name`、`iframeUrl`、`enabled` 等字段，不返回 dev command、env 或任何密钥。
 
-Portal 前端启动后会请求 `/api/runtime/apps`。接口可用时，用返回的 `iframeUrl` 覆盖 `src/config/apps.config.ts` 中的静态 URL；接口失败或 `runtime/ports.json` 不存在时，继续使用静态配置兜底。
+Portal 前端启动后会请求 `/api/v1/core/runtime/apps`。接口可用时，用返回的 `iframeUrl` 覆盖 `src/config/apps.config.ts` 中的静态 URL；接口失败或 `runtime/ports.json` 不存在时，继续使用静态配置兜底。`scripts/dev.py --no-business` 会启动 Portal 前后端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`；如果跳过 platform-api，Portal 前端核心平台 API 可能不可用，feedback 等 legacy 接口仍走 Portal 后端。
 
 当前仍未去 iframe，仍未合并五个后端。如果某个业务模块未自动启动，需要手动启动并确保端口与 `runtime/ports.json` 一致。
 

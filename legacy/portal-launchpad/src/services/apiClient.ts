@@ -68,16 +68,54 @@ export function getClientId() {
   return nextClientId;
 }
 
-export function getAppUsageWebSocketUrl() {
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/$/, "");
+}
+
+function joinUrl(baseUrl: string, path: string) {
+  const normalizedBaseUrl = trimTrailingSlash(baseUrl);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBaseUrl}${normalizedPath}`;
+}
+
+function getPlatformApiBaseUrl() {
+  const baseUrl = import.meta.env.VITE_PLATFORM_API_BASE_URL || "/api/v1/core";
+  return trimTrailingSlash(String(baseUrl));
+}
+
+function getPlatformWsBaseUrl() {
+  const explicitBaseUrl = import.meta.env.VITE_PLATFORM_WS_BASE_URL;
+  if (explicitBaseUrl) {
+    return trimTrailingSlash(String(explicitBaseUrl));
+  }
+
+  const platformApiBaseUrl = import.meta.env.VITE_PLATFORM_API_BASE_URL;
+  if (platformApiBaseUrl && /^https?:\/\//i.test(String(platformApiBaseUrl))) {
+    try {
+      const url = new URL(String(platformApiBaseUrl));
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.pathname = "/ws/core";
+      url.search = "";
+      url.hash = "";
+      return trimTrailingSlash(url.toString());
+    } catch {
+      // Fall through to the current origin websocket URL.
+    }
+  }
+
   if (typeof window === "undefined") {
     return "";
   }
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/app-usage`;
+  return `${protocol}//${window.location.host}/ws/core`;
 }
 
-async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export function getAppUsageWebSocketUrl() {
+  return joinUrl(getPlatformWsBaseUrl(), "/app-usage");
+}
+
+async function legacyApiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers(init.headers);
   headers.set("accept", "application/json");
@@ -107,7 +145,59 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
-async function apiFormDataFetch<T>(path: string, formData: FormData, method: string = "POST"): Promise<T> {
+async function platformApiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = getAuthToken();
+  const headers = new Headers(init.headers);
+  headers.set("accept", "application/json");
+  headers.set("x-portal-client-id", getClientId());
+
+  if (init.body && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+
+  if (token) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(joinUrl(getPlatformApiBaseUrl(), path), {
+      ...init,
+      headers,
+      credentials: "same-origin",
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? `平台 API 不可用：${error.message}`
+        : "平台 API 不可用，请确认 apps/api 已启动。";
+    throw new ApiError(message, 0);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  const envelope = contentType.includes("application/json") ? await response.json() : null;
+
+  if (!response.ok) {
+    const message =
+      envelope?.error?.message ||
+      (response.status >= 500
+        ? "平台 API 不可用，请确认 apps/api 已启动。"
+        : `请求失败：${response.status}`);
+    throw new ApiError(message, response.status, envelope?.error?.code);
+  }
+
+  if (envelope?.success === false) {
+    const message = envelope?.error?.message || "请求失败，请稍后重试。";
+    throw new ApiError(message, response.status, envelope?.error?.code);
+  }
+
+  if (!envelope || envelope.success !== true) {
+    throw new ApiError("平台接口返回了无法识别的响应。", response.status);
+  }
+
+  return envelope.data as T;
+}
+
+async function legacyApiFormDataFetch<T>(path: string, formData: FormData, method: string = "POST"): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers();
   headers.set("accept", "application/json");
@@ -141,19 +231,19 @@ export interface FeedbackSubmissionContext {
 }
 
 export async function fetchTicketSubmissionContext() {
-  return apiFetch<FeedbackSubmissionContext>("/api/tickets/submission-context");
+  return legacyApiFetch<FeedbackSubmissionContext>("/api/tickets/submission-context");
 }
 
 export async function fetchFeatureRequestSubmissionContext() {
-  return apiFetch<FeedbackSubmissionContext>("/api/feature-requests/submission-context");
+  return legacyApiFetch<FeedbackSubmissionContext>("/api/feature-requests/submission-context");
 }
 
 export async function fetchTicketCaptcha() {
-  return apiFetch<{ code: string; hint: string }>("/api/tickets/captcha");
+  return legacyApiFetch<{ code: string; hint: string }>("/api/tickets/captcha");
 }
 
 export async function fetchFeatureRequestCaptcha() {
-  return apiFetch<{ code: string; hint: string }>("/api/feature-requests/captcha");
+  return legacyApiFetch<{ code: string; hint: string }>("/api/feature-requests/captcha");
 }
 
 export interface FeedbackSubmitResult {
@@ -163,15 +253,15 @@ export interface FeedbackSubmitResult {
 }
 
 export async function submitTicket(formData: FormData) {
-  return apiFormDataFetch<FeedbackSubmitResult>("/api/tickets", formData, "POST");
+  return legacyApiFormDataFetch<FeedbackSubmitResult>("/api/tickets", formData, "POST");
 }
 
 export async function submitFeatureRequest(formData: FormData) {
-  return apiFormDataFetch<FeedbackSubmitResult>("/api/feature-requests", formData, "POST");
+  return legacyApiFormDataFetch<FeedbackSubmitResult>("/api/feature-requests", formData, "POST");
 }
 
 export async function loginByPassword(account: string, password: string) {
-  const data = await apiFetch<{ token: string; user: PortalUser }>("/api/auth/login", {
+  const data = await platformApiFetch<{ token: string; user: PortalUser }>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ account, password }),
   });
@@ -180,44 +270,44 @@ export async function loginByPassword(account: string, password: string) {
 }
 
 export async function fetchCurrentUser() {
-  return apiFetch<{ user: PortalUser }>("/api/auth/me").then((data) => data.user);
+  return platformApiFetch<{ user: PortalUser }>("/auth/me").then((data) => data.user);
 }
 
 export async function logoutFromServer() {
   try {
-    await apiFetch<{ ok: true }>("/api/auth/logout", { method: "POST" });
+    await platformApiFetch<{ ok: true }>("/auth/logout", { method: "POST" });
   } finally {
     setAuthToken(null);
   }
 }
 
 export async function changeCurrentPassword(input: ChangePasswordInput) {
-  return apiFetch<{ user: PortalUser }>("/api/auth/password", {
+  return platformApiFetch<{ user: PortalUser }>("/auth/password", {
     method: "PATCH",
     body: JSON.stringify(input),
   }).then((data) => data.user);
 }
 
 export async function fetchUsers() {
-  return apiFetch<{ users: PortalUser[] }>("/api/users").then((data) => data.users);
+  return platformApiFetch<{ users: PortalUser[] }>("/users").then((data) => data.users);
 }
 
 export async function createUser(input: CreatePortalUserInput) {
-  return apiFetch<{ user: PortalUser }>("/api/users", {
+  return platformApiFetch<{ user: PortalUser }>("/users", {
     method: "POST",
     body: JSON.stringify(input),
   }).then((data) => data.user);
 }
 
 export async function updateUser(userId: string, patch: UpdatePortalUserInput) {
-  return apiFetch<{ user: PortalUser }>(`/api/users/${encodeURIComponent(userId)}`, {
+  return platformApiFetch<{ user: PortalUser }>(`/users/${encodeURIComponent(userId)}`, {
     method: "PATCH",
     body: JSON.stringify(patch),
   }).then((data) => data.user);
 }
 
 export async function fetchUsageSummaries() {
-  return apiFetch<{ summaries: AppUsageSummary[] }>("/api/app-usage").then(
+  return platformApiFetch<{ summaries: AppUsageSummary[] }>("/app-usage").then(
     (data) => data.summaries,
   );
 }
@@ -234,12 +324,12 @@ export interface RuntimeAppConfig {
 }
 
 export async function fetchRuntimeApps() {
-  return apiFetch<{ apps: RuntimeAppConfig[] }>("/api/runtime/apps").then((data) => data.apps);
+  return platformApiFetch<{ apps: RuntimeAppConfig[] }>("/runtime/apps").then((data) => data.apps);
 }
 
 export async function enterApp(appId: ToolkitApp["id"], confirmedConflict = false) {
-  return apiFetch<{ summaries: AppUsageSummary[] }>(
-    `/api/app-usage/${encodeURIComponent(appId)}/enter`,
+  return platformApiFetch<{ summaries: AppUsageSummary[] }>(
+    `/app-usage/${encodeURIComponent(appId)}/enter`,
     {
       method: "POST",
       body: JSON.stringify({ confirmedConflict }),
@@ -248,8 +338,8 @@ export async function enterApp(appId: ToolkitApp["id"], confirmedConflict = fals
 }
 
 export async function heartbeatApp(appId: ToolkitApp["id"]) {
-  return apiFetch<{ summaries: AppUsageSummary[] }>(
-    `/api/app-usage/${encodeURIComponent(appId)}/heartbeat`,
+  return platformApiFetch<{ summaries: AppUsageSummary[] }>(
+    `/app-usage/${encodeURIComponent(appId)}/heartbeat`,
     {
       method: "POST",
       body: JSON.stringify({}),
@@ -258,14 +348,14 @@ export async function heartbeatApp(appId: ToolkitApp["id"]) {
 }
 
 export async function leaveApp(appId: ToolkitApp["id"]) {
-  return apiFetch<{ summaries: AppUsageSummary[] }>(
-    `/api/app-usage/${encodeURIComponent(appId)}/leave`,
+  return platformApiFetch<{ summaries: AppUsageSummary[] }>(
+    `/app-usage/${encodeURIComponent(appId)}/leave`,
     { method: "DELETE" },
   ).then((data) => data.summaries);
 }
 
 export async function leaveAllApps() {
-  return apiFetch<{ summaries: AppUsageSummary[] }>("/api/app-usage/leave-all", {
+  return platformApiFetch<{ summaries: AppUsageSummary[] }>("/app-usage/leave-all", {
     method: "DELETE",
   }).then((data) => data.summaries);
 }
@@ -287,12 +377,12 @@ export function leaveAllAppsBeacon() {
 
   if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
     const blob = new Blob([payload], { type: "application/json" });
-    if (navigator.sendBeacon("/api/app-usage/leave-all-beacon", blob)) {
+    if (navigator.sendBeacon(joinUrl(getPlatformApiBaseUrl(), "/app-usage/leave-all-beacon"), blob)) {
       return true;
     }
   }
 
-  fetch("/api/app-usage/leave-all-beacon", {
+  fetch(joinUrl(getPlatformApiBaseUrl(), "/app-usage/leave-all-beacon"), {
     method: "POST",
     body: payload,
     headers: { "content-type": "application/json" },
