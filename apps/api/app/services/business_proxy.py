@@ -24,6 +24,7 @@ HOP_BY_HOP_HEADERS = {
     "proxy-authorization",
     "te",
     "trailer",
+    "trailers",
     "transfer-encoding",
     "upgrade",
 }

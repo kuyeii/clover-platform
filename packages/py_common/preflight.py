@@ -101,6 +101,7 @@ LEGACY_IMPORTS = {
         "pydantic": "pydantic",
         "pydantic_settings": "pydantic-settings",
         "dotenv": "python-dotenv",
+        "httpx": "httpx",
         "sqlalchemy": "SQLAlchemy",
         "psycopg": "psycopg",
         "yaml": "PyYAML",
