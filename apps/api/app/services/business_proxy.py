@@ -145,7 +145,7 @@ def resolve_business_backend_url(app_code: str) -> str:
         raise PlatformError(
             code="BUSINESS_BACKEND_UNAVAILABLE",
             message="业务模块后端不可用。",
-            status_code=503,
+            status_code=502,
             details={"app_code": app_code},
         )
 
@@ -156,7 +156,7 @@ def resolve_business_backend_url(app_code: str) -> str:
     raise PlatformError(
         code="BUSINESS_BACKEND_UNAVAILABLE",
         message="业务模块后端不可用。",
-        status_code=503,
+        status_code=502,
         details={"app_code": app_code},
     )
 
@@ -214,7 +214,7 @@ async def proxy_business_request(
 ) -> StreamingResponse:
     backend_url = resolve_business_backend_url(app_code)
     target_url = _target_url(backend_url, path, request.url.query)
-    client = httpx.AsyncClient(timeout=PROXY_TIMEOUT, follow_redirects=False)
+    client = httpx.AsyncClient(timeout=PROXY_TIMEOUT, follow_redirects=False, trust_env=False)
     upstream_request = client.build_request(
         request.method,
         target_url,

@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入第 6-E：已完成 Portal legacy 后端依赖审计和本地 no-business 启动链路瘦身。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`，app-usage WebSocket 使用 `/ws/core/app-usage`；legacy Portal 后端仍保留用于回滚和过渡兼容，iframe 仍保留。
+当前阶段已进入第 7-C：`competitor-analysis` 已开始低风险 API 并行迁入 `apps/api`。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`；竞对分析目前仅 health/history 由 `apps/api` 直接实现，analysis、workflows 和 NDJSON stream 仍走 legacy proxy fallback。legacy Portal 后端和 legacy 业务后端仍保留用于回滚和过渡兼容，iframe 仍保留。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 6-E 阶段：Portal legacy 后端依赖审计与 no-business 启动链路瘦身。
+当前处于第 7-C 阶段：竞对分析 health/history 低风险 API 并行迁入 `apps/api`。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api；legacy Portal 后端代码及 legacy `/api`、`/ws` Vite proxy 继续保留作为兼容 fallback。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback，RAG、合同审查、标书生成 API 尚未迁入。
 
 ## Legacy 项目
 
@@ -231,6 +231,23 @@ Vite 开发代理中 `/api/v1/core` 和 `/ws/core` 指向 platform-api。legacy 
 - 不修改数据库结构。
 
 下一阶段可进入业务模块 API 迁入 `apps/api` 的调研和分步迁移，或继续对 legacy Portal 后端做进一步瘦身。
+
+## 第 7-C 阶段：竞对分析 health/history 并行迁入 apps/api
+
+第 7-C 在第 7-B `competitor-analysis` 代理基座上，将低风险 API 直接迁入 `apps/api`：
+
+- `GET /api/v1/competitor-analysis/api/health`
+- `GET /api/v1/competitor-analysis/api/history`
+- `GET /api/v1/competitor-analysis/api/history/{id}`
+- `POST /api/v1/competitor-analysis/api/history`
+- `DELETE /api/v1/competitor-analysis/api/history`
+- `DELETE /api/v1/competitor-analysis/api/history/{id}`
+
+history direct routes 直接读写 `competitor_analysis.history_records`，保持 legacy 的 `items`、`item`、`ok`、`message` 响应结构，不包装为平台统一 `success/data` envelope。未登录、无应用权限和数据库异常仍由平台层返回统一错误 envelope。
+
+`analysis`、`analysis/stream` 和 `workflows/*` 仍走 legacy proxy fallback；分析业务逻辑、Dify workflow、NDJSON stream 协议、竞对分析前端和 iframe 均未重写或切换。legacy `competitor-analysis` 后端仍保留：direct health/history 不依赖它，proxy fallback 仍依赖它。
+
+其它三个业务模块当前仍未迁入 `apps/api`。
 
 ## 第 2 阶段：PostgreSQL 初始化
 

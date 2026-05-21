@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from app.api import app_usage, auth, competitor_analysis, feedback, health, modules, runtime, users
 
-router = APIRouter()
+router = APIRouter(prefix="/core")
 router.include_router(health.router, tags=["health"])
 router.include_router(modules.router, tags=["modules"])
 router.include_router(runtime.router, tags=["runtime"])
@@ -13,5 +13,6 @@ router.include_router(users.router, tags=["portal-users"])
 router.include_router(app_usage.router, tags=["portal-app-usage"])
 router.include_router(feedback.router, tags=["portal-feedback"])
 
-business_router = APIRouter()
-business_router.include_router(competitor_analysis.router, tags=["competitor-analysis-proxy"])
+api_router = APIRouter()
+api_router.include_router(router)
+api_router.include_router(competitor_analysis.router, tags=["competitor-analysis"])

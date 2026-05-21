@@ -11,6 +11,17 @@
 
 本阶段不迁移业务逻辑、不修改竞对分析前端、不去 iframe、不修改数据库结构。
 
+## 第 7-C 更新
+
+第 7-C 已在 `apps/api` 直接实现 `competitor-analysis` 的 health/history 低风险 API，详见
+`docs/stage-7-c-competitor-analysis-direct-history.md`。
+
+- `GET /api/v1/competitor-analysis/api/health` 由 `apps/api` 直接返回。
+- `GET/POST/DELETE /api/v1/competitor-analysis/api/history` 和 `GET/DELETE /api/v1/competitor-analysis/api/history/{id}` 由 `apps/api` 直接读写 `competitor_analysis.history_records`。
+- `analysis`、`analysis/stream` 和 `workflows/*` 仍走本阶段建立的 proxy fallback。
+- 分析业务逻辑、Dify workflow、NDJSON stream、竞对分析前端和 iframe 均未重写或切换。
+- direct history routes 不依赖 legacy 竞对分析后端；proxy fallback 仍依赖 legacy 竞对分析后端。
+
 ## 后端地址解析
 
 代理目标按以下顺序解析：
@@ -54,10 +65,10 @@ curl -i \
   "http://127.0.0.1:5220/api/v1/competitor-analysis/api/health"
 ```
 
-预期返回 legacy 原始成功响应：
+第 7-C 后预期返回 direct health 响应：
 
 ```json
-{"ok":true,"service":"competitor-analysis-backend"}
+{"ok":true,"service":"competitor-analysis","mode":"apps-api"}
 ```
 
 验证 query string 透传：
