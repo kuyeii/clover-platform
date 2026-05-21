@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入第 6-A：统一后端基座 apps/api 建设。Portal、竞对分析、RAG 问答、合同审查和标书生成 pipt-lite 的指定运行时数据已切换到 PostgreSQL；当前仍保留 legacy 后端与 iframe 过渡模式。
+当前阶段已进入第 6-B：Portal 核心后端能力并行迁入 apps/api。Portal auth、users、app-usage 和 app-usage WebSocket 已在统一后端提供兼容实现；当前仍保留 legacy 后端、Portal 前端 legacy API 调用与 iframe 过渡模式。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 6-A 阶段：统一后端基座 `apps/api`。
+当前处于第 6-B 阶段：Portal 核心后端能力并行迁入 `apps/api`。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座，但不迁移业务模块 API，不替换 legacy 后端，不去掉 iframe，不修改 Portal session / JWT。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API，但不迁移业务模块 API，不切 Portal 前端，不替换 legacy 后端，不去掉 iframe，不修改 Portal session / JWT。
 
 ## Legacy 项目
 
@@ -126,6 +126,37 @@ python scripts/dev.py
 `config/apps.yaml` 中新增 `platform_api`，应用编码为 `platform-api`，`dev.kind` 为 `backend`，默认后端端口为 `5220`，端口范围为 `5220-5229`，健康检查路径为 `/api/v1/core/health`。`runtime/ports.json` 会记录 `platform-api.backend_url` 和 `platform-api.health_url`，但不会生成 `iframe_url`，`/api/v1/core/runtime/apps` 也不会把 `platform-api` 返回为 Portal 菜单应用。
 
 下一步再逐步迁移 Portal 后端能力或业务模块 API 到 `apps/api`。
+
+## 第 6-B 阶段：Portal 核心 API 并行迁入 apps/api
+
+第 6-B 在 `apps/api` 中新增 Portal 核心 API，统一使用 `/api/v1/core` REST 前缀，并新增独立 WebSocket 路径 `/ws/core/app-usage`。本阶段接口与 legacy Portal 后端行为保持兼容，REST 响应继续使用统一 envelope；WebSocket 保持 legacy 消息结构，方便后续 Portal 前端平滑切换。
+
+新增接口：
+
+- `POST /api/v1/core/auth/login`
+- `GET /api/v1/core/auth/me`
+- `POST /api/v1/core/auth/logout`
+- `PATCH /api/v1/core/auth/password`
+- `GET /api/v1/core/users`
+- `POST /api/v1/core/users`
+- `PATCH /api/v1/core/users/{user_id}`
+- `GET /api/v1/core/app-usage`
+- `POST /api/v1/core/app-usage/{app_code}/enter`
+- `POST /api/v1/core/app-usage/{app_code}/heartbeat`
+- `DELETE /api/v1/core/app-usage/{app_code}/leave`
+- `DELETE /api/v1/core/app-usage/leave-all`
+- `POST /api/v1/core/app-usage/leave-all-beacon`
+- `WS /ws/core/app-usage`
+
+当前边界保持不变：
+
+- Portal 前端仍继续调用 legacy `/api/auth`、`/api/users`、`/api/app-usage` 和 `/ws/app-usage`。
+- legacy Portal 后端仍保留并可独立运行。
+- feedback 暂未迁入 `apps/api`。
+- JWT / session 机制未修改，继续复用 Portal session token 和 `Authorization: Bearer <token>`。
+- 业务模块 API 未迁入 `apps/api`，数据库表结构未变更。
+
+下一阶段可以考虑 Portal 前端从 legacy API 逐步切到 `apps/api`。
 
 ## 第 2 阶段：PostgreSQL 初始化
 
@@ -322,7 +353,7 @@ python scripts/dev.py --write-ports-only
 
 `--write-ports-only` 默认生成全部模块的端口规划；如果同时传入 `--only` 或 `--skip`，会按筛选后的模块范围生成，Portal runtime 接口会对缺失的模块继续使用静态配置兜底。
 
-只启动 Portal 前后端：
+只启动 Portal 前后端 + platform-api，不启动四个业务模块：
 
 ```bash
 python scripts/dev.py --no-business
@@ -456,10 +487,11 @@ python scripts/dev.py --only competitor_analysis
 python scripts/dev.py --only bid-generator
 python scripts/dev.py --only bid_generator
 python scripts/dev.py --only portal
+python scripts/dev.py --only platform-api
 python scripts/dev.py --skip bid-generator
 ```
 
-`python scripts/dev.py --no-business` 只启动 Portal 前后端。`python scripts/dev.py --only contract-review` 只启动合同审查前后端。`python scripts/dev.py --only rag-web-search` 和 `python scripts/dev.py --only rag_qa` 只启动 RAG 前后端。`python scripts/dev.py --only competitor-analysis` 和 `python scripts/dev.py --only competitor_analysis` 只启动竞对分析前后端。`python scripts/dev.py --only bid-generator` 和 `python scripts/dev.py --only bid_generator` 只启动标书生成前后端。动态端口只用于开发环境；Docker 正式部署会在后续部署阶段单独处理。
+`python scripts/dev.py --no-business` 启动 Portal 前后端 + platform-api，不启动四个业务模块。`python scripts/dev.py --only platform-api` 只启动统一后端。`python scripts/dev.py --only contract-review` 只启动合同审查前后端。`python scripts/dev.py --only rag-web-search` 和 `python scripts/dev.py --only rag_qa` 只启动 RAG 前后端。`python scripts/dev.py --only competitor-analysis` 和 `python scripts/dev.py --only competitor_analysis` 只启动竞对分析前后端。`python scripts/dev.py --only bid-generator` 和 `python scripts/dev.py --only bid_generator` 只启动标书生成前后端。动态端口只用于开发环境；Docker 正式部署会在后续部署阶段单独处理。
 
 ## 第 5-A 阶段：竞对分析 PostgreSQL 持久化
 

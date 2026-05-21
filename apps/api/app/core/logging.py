@@ -7,9 +7,10 @@ from typing import Any
 URL_PASSWORD_RE = re.compile(r"([a-z][a-z0-9+.-]*://[^:/@\s]+:)([^@\s]+)(@)", re.IGNORECASE)
 
 
-def redact(value: Any) -> str:
-    text = str(value)
-    return URL_PASSWORD_RE.sub(r"\1***\3", text)
+def redact(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    return URL_PASSWORD_RE.sub(r"\1***\3", value)
 
 
 def _redact_args(args: Any) -> Any:
