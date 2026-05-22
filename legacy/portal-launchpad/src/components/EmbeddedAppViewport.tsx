@@ -48,7 +48,7 @@ export function EmbeddedAppViewport({ app, isVisible }: EmbeddedAppViewportProps
           buildAuthErrorMessage({
             requestId,
             appCode: requestedAppCode || app.id,
-            message: "auth request appCode mismatch",
+            message: "鉴权请求的应用编码不匹配。",
           }),
           iframeOrigin,
         );
@@ -60,7 +60,7 @@ export function EmbeddedAppViewport({ app, isVisible }: EmbeddedAppViewportProps
           buildAuthErrorMessage({
             requestId,
             appCode: app.id,
-            message: "permission denied",
+            message: `当前账号没有访问 ${app.name} 的权限。`,
           }),
           iframeOrigin,
         );
@@ -73,7 +73,7 @@ export function EmbeddedAppViewport({ app, isVisible }: EmbeddedAppViewportProps
           buildAuthErrorMessage({
             requestId,
             appCode: app.id,
-            message: "not authenticated",
+            message: "请先登录后再访问该应用。",
           }),
           iframeOrigin,
         );
@@ -92,7 +92,7 @@ export function EmbeddedAppViewport({ app, isVisible }: EmbeddedAppViewportProps
           buildAuthErrorMessage({
             requestId,
             appCode: app.id,
-            message: "auth bridge is not configured for this app",
+            message: "当前应用尚未配置鉴权桥接。",
           }),
           iframeOrigin,
         );
