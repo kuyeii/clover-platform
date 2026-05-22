@@ -57,6 +57,11 @@ function isRetriablePlatformFailure(error: unknown) {
   );
 }
 
+function isSafeFallbackMethod(init: RequestInit = {}) {
+  const method = String(init.method || "GET").toUpperCase();
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
 function warnLegacyFallback(error: unknown) {
   if (hasWarnedLegacyFallback) {
     return;
@@ -184,7 +189,7 @@ async function requestJson<T>(
   try {
     return await requestJsonWithTarget<T>(path, init, target, errorPrefix);
   } catch (error) {
-    if (!isRetriablePlatformFailure(error)) {
+    if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod(init)) {
       throw error;
     }
     warnLegacyFallback(error);
@@ -226,7 +231,7 @@ export async function putConversationsSync(
   try {
     await syncWithTarget(target);
   } catch (error) {
-    if (!isRetriablePlatformFailure(error)) {
+    if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod(init)) {
       throw error;
     }
     warnLegacyFallback(error);
@@ -265,7 +270,7 @@ export async function streamChatCompletion(
   try {
     await streamChatCompletionWithTarget(init, handlers, target);
   } catch (error) {
-    if (!isRetriablePlatformFailure(error)) {
+    if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod(init)) {
       throw error;
     }
     warnLegacyFallback(error);
@@ -463,7 +468,7 @@ export async function deleteKnowledgeDocument(documentId: string): Promise<void>
   try {
     await deleteWithTarget(target);
   } catch (error) {
-    if (!isRetriablePlatformFailure(error)) {
+    if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod({ method: "DELETE" })) {
       throw error;
     }
     warnLegacyFallback(error);

@@ -1,6 +1,5 @@
 import { fetchRuntimeApps } from "./apiClient";
 import {
-  buildPortalHeaders,
   businessProxyFetch,
   readBusinessProxyError,
   shouldFallbackBusinessProxy,
@@ -224,6 +223,32 @@ async function readJson<T>(response: Response, fallback: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+function isFormDataBody(body: BodyInit | null | undefined): body is FormData {
+  return typeof FormData !== "undefined" && body instanceof FormData;
+}
+
+function isSafeFallbackMethod(init: RequestInit = {}) {
+  const method = String(init.method || "GET").toUpperCase();
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+function buildLegacyHeaders(init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  const body = init.body;
+
+  if (!headers.has("accept")) {
+    headers.set("accept", "application/json");
+  }
+
+  if (body && !isFormDataBody(body) && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+
+  headers.delete("authorization");
+  headers.delete("x-portal-client-id");
+  return headers;
+}
+
 async function requestProxyJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await businessProxyFetch(buildProxyPath(path), init);
   if (!response.ok) {
@@ -242,7 +267,7 @@ async function requestLegacyJson<T>(path: string, init?: RequestInit): Promise<T
   try {
     response = await fetch(`${base}${path}`, {
       ...init,
-      headers: buildPortalHeaders(init),
+      headers: buildLegacyHeaders(init),
     });
   } catch (error) {
     const message =
@@ -268,11 +293,15 @@ function warnLegacyFallback(error: unknown) {
   console.warn("RAG knowledge proxy 不可用，回退到 runtime apps 中的 legacy backendUrl。", message);
 }
 
-async function withLegacyFallback<T>(proxyRequest: () => Promise<T>, legacyRequest: () => Promise<T>): Promise<T> {
+async function withLegacyFallback<T>(
+  proxyRequest: () => Promise<T>,
+  legacyRequest: () => Promise<T>,
+  allowFallback = true,
+): Promise<T> {
   try {
     return await proxyRequest();
   } catch (error) {
-    if (!shouldFallbackBusinessProxy(error)) {
+    if (!allowFallback || !shouldFallbackBusinessProxy(error)) {
       throw error;
     }
 
@@ -289,6 +318,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return withLegacyFallback(
     () => requestProxyJson<T>(path, init),
     () => requestLegacyJson<T>(path, init),
+    isSafeFallbackMethod(init),
   );
 }
 
@@ -326,7 +356,7 @@ export async function deleteKnowledgeDocument(documentId: string): Promise<void>
   const request = async (url: string) => {
     const response = await fetch(url, {
       method: "DELETE",
-      headers: buildPortalHeaders({ method: "DELETE" }),
+      headers: buildLegacyHeaders({ method: "DELETE" }),
     });
     if (!response.ok && response.status !== 204) {
       throw new Error(await readError(response, `删除失败（HTTP ${response.status}）`));
@@ -347,12 +377,13 @@ export async function deleteKnowledgeDocument(documentId: string): Promise<void>
       }
       await request(`${base}${path}`);
     },
+    false,
   );
 }
 
 async function downloadFromUrl(url: string, fallbackFilename: string): Promise<DownloadDocumentResult> {
   const response = await fetch(url, {
-    headers: buildPortalHeaders({
+    headers: buildLegacyHeaders({
       headers: {
         accept: "application/octet-stream,*/*",
       },

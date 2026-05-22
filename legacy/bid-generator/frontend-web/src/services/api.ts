@@ -1,6 +1,7 @@
 import axios, { AxiosHeaders, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import {
     getApiBaseUrl,
+    isSafeFallbackMethod,
     resolveBidGeneratorApiTarget,
     warnLegacyFallback,
 } from './apiBase';
@@ -48,9 +49,9 @@ function shouldFallbackToLegacy(error: AxiosError) {
         return false;
     }
     if (error.response?.status === 502 || error.response?.status === 503) {
-        return true;
+        return isSafeFallbackMethod({ method: config.method });
     }
-    return !error.response && error.code !== 'ERR_CANCELED';
+    return !error.response && error.code !== 'ERR_CANCELED' && isSafeFallbackMethod({ method: config.method });
 }
 
 api.interceptors.response.use(

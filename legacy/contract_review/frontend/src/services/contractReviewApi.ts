@@ -65,6 +65,11 @@ function isRetriablePlatformFailure(error: unknown) {
   )
 }
 
+function isSafeFallbackMethod(init: RequestInit = {}) {
+  const method = String(init.method || 'GET').toUpperCase()
+  return method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+}
+
 function warnLegacyFallback(error: unknown) {
   if (hasWarnedLegacyFallback) {
     return
@@ -162,10 +167,14 @@ export async function contractReviewFetch(
       return response
     }
 
+    if (!isSafeFallbackMethod(init)) {
+      return response
+    }
+
     warnLegacyFallback(createApiRequestError(`请求失败（HTTP ${response.status}）`, response.status, true))
     return fetchWithTarget(path, init, legacyApiTarget())
   } catch (error) {
-    if (!isRetriablePlatformFailure(error)) {
+    if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod(init)) {
       throw error
     }
     warnLegacyFallback(error)

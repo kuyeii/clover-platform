@@ -15,6 +15,11 @@ function isRetriablePlatformFailure(error) {
   return error?.isPlatformApiRequest && (error.status === 0 || error.status === 502);
 }
 
+function isSafeFallbackMethod(options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
 function warnLegacyFallback(error) {
   if (hasWarnedLegacyFallback) {
     return;
@@ -96,7 +101,7 @@ export async function requestJson(path, options = {}) {
   try {
     return await requestJsonWithTarget(path, options, target);
   } catch (error) {
-    if (!isRetriablePlatformFailure(error)) {
+    if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod(options)) {
       throw error;
     }
     warnLegacyFallback(error);
@@ -146,7 +151,7 @@ export async function runAnalysisStream(input, onEvent) {
   try {
     return await runAnalysisStreamWithTarget(input, onEvent, target);
   } catch (error) {
-    if (!isRetriablePlatformFailure(error)) {
+    if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod({ method: "POST" })) {
       throw error;
     }
     warnLegacyFallback(error);
