@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 9-A 阶段开始按模块迁移业务实现，并完成 `competitor-analysis` 主要业务 API direct 迁移。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块继续具备统一代理入口和 iframe auth bridge 接入。当前仍处于 `apps/api` direct/proxy 混合阶段：竞对分析主要业务已由 `apps/api` 直接承载，其它模块复杂业务仍由对应 legacy 后端执行。
+`apps/api` 是 Clover Platform 统一后端基座。第 9-B 阶段继续按模块迁移业务实现，并完成 `rag-web-search` 主要业务 API direct 迁移。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块继续具备统一代理入口和 iframe auth bridge 接入。当前仍处于 `apps/api` direct/proxy 混合阶段：竞对分析和 RAG 主要业务已由 `apps/api` 直接承载，合同审查和标书生成复杂业务仍由对应 legacy 后端执行。
 
 ## 当前职责
 
@@ -15,7 +15,7 @@
 - 支持业务 iframe 前端通过 Portal auth bridge 获取内存态 token 和 `apiBaseUrl` 后调用 `apps/api`；token 不通过 iframe URL 传递。
 - 当前不持有统一文件存储，也不是统一任务调度器；复杂文件产物仍由 legacy backend 读写本地文件系统，任务状态继续沿用各 legacy 模块现有机制。
 
-第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 第 8 阶段收口见 `docs/stage-8-f-stage-8-rollup.md`。第 9-A 竞对分析完整迁移见 `docs/stage-9-a-competitor-analysis-full-migration.md`。
+第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 第 8 阶段收口见 `docs/stage-8-f-stage-8-rollup.md`。第 9-A 竞对分析完整迁移见 `docs/stage-9-a-competitor-analysis-full-migration.md`。第 9-B RAG 问答完整迁移见 `docs/stage-9-b-rag-full-migration.md`。
 
 ## 业务代理入口
 
@@ -27,7 +27,7 @@
 Direct / proxy 混合状态：
 
 - `competitor-analysis`：`/api/health`、`/api/history*`、`/api/analysis`、`/api/analysis/stream` 和 `/api/workflows/*` 已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
-- `rag-web-search`：`/api/v1/health`、`/api/v1/sessions`、`/api/v1/conversations`、`/api/v1/conversations/sync` direct 到 `apps/api`；chat stream 和 knowledge API 仍 proxy 到 legacy RAG 后端。
+- `rag-web-search`：`/api/v1/health`、`/api/v1/sessions`、`/api/v1/conversations`、`/api/v1/conversations/sync`、`/api/v1/chat/stream` 和 `/api/v1/knowledge/**` 已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
 - `contract-review`：`/api/health`、`/api/config` direct 到 `apps/api`；`diagnostics/converters`、`reviews/**`、DOCX 下载和 AI 相关接口仍 proxy 到 legacy 合同审查后端。
 - `bid-generator`：`/health`、`/api/config/workflow-status`、`/api/config/analysis-framework`、`/api/entities`、`GET /api/projects`、`GET /api/projects/{project_id}`、`GET /api/projects/{project_id}/mappings` direct 到 `apps/api`；项目写入、Dify workflow、SSE task、项目文件、knowledge/kb、forge/export/download/preview 相关接口仍 proxy 到 legacy 标书生成后端。
 
@@ -43,7 +43,7 @@ Direct / proxy 混合状态：
 - 代理日志只记录安全路径，不记录敏感 query，不打印 token、key、密码、Cookie 或文件内容。
 - legacy 后端返回的业务错误响应会保持原状态码和响应体流式透传；代理只包装自身无法完成转发时的错误 envelope。
 
-竞对分析 `analysis/stream` 当前由 `apps/api` direct 输出 NDJSON；RAG chat stream、合同审查下载和标书生成任务流仍经 `apps/api` 做鉴权代理透传。合同审查 `data/uploads` / `data/runs`、标书生成 `data/*_cache` / `data/projects` / `data/kb_sync_status` 等真实文件产物仍由对应 legacy 后端维护。当前不引入 MinIO / S3 SDK，不引入 Celery / RQ，也不新增统一任务表。
+竞对分析 `analysis/stream` 当前由 `apps/api` direct 输出 NDJSON；RAG `chat/stream` 当前由 `apps/api` direct 输出 SSE，并在完成后写入 `rag.chat_turns`；RAG knowledge API 当前由 `apps/api` direct 调用 Dify Dataset，文件上传仍使用本地临时文件并在请求结束后清理。合同审查下载和标书生成任务流仍经 `apps/api` 做鉴权代理透传。合同审查 `data/uploads` / `data/runs`、标书生成 `data/*_cache` / `data/projects` / `data/kb_sync_status` 等真实文件产物仍由对应 legacy 后端维护。当前不引入 MinIO / S3 SDK，不引入 Celery / RQ，也不新增统一任务表。
 
 ## 当前接口
 
@@ -93,6 +93,17 @@ Direct / proxy 混合状态：
 - `POST /api/v1/competitor-analysis/api/workflows/company-detail`
 - `POST /api/v1/competitor-analysis/api/workflows/compare-report`
 - `POST /api/v1/competitor-analysis/api/workflows/score`
+- `GET /api/v1/rag/api/v1/health`
+- `POST /api/v1/rag/api/v1/sessions`
+- `GET /api/v1/rag/api/v1/conversations`
+- `PUT /api/v1/rag/api/v1/conversations/sync`
+- `POST /api/v1/rag/api/v1/chat/stream`
+- `GET /api/v1/rag/api/v1/knowledge/documents`
+- `POST /api/v1/rag/api/v1/knowledge/documents/create-by-text`
+- `POST /api/v1/rag/api/v1/knowledge/documents/create-by-file`
+- `GET /api/v1/rag/api/v1/knowledge/documents/{document_id}/detail`
+- `GET /api/v1/rag/api/v1/knowledge/documents/{document_id}/download`
+- `DELETE /api/v1/rag/api/v1/knowledge/documents/{document_id}`
 - `ANY /api/v1/competitor-analysis/{path:path}`
 - `ANY /api/v1/rag/{path:path}`
 - `ANY /api/v1/contract-review/{path:path}`

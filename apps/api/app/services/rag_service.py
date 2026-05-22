@@ -161,6 +161,10 @@ def create_session_payload() -> dict[str, str]:
     return {"session_id": str(uuid.uuid4())}
 
 
+def coerce_session_uuid(value: str, field_name: str = "session_id") -> str:
+    return _coerce_uuid_string(value, field_name)
+
+
 def list_conversations_payload() -> dict[str, Any]:
     _ensure_rag_storage()
     try:
@@ -183,6 +187,43 @@ def list_conversations_payload() -> dict[str, Any]:
         "conversations": [_row_to_conversation(row) for row in rows],
         "activeConversationId": None,
     }
+
+
+def save_turn(
+    *,
+    user_id: str,
+    session_id: str,
+    user_message: str,
+    assistant_message: str,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    _ensure_rag_storage()
+    try:
+        with get_engine().begin() as conn:
+            record_id = conn.execute(
+                text(
+                    """
+                    INSERT INTO rag.chat_turns (
+                      user_id, session_id, user_message, assistant_message, meta
+                    )
+                    VALUES (
+                      :user_id, CAST(:session_id AS uuid), :user_message, :assistant_message,
+                      CAST(:meta AS jsonb)
+                    )
+                    RETURNING id
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "user_message": user_message,
+                    "assistant_message": assistant_message,
+                    "meta": _json_dumps(extra or {}),
+                },
+            ).scalar_one()
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise _database_error(exc) from exc
+    return str(record_id)
 
 
 def _trim_for_sync(conversations: list[ConversationPersist]) -> list[ConversationPersist]:

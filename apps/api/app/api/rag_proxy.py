@@ -1,16 +1,36 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import time
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.datastructures import UploadFile
 
 from app.core.deps import get_client_id, get_current_user
 from app.core.errors import PlatformError
 from app.services import portal_store
 from app.services.business_proxy import proxy_business_request
-from app.services.rag_service import create_session_payload, list_conversations_payload, sync_conversations
+from app.services.rag_dify_service import RagDifyError, get_default_user_id, stream_workflow_answer
+from app.services.rag_knowledge_service import (
+    RagKnowledgeError,
+    create_file_document_and_wait,
+    create_text_document_and_wait,
+    delete_knowledge_document,
+    download_knowledge_document,
+    get_knowledge_document_detail,
+    list_knowledge_documents,
+)
+from app.services.rag_service import (
+    coerce_session_uuid,
+    create_session_payload,
+    list_conversations_payload,
+    save_turn,
+    sync_conversations,
+)
 
 APP_CODE = "rag-web-search"
 
@@ -25,6 +45,32 @@ def require_rag_user(user: dict[str, Any] = Depends(get_current_user)) -> dict[s
 
 def legacy_json(payload: Any, *, status_code: int = 200) -> JSONResponse:
     return JSONResponse(content=payload, status_code=status_code)
+
+
+def legacy_error(detail: str, *, status_code: int) -> JSONResponse:
+    return legacy_json({"detail": detail}, status_code=status_code)
+
+
+def sse_data(payload: dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def knowledge_response(payload: Any, *, status_code: int = 200) -> JSONResponse:
+    return legacy_json(payload, status_code=status_code)
+
+
+def knowledge_error(exc: RagKnowledgeError) -> JSONResponse:
+    return legacy_error(exc.detail, status_code=exc.status_code)
+
+
+def parse_legacy_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 @router.get("/api/v1/health")
@@ -63,6 +109,160 @@ async def sync_rag_conversations(
         raise PlatformError(code="VALIDATION_ERROR", message="请求体不是合法 JSON。", status_code=422) from exc
     sync_conversations(payload)
     return Response(status_code=204)
+
+
+@router.post("/api/v1/chat/stream")
+async def stream_rag_chat(
+    request: Request,
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> StreamingResponse:
+    _ = user
+    request_id = str(uuid.uuid4())
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+
+    message = str(body.get("message") or "")
+    raw_session_id = str(body.get("session_id") or uuid.uuid4())
+    user_id = str(body.get("user_id") or get_default_user_id()).strip() or get_default_user_id()
+    allow_search = "1" if parse_legacy_bool(body.get("allow_search")) else "0"
+    history = str(body.get("history") or "[]")
+
+    async def event_stream():
+        try:
+            if not message:
+                raise RagDifyError("message 不能为空", status_code=400)
+            session_id = coerce_session_uuid(raw_session_id, "session_id")
+            yield sse_data({"type": "session", "session_id": session_id, "request_id": request_id})
+            started_at = time.perf_counter()
+            full_text_parts: list[str] = []
+            upstream_metadata: dict[str, Any] = {}
+
+            async for chunk in stream_workflow_answer(
+                question=message,
+                allow_search=allow_search,
+                history=history,
+                metadata=upstream_metadata,
+            ):
+                full_text_parts.append(chunk)
+                yield sse_data({"type": "delta", "text": chunk})
+
+            await asyncio.to_thread(
+                save_turn,
+                user_id=user_id,
+                session_id=session_id,
+                user_message=message,
+                assistant_message="".join(full_text_parts),
+                extra={
+                    "request_id": request_id,
+                    "allow_search": allow_search,
+                    "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                    **upstream_metadata,
+                },
+            )
+            yield sse_data({"type": "done", "request_id": request_id})
+        except asyncio.CancelledError:
+            return
+        except (PlatformError, RagDifyError) as exc:
+            detail = getattr(exc, "detail", None) or getattr(exc, "message", None) or str(exc) or "Request failed"
+            yield sse_data({"type": "error", "detail": detail, "request_id": request_id})
+        except Exception:
+            yield sse_data({"type": "error", "detail": "Internal server error", "request_id": request_id})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Request-Id": request_id},
+    )
+
+
+@router.get("/api/v1/knowledge/documents")
+async def get_rag_knowledge_documents(
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> JSONResponse:
+    _ = user
+    try:
+        return knowledge_response(await list_knowledge_documents())
+    except RagKnowledgeError as exc:
+        return knowledge_error(exc)
+
+
+@router.post("/api/v1/knowledge/documents/create-by-text")
+async def create_rag_knowledge_text_document(
+    request: Request,
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> JSONResponse:
+    _ = user
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        return legacy_error("请求体不是合法 JSON", status_code=422)
+    name = str(body.get("name") or "")
+    text = str(body.get("text") or "")
+    if not name.strip():
+        return legacy_error("name 不能为空", status_code=422)
+    if not text:
+        return legacy_error("text 不能为空", status_code=422)
+    try:
+        return knowledge_response(await create_text_document_and_wait(name, text))
+    except RagKnowledgeError as exc:
+        return knowledge_error(exc)
+
+
+@router.post("/api/v1/knowledge/documents/create-by-file")
+async def create_rag_knowledge_file_document(
+    request: Request,
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> JSONResponse:
+    _ = user
+    form = await request.form()
+    file = form.get("file")
+    if not isinstance(file, UploadFile):
+        return legacy_error("file 字段不能为空", status_code=422)
+    try:
+        return knowledge_response(await create_file_document_and_wait(file))
+    except RagKnowledgeError as exc:
+        return knowledge_error(exc)
+
+
+@router.get("/api/v1/knowledge/documents/{document_id}/detail")
+async def get_rag_knowledge_document_detail(
+    document_id: str,
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> JSONResponse:
+    _ = user
+    try:
+        return knowledge_response(await get_knowledge_document_detail(document_id))
+    except RagKnowledgeError as exc:
+        return knowledge_error(exc)
+
+
+@router.get("/api/v1/knowledge/documents/{document_id}/download")
+async def download_rag_knowledge_document(
+    document_id: str,
+    format: str = Query(default="markdown", pattern="^(markdown|json)$"),
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> Response:
+    _ = user
+    try:
+        return await download_knowledge_document(document_id, format=format)
+    except RagKnowledgeError as exc:
+        return knowledge_error(exc)
+
+
+@router.delete("/api/v1/knowledge/documents/{document_id}")
+async def delete_rag_knowledge_document(
+    document_id: str,
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> Response:
+    _ = user
+    try:
+        return await delete_knowledge_document(document_id)
+    except RagKnowledgeError as exc:
+        return knowledge_error(exc)
 
 
 @router.api_route("", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
