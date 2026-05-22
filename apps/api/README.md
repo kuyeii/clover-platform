@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 8-C 阶段在第 7-M 的业务代理与 iframe auth bridge 总体验收、第 8-A 回归基线和第 8-B 本地文件系统边界基础上，补充错误诊断、代理可维护性和本地文件系统版部署准备。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块已经具备统一代理入口和 iframe auth bridge 接入。legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的业务逻辑继续由 legacy 后端执行。
+`apps/api` 是 Clover Platform 统一后端基座。第 8-E 阶段在第 7-M 的业务代理与 iframe auth bridge 总体验收、第 8-A 回归基线、第 8-B 本地文件系统边界、第 8-C 诊断边界和第 8-D 第一批 direct API 基础上，新增第二批低风险查询类 direct API，并准备第 8 阶段收口。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块已经具备统一代理入口和 iframe auth bridge 接入。legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的业务逻辑继续由 legacy 后端执行。
 
 ## 当前职责
 
@@ -15,7 +15,7 @@
 - 支持业务 iframe 前端通过 Portal auth bridge 获取内存态 token 和 `apiBaseUrl` 后调用 `apps/api`；token 不通过 iframe URL 传递。
 - 当前不持有统一文件存储，也不是统一任务调度器；复杂文件产物仍由 legacy backend 读写本地文件系统，任务状态继续沿用各 legacy 模块现有机制。
 
-第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。
+第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。
 
 ## 业务代理入口
 
@@ -28,8 +28,8 @@ Direct / proxy 混合状态：
 
 - `competitor-analysis`：`/api/health` 和 `/api/history*` direct 到 `apps/api`；`analysis`、`analysis/stream`、`workflows/*` 仍 proxy 到 legacy 竞对分析后端。
 - `rag-web-search`：`/api/v1/health`、`/api/v1/sessions`、`/api/v1/conversations`、`/api/v1/conversations/sync` direct 到 `apps/api`；chat stream 和 knowledge API 仍 proxy 到 legacy RAG 后端。
-- `contract-review`：当前全部业务 API 仍 proxy 到 legacy 合同审查后端。
-- `bid-generator`：当前全部业务 API 仍 proxy 到 legacy 标书生成后端。
+- `contract-review`：`/api/health`、`/api/config` direct 到 `apps/api`；`diagnostics/converters`、`reviews/**`、DOCX 下载和 AI 相关接口仍 proxy 到 legacy 合同审查后端。
+- `bid-generator`：`/health`、`/api/config/workflow-status`、`/api/config/analysis-framework`、`/api/entities`、`GET /api/projects`、`GET /api/projects/{project_id}`、`GET /api/projects/{project_id}/mappings` direct 到 `apps/api`；项目写入、Dify workflow、SSE task、项目文件、knowledge/kb、forge/export/download/preview 相关接口仍 proxy 到 legacy 标书生成后端。
 
 业务 proxy 会在访问 legacy 后端前完成 Portal session 和应用权限校验。代理不会向 legacy 后端转发 `Authorization`、`Cookie` 或 `Set-Cookie`，只转发 `X-Portal-User-Id`、`X-Portal-User-Account`、`X-Portal-User-Role`、`X-Portal-Client-Id`、`X-Request-ID` 等非敏感上下文。multipart、SSE/NDJSON、DOCX/PDF/Excel/图片下载响应通过流式请求和流式响应保留，`Content-Type` 与 `Content-Disposition` 会透传。
 
@@ -71,6 +71,15 @@ Direct / proxy 混合状态：
 - `GET /api/v1/core/feature-requests/submission-context`
 - `GET /api/v1/core/feature-requests/captcha`
 - `POST /api/v1/core/feature-requests`
+- `GET /api/v1/contract-review/api/health`
+- `GET /api/v1/contract-review/api/config`
+- `GET /api/v1/bid-generator/health`
+- `GET /api/v1/bid-generator/api/config/workflow-status`
+- `GET /api/v1/bid-generator/api/config/analysis-framework`
+- `GET /api/v1/bid-generator/api/entities`
+- `GET /api/v1/bid-generator/api/projects`
+- `GET /api/v1/bid-generator/api/projects/{project_id}`
+- `GET /api/v1/bid-generator/api/projects/{project_id}/mappings`
 - `ANY /api/v1/competitor-analysis/{path:path}`
 - `ANY /api/v1/rag/{path:path}`
 - `ANY /api/v1/contract-review/{path:path}`
