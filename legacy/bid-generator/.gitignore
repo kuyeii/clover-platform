@@ -41,8 +41,11 @@ config.local.yaml
 *.npy
 *.pkl
 pdf_cache/
+docx_cache/
 raw_doc_cache/
+extracted_images/
 projects/
+kb_sync_status/
 
 # 输出文件
 output/
@@ -60,4 +63,3 @@ todo/
 
 # Agent artifacts
 agents/
-

@@ -473,6 +473,58 @@ def _check_runtime(repo_root: Path) -> CheckResult:
     )
 
 
+def _check_runtime_artifact_dirs(repo_root: Path, selected: set[str]) -> list[CheckResult]:
+    """Warn about local artifact directories that should be backed by a persistent volume.
+
+    These checks are intentionally non-blocking. Legacy backends may create missing
+    directories on demand; preflight only surfaces deployment/storage boundaries.
+    """
+    results: list[CheckResult] = []
+
+    def _warn_dir(name: str, relative_path: str, hint: str) -> None:
+        path = repo_root / relative_path
+        if path.is_dir():
+            results.append(CheckResult(name, "ok", f"{relative_path} exists"))
+            return
+        results.append(
+            CheckResult(
+                name,
+                "warn",
+                f"{relative_path} is missing; legacy service may create it on demand, but deployments should mount persistent storage when this module is enabled",
+                hint,
+            )
+        )
+
+    if "contract-review" in selected or "platform-api" in selected:
+        _warn_dir(
+            "contract-review uploads directory",
+            "legacy/contract_review/data/uploads",
+            "Create or mount legacy/contract_review/data/uploads for uploaded source contracts.",
+        )
+        _warn_dir(
+            "contract-review runs directory",
+            "legacy/contract_review/data/runs",
+            "Create or mount legacy/contract_review/data/runs for review artifacts and DOCX exports.",
+        )
+
+    if "bid-generator" in selected or "platform-api" in selected:
+        for label, relative_path, purpose in (
+            ("bid-generator pdf cache directory", "legacy/bid-generator/data/pdf_cache", "PDF preview cache"),
+            ("bid-generator docx cache directory", "legacy/bid-generator/data/docx_cache", "source DOCX and locator recovery cache"),
+            ("bid-generator raw document cache directory", "legacy/bid-generator/data/raw_doc_cache", "raw text re-extract cache"),
+            ("bid-generator extracted images directory", "legacy/bid-generator/data/extracted_images", "extracted document images referenced by image_registry"),
+            ("bid-generator project report mirror directory", "legacy/bid-generator/data/projects", "analysis report JSON mirrors"),
+            ("bid-generator knowledge sync status directory", "legacy/bid-generator/data/kb_sync_status", "knowledge sync status JSON files"),
+        ):
+            _warn_dir(
+                label,
+                relative_path,
+                f"Create or mount {relative_path} for {purpose}; missing directories do not block normal startup.",
+            )
+
+    return results
+
+
 def _check_port_plan(
     apps_config: dict[str, Any],
     selected: set[str],
@@ -783,6 +835,7 @@ def run_preflight(
     if _selected_needs_node(apps_config, selected):
         results.extend([_check_command("node"), _check_command("npm")])
     results.append(_check_runtime(root))
+    results.extend(_check_runtime_artifact_dirs(root, selected))
     results.extend(
         _check_port_plan(
             apps_config,

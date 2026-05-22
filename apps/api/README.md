@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 8-A 阶段在第 7-M 的业务代理与 iframe auth bridge 总体验收基础上，固化回归基线并稳定开发启动链路。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块已经具备统一代理入口和 iframe auth bridge 接入。legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的业务逻辑继续由 legacy 后端执行。
+`apps/api` 是 Clover Platform 统一后端基座。第 8-B 阶段在第 7-M 的业务代理与 iframe auth bridge 总体验收、第 8-A 回归基线基础上，补充本地文件系统产物和任务状态边界说明。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块已经具备统一代理入口和 iframe auth bridge 接入。legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的业务逻辑继续由 legacy 后端执行。
 
 ## 当前职责
 
@@ -13,8 +13,9 @@
 - 为 Portal 前端提供 auth、users、app-usage、runtime apps、feedback 和 `/ws/core/app-usage`。
 - 为 `competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 提供鉴权后的业务 API 入口。
 - 支持业务 iframe 前端通过 Portal auth bridge 获取内存态 token 和 `apiBaseUrl` 后调用 `apps/api`；token 不通过 iframe URL 传递。
+- 当前不持有统一文件存储，也不是统一任务调度器；复杂文件产物仍由 legacy backend 读写本地文件系统，任务状态继续沿用各 legacy 模块现有机制。
 
-第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。
+第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。
 
 ## 业务代理入口
 
@@ -31,6 +32,8 @@ Direct / proxy 混合状态：
 - `bid-generator`：当前全部业务 API 仍 proxy 到 legacy 标书生成后端。
 
 业务 proxy 会在访问 legacy 后端前完成 Portal session 和应用权限校验。代理不会向 legacy 后端转发 `Authorization`、`Cookie` 或 `Set-Cookie`，只转发 `X-Portal-User-Id`、`X-Portal-User-Account`、`X-Portal-User-Role`、`X-Portal-Client-Id`、`X-Request-ID` 等非敏感上下文。multipart、SSE/NDJSON、DOCX/PDF/Excel/图片下载响应通过流式请求和流式响应保留，`Content-Type` 与 `Content-Disposition` 会透传。
+
+文件上传、下载和 stream 当前只经 `apps/api` 做鉴权代理透传；合同审查 `data/uploads` / `data/runs`、标书生成 `data/*_cache` / `data/projects` / `data/kb_sync_status` 等真实文件产物仍由对应 legacy 后端维护。当前不引入 MinIO / S3 SDK，不引入 Celery / RQ，也不新增统一任务表。
 
 ## 当前接口
 
@@ -104,6 +107,7 @@ WebSocket 不使用统一 envelope。`/ws/core/app-usage` 保持 legacy `/ws/app
 - 不去掉 iframe。
 - 不接 MinIO。
 - 不引入 Celery / RQ。
+- 不新增统一文件存储或统一任务队列。
 
 ## 本地启动
 
