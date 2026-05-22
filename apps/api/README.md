@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 6-E 后 Portal 前端核心平台能力和 feedback 能力默认依赖这里，legacy Portal 后端只作为回滚和过渡兼容保留。第 7-I 起已接入竞对分析、RAG、合同审查和标书生成业务代理；当前 iframe 前端桥接试点模块是 `competitor-analysis`。
+`apps/api` 是 Clover Platform 统一后端基座。第 6-E 后 Portal 前端核心平台能力和 feedback 能力默认依赖这里，legacy Portal 后端只作为回滚和过渡兼容保留。第 7-J 起已接入竞对分析、RAG、合同审查和标书生成业务代理；当前 iframe 前端桥接模块包括 `competitor-analysis` 和 `rag-web-search`。
 
 ## 当前职责
 
@@ -12,7 +12,8 @@
 - 提供统一响应 envelope、request id middleware、统一 404 / 422 / 500 错误响应和基础日志。
 - 为 Portal 前端提供 auth、users、app-usage、runtime apps、feedback 和 `/ws/core/app-usage`。
 - 为 `competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 提供鉴权后的业务 API 入口，未直接迁入的业务逻辑仍由对应 legacy 后端执行。
-- 支持业务 iframe 前端携带 Portal token 和 `X-Portal-Client-Id` 调用统一代理入口；当前只在 `competitor-analysis` 前端试点，Portal token 由父页面 bridge 通过 `postMessage` 提供，不通过 iframe URL 传递。
+- 支持业务 iframe 前端携带 Portal token 和 `X-Portal-Client-Id` 调用统一代理入口；当前 `competitor-analysis` 和 `rag-web-search` iframe 前端已接入，Portal token 由父页面 bridge 通过 `postMessage` 提供，不通过 iframe URL 传递。
+- RAG iframe 前端可通过 Portal token 调用 `/api/v1/rag`；当前仍是 direct health/sessions/conversations 与 proxy chat/knowledge 的混合形态，不是完整 RAG 业务逻辑迁移。
 
 ## 当前接口
 
@@ -107,7 +108,7 @@ python scripts/dev.py --only platform-api
 python scripts/dev.py --no-business
 ```
 
-`--no-business` 会启动 Portal 前端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。竞对分析、RAG、合同审查和标书生成可分别通过 `/api/v1/competitor-analysis/**`、`/api/v1/rag/**`、`/api/v1/contract-review/**`、`/api/v1/bid-generator/**` 经 platform-api 代理到 legacy 后端。当前只有竞对分析 iframe 前端优先调用该代理入口，其它业务 iframe 前端仍保持原链路。legacy Portal 后端不在 `--no-business` 默认链路中启动，可通过 `python scripts/dev.py --only portal` 保留回滚和兼容排查路径。
+`--no-business` 会启动 Portal 前端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。竞对分析、RAG、合同审查和标书生成可分别通过 `/api/v1/competitor-analysis/**`、`/api/v1/rag/**`、`/api/v1/contract-review/**`、`/api/v1/bid-generator/**` 经 platform-api 代理到 legacy 后端。当前竞对分析和 RAG iframe 前端优先调用对应代理入口，合同审查和标书生成 iframe 前端仍保持原链路。legacy Portal 后端不在 `--no-business` 默认链路中启动，可通过 `python scripts/dev.py --only portal` 保留回滚和兼容排查路径。
 
 生成 platform-api 端口规划：
 

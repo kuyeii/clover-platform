@@ -7,6 +7,7 @@ export const CLOVER_AUTH_ERROR = "clover:auth-error";
 const CORE_API_PREFIX = "/api/v1/core";
 const BUSINESS_API_PREFIX_BY_APP: Record<string, string> = {
   "competitor-analysis": "/api/v1/competitor-analysis",
+  "rag-web-search": "/api/v1/rag",
 };
 
 export interface CloverAuthRequestMessage {
