@@ -1,17 +1,111 @@
+import { PortalBridgeAuthError, getPortalAuthContext } from "./portalBridge";
+
+let hasWarnedLegacyFallback = false;
+
 function getApiBase() {
   const base = import.meta.env.VITE_API_BASE_URL || "";
   return base.replace(/\/$/, "");
 }
 
-function apiUrl(path) {
-  return `${getApiBase()}${path}`;
+function joinApiUrl(base, path) {
+  return `${base.replace(/\/$/, "")}${path}`;
+}
+
+function isRetriablePlatformFailure(error) {
+  return error?.isPlatformApiRequest && (error.status === 0 || error.status === 502);
+}
+
+function warnLegacyFallback(error) {
+  if (hasWarnedLegacyFallback) {
+    return;
+  }
+  hasWarnedLegacyFallback = true;
+  const message = error instanceof Error && error.message ? error.message : "platform api unavailable";
+  console.warn("竞对分析 apps/api 代理不可用，回退到 legacy backend。", message);
+}
+
+async function resolveApiTarget() {
+  const legacyBaseUrl = getApiBase();
+  const context = await getPortalAuthContext();
+  if (context) {
+    return {
+      baseUrl: context.apiBaseUrl,
+      headers: {
+        Authorization: `Bearer ${context.token}`,
+        "X-Portal-Client-Id": context.clientId
+      },
+      isPlatformApi: true
+    };
+  }
+
+  return {
+    baseUrl: legacyBaseUrl,
+    headers: {},
+    isPlatformApi: false
+  };
+}
+
+function legacyApiTarget() {
+  return {
+    baseUrl: getApiBase(),
+    headers: {},
+    isPlatformApi: false
+  };
+}
+
+function apiError(message, status, isPlatformApiRequest) {
+  const error = new Error(message);
+  error.status = status;
+  error.isPlatformApiRequest = Boolean(isPlatformApiRequest);
+  return error;
+}
+
+async function fetchWithTarget(path, options, target) {
+  let response;
+  try {
+    response = await fetch(joinApiUrl(target.baseUrl, path), {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...target.headers,
+        ...(options.headers || {})
+      }
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? `请求失败：${error.message}`
+        : "请求失败，请稍后重试。";
+    throw apiError(message, 0, target.isPlatformApi);
+  }
+
+  return response;
 }
 
 export async function requestJson(path, options = {}) {
-  const response = await fetch(apiUrl(path), {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options
-  });
+  let target;
+  try {
+    target = await resolveApiTarget();
+  } catch (error) {
+    if (error instanceof PortalBridgeAuthError) {
+      throw error;
+    }
+    target = legacyApiTarget();
+  }
+
+  try {
+    return await requestJsonWithTarget(path, options, target);
+  } catch (error) {
+    if (!isRetriablePlatformFailure(error)) {
+      throw error;
+    }
+    warnLegacyFallback(error);
+    return requestJsonWithTarget(path, options, legacyApiTarget());
+  }
+}
+
+async function requestJsonWithTarget(path, options, target) {
+  const response = await fetchWithTarget(path, options, target);
 
   let payload = null;
   try {
@@ -21,7 +115,11 @@ export async function requestJson(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(payload?.message || `请求失败（HTTP ${response.status}）`);
+    const message =
+      payload?.message ||
+      payload?.error?.message ||
+      `请求失败（HTTP ${response.status}）`;
+    throw apiError(message, response.status, target.isPlatformApi);
   }
 
   return payload;
@@ -35,16 +133,42 @@ export async function runAnalysis(input) {
 }
 
 export async function runAnalysisStream(input, onEvent) {
-  const response = await fetch(apiUrl("/api/analysis/stream"), {
+  let target;
+  try {
+    target = await resolveApiTarget();
+  } catch (error) {
+    if (error instanceof PortalBridgeAuthError) {
+      throw error;
+    }
+    target = legacyApiTarget();
+  }
+
+  try {
+    return await runAnalysisStreamWithTarget(input, onEvent, target);
+  } catch (error) {
+    if (!isRetriablePlatformFailure(error)) {
+      throw error;
+    }
+    warnLegacyFallback(error);
+    return runAnalysisStreamWithTarget(input, onEvent, legacyApiTarget());
+  }
+}
+
+async function runAnalysisStreamWithTarget(input, onEvent, target) {
+  const response = await fetchWithTarget("/api/analysis/stream", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
     body: JSON.stringify(input)
-  });
+  }, target);
 
   if (!response.ok || !response.body) {
-    throw new Error(`请求失败（HTTP ${response.status}）`);
+    let message = `请求失败（HTTP ${response.status}）`;
+    try {
+      const payload = await response.clone().json();
+      message = payload?.message || payload?.error?.message || message;
+    } catch {
+      // Keep the HTTP status message for non-JSON stream errors.
+    }
+    throw apiError(message, response.status, target.isPlatformApi);
   }
 
   const reader = response.body.getReader();
