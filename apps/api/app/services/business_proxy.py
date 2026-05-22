@@ -168,6 +168,11 @@ def _target_url(backend_url: str, path: str, query: str) -> httpx.URL:
     return target
 
 
+def _safe_target_path(target_url: httpx.URL) -> str:
+    path = target_url.path or "/"
+    return path if not target_url.query else f"{path}?[redacted]"
+
+
 def _request_headers(request: Request, user: dict[str, Any], client_id: str) -> dict[str, str]:
     headers: dict[str, str] = {}
     for name, value in request.headers.items():
@@ -224,8 +229,49 @@ async def proxy_business_request(
 
     try:
         upstream_response = await client.send(upstream_request, stream=True)
+    except httpx.ConnectError as exc:
+        await client.aclose()
+        request_id = str(getattr(request.state, "request_id", "") or "")
+        logger.warning(
+            "Business proxy backend unavailable request_id=%s app_code=%s method=%s target_path=%s",
+            request_id,
+            app_code,
+            request.method,
+            _safe_target_path(target_url),
+        )
+        raise PlatformError(
+            code="BUSINESS_BACKEND_UNAVAILABLE",
+            message="业务模块后端不可用。",
+            status_code=502,
+            details={"app_code": app_code},
+        ) from exc
+    except httpx.TimeoutException as exc:
+        await client.aclose()
+        request_id = str(getattr(request.state, "request_id", "") or "")
+        logger.warning(
+            "Business proxy timeout request_id=%s app_code=%s method=%s target_path=%s",
+            request_id,
+            app_code,
+            request.method,
+            _safe_target_path(target_url),
+        )
+        raise PlatformError(
+            code="BUSINESS_PROXY_TIMEOUT",
+            message="业务模块后端响应超时。",
+            status_code=503,
+            details={"app_code": app_code},
+        ) from exc
     except httpx.RequestError as exc:
         await client.aclose()
+        request_id = str(getattr(request.state, "request_id", "") or "")
+        logger.warning(
+            "Business proxy request error request_id=%s app_code=%s method=%s target_path=%s error_type=%s",
+            request_id,
+            app_code,
+            request.method,
+            _safe_target_path(target_url),
+            exc.__class__.__name__,
+        )
         raise PlatformError(
             code="BUSINESS_PROXY_ERROR",
             message="业务模块后端连接失败。",

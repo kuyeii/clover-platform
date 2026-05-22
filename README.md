@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入第 8-B：第 7-M 已完成 `competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 的 `apps/api` 统一业务代理入口与 iframe auth bridge 总体验收；第 8-A 固化回归基线并稳定开发启动链路；第 8-B 梳理本地文件系统产物边界和现有任务状态边界。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`；四个业务 iframe 前端均已优先调用对应 `apps/api` 代理入口。标书生成、合同审查、RAG chat stream 和 knowledge 等未 direct 的业务逻辑仍由各自 legacy 后端执行，并保留受控 fallback。本阶段继续使用本地文件系统和各应用原有任务状态，不引入 MinIO / Celery / RQ。
+当前阶段已进入第 8-C：第 7-M 已完成 `competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 的 `apps/api` 统一业务代理入口与 iframe auth bridge 总体验收；第 8-A 固化回归基线并稳定开发启动链路；第 8-B 梳理本地文件系统产物边界和现有任务状态边界；第 8-C 完善错误诊断、代理可维护性和本地文件系统版部署准备。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`；四个业务 iframe 前端均已优先调用对应 `apps/api` 代理入口。标书生成、合同审查、RAG chat stream 和 knowledge 等未 direct 的业务逻辑仍由各自 legacy 后端执行，并保留受控 fallback。本阶段继续使用 `apps/api` 代理 + legacy 后端 + 本地文件系统，不引入 MinIO / Celery / RQ，不修改业务逻辑。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 8-B 阶段：在第 8-A 回归基线基础上，梳理并规范本地文件系统产物边界和现有任务状态边界。本阶段继续使用本地文件系统，暂不引入 MinIO；继续沿用各应用原有任务状态，暂不引入 Celery / RQ；只做边界规范、轻量 preflight warning、小范围 `.gitignore` / README 修正和未来扩展口预留，不新增业务功能、不迁移新的 direct API、不修改数据库结构。
+当前处于第 8-C 阶段：在第 8-A 回归基线和第 8-B 本地文件系统边界基础上，完善错误诊断、代理可维护性和本地文件系统版部署准备。本阶段继续使用 `apps/api` 代理 + legacy 后端 + 本地文件系统，暂不接 MinIO；继续沿用各应用原有任务状态，暂不引入 Celery / RQ；只做诊断规范、日志边界、轻量健康检查说明、部署文档、README 和小范围 `business_proxy` 诊断修正，不新增业务功能、不迁移新的 direct API、不修改数据库结构。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback。第 7-G 新增合同审查代理入口 `/api/v1/contract-review/{path:path}`，合同审查业务逻辑仍由 legacy 后端执行。第 7-H 新增标书生成代理入口 `/api/v1/bid-generator/{path:path}`，标书生成业务逻辑仍由 legacy 后端执行。第 7-I 新增 Portal -> iframe auth bridge，并仅将竞对分析 iframe 前端优先切到 `/api/v1/competitor-analysis/**`。第 7-J 将 RAG iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/rag/api/v1/**`；RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端通过 proxy 执行。第 7-K 将合同审查 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/contract-review/api/**`；合同审查业务逻辑仍由 legacy 合同审查后端通过 proxy 执行。第 7-L 将标书生成 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/bid-generator/api/**`；标书生成业务逻辑仍由 legacy `pipt-lite` 后端通过 proxy 执行。第 7-M 对四个业务代理入口、四个 iframe auth bridge 接入、fallback 安全边界和文档状态做总体验收，并收紧非幂等请求的自动 fallback。第 8-A 将第 7-M 验收结果固化为回归与开发启动基线，详见 `docs/stage-8-a-regression-and-dev-baseline.md`。第 8-B 梳理本地文件系统与任务状态边界，详见 `docs/stage-8-b-local-files-and-task-boundary.md`。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback。第 7-G 新增合同审查代理入口 `/api/v1/contract-review/{path:path}`，合同审查业务逻辑仍由 legacy 后端执行。第 7-H 新增标书生成代理入口 `/api/v1/bid-generator/{path:path}`，标书生成业务逻辑仍由 legacy 后端执行。第 7-I 新增 Portal -> iframe auth bridge，并仅将竞对分析 iframe 前端优先切到 `/api/v1/competitor-analysis/**`。第 7-J 将 RAG iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/rag/api/v1/**`；RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端通过 proxy 执行。第 7-K 将合同审查 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/contract-review/api/**`；合同审查业务逻辑仍由 legacy 合同审查后端通过 proxy 执行。第 7-L 将标书生成 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/bid-generator/api/**`；标书生成业务逻辑仍由 legacy `pipt-lite` 后端通过 proxy 执行。第 7-M 对四个业务代理入口、四个 iframe auth bridge 接入、fallback 安全边界和文档状态做总体验收，并收紧非幂等请求的自动 fallback。第 8-A 将第 7-M 验收结果固化为回归与开发启动基线，详见 `docs/stage-8-a-regression-and-dev-baseline.md`。第 8-B 梳理本地文件系统与任务状态边界，详见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 完善错误诊断与本地文件系统版部署准备，详见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。
 
 ## Legacy 项目
 
@@ -820,6 +820,12 @@ Portal iframe 集成不变。
 | RAG 问答 | 知识库文件由 Dify Dataset 管理，会话和 turn 写入 PostgreSQL；本地 `data/` 只保留 legacy 占位或旧缓存 | 继续使用 legacy chat stream 和上游 Dify SSE；sessions / conversations 已部分 direct 到 `apps/api` |
 | 竞对分析 | 历史记录、企业画像和企业校验缓存写入 PostgreSQL；未发现当前后端报告文件缓存 | 继续使用 legacy NDJSON stream 和 workflow 编排状态，不新增后台任务表 |
 
+## 第 8-C 阶段：错误诊断与本地文件系统版部署准备
+
+第 8-C 阶段只完善诊断和部署准备，不迁移业务逻辑、不改数据库结构、不去 iframe、不接 MinIO、不引入 Celery / RQ。当前仍以 `apps/api` 鉴权代理、四个 legacy 后端和本地文件系统持久化目录为主，重点明确 401 / 403、502 / 503、Dify upstream、PostgreSQL、`runtime/ports.json`、CORS、文件下载和 SSE / NDJSON 中断的排查边界。
+
+详细诊断、request_id / `X-Request-ID` 传递、`business_proxy` 日志边界、本地文件系统版部署、健康检查路径和第 8-D 建议见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。
+
 ## 下一阶段计划
 
-第 7-M 阶段完成后，第 7 阶段可以按“统一业务代理入口 + iframe auth bridge + 受控 legacy fallback”收口。第 8-B 只完成本地文件系统和任务状态边界规范；后续如推进文件存储、任务队列、去 iframe、生产部署、observability 和 e2e 测试，应作为专项分阶段实施。当前仍不在本阶段合并全部后端、统一全部前端或推进 Docker 正式部署。
+第 8-C 完成后，建议进入第 8-D：低风险 direct API 迁移评估与试点。RAG chat stream、RAG knowledge Dataset、合同审查主审查流程 / DOCX 导出 / AI 改写、标书生成 Dify workflow / SSE 任务 / forge-document 仍不应直接作为首批复杂迁移对象。
