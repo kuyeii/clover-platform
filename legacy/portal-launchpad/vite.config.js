@@ -18,6 +18,10 @@ export default defineConfig({
                 target: platformHttpTarget,
                 changeOrigin: true,
             },
+            "/api/v1/rag": {
+                target: platformHttpTarget,
+                changeOrigin: true,
+            },
             "/ws/core": {
                 target: platformWsTarget,
                 ws: true,
