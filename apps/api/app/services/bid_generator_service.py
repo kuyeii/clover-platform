@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import importlib
 import logging
+import sys
+import threading
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Mapping
 
+from fastapi import APIRouter
 from app.core.config import get_api_settings
 from app.core.errors import PlatformError
 from sqlalchemy import text
@@ -15,6 +20,8 @@ from packages.py_common.db.session import get_engine
 logger = logging.getLogger(__name__)
 
 DIAGRAM_GENERATION_ENABLED = False
+_IMPORT_LOCK = threading.RLock()
+_LEGACY_MODULES: dict[str, ModuleType] = {}
 
 WORKFLOWS: tuple[tuple[str, str, str, bool, str], ...] = (
     ("structure_generator", "DIFY_WORKFLOW_STRUCTURE_GENERATOR", "大纲生成", True, "managed"),
@@ -57,6 +64,92 @@ def _repo_root() -> Path:
 
 def _bid_generator_root() -> Path:
     return _repo_root() / "legacy" / "bid-generator" / "pipt-flask"
+
+
+def _bid_generator_legacy_root() -> Path:
+    return _repo_root() / "legacy" / "bid-generator"
+
+
+def _legacy_app_package_path() -> Path:
+    return _bid_generator_root() / "app"
+
+
+def _gateway_out_path() -> Path:
+    return _bid_generator_legacy_root() / "gateway-out"
+
+
+def _dify_bridge_path() -> Path:
+    return _bid_generator_legacy_root() / "dify-bridge"
+
+
+def _ensure_legacy_package_namespace() -> None:
+    import app as platform_app
+
+    legacy_app_path = str(_legacy_app_package_path())
+    if legacy_app_path not in platform_app.__path__:
+        platform_app.__path__.append(legacy_app_path)
+
+
+def _extend_src_package_namespace() -> None:
+    src_package = sys.modules.get("src")
+    if src_package is None:
+        gateway_parent = str(_gateway_out_path())
+        if gateway_parent not in sys.path:
+            sys.path.insert(0, gateway_parent)
+        src_package = importlib.import_module("src")
+
+    src_paths = getattr(src_package, "__path__", None)
+    if src_paths is None:
+        return
+    for path in (_gateway_out_path() / "src", _dify_bridge_path() / "src"):
+        path_value = str(path)
+        if path.is_dir() and path_value not in src_paths:
+            src_paths.append(path_value)
+
+
+def _ensure_legacy_environment() -> None:
+    os.environ.setdefault("PRO_ENGINE_ROOT", str(_bid_generator_legacy_root()))
+    os.environ.setdefault("PIPT_ROOT", str(_bid_generator_root()))
+
+
+def _ensure_legacy_imported(name: str) -> ModuleType:
+    module = _LEGACY_MODULES.get(name)
+    if module is not None:
+        return module
+
+    with _IMPORT_LOCK:
+        module = _LEGACY_MODULES.get(name)
+        if module is not None:
+            return module
+        _ensure_legacy_environment()
+        _ensure_legacy_package_namespace()
+        module = importlib.import_module(name)
+        _LEGACY_MODULES[name] = module
+        return module
+
+
+def ensure_legacy_runtime() -> None:
+    _ensure_legacy_environment()
+    _ensure_legacy_package_namespace()
+    _extend_src_package_namespace()
+
+
+def get_legacy_api_routers() -> tuple[APIRouter, APIRouter, APIRouter]:
+    project_routes = _ensure_legacy_imported("app.api_lite.project_routes")
+    routes = _ensure_legacy_imported("app.api_lite.routes")
+    task_routes = _ensure_legacy_imported("app.api_lite.task_routes")
+    return project_routes.router, routes.router, task_routes.router
+
+
+def init_legacy_storage() -> None:
+    database = _ensure_legacy_imported("app.api_lite.database")
+    database.init_db()
+
+
+def preload_legacy_engine() -> None:
+    routes = _ensure_legacy_imported("app.api_lite.routes")
+    engine = routes.get_engine()
+    engine._try_load_ner_model()
 
 
 def _read_root_env_value(env_var: str) -> str:

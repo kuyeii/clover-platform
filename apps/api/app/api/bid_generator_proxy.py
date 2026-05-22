@@ -12,8 +12,10 @@ from app.core.errors import PlatformError
 from app.services import portal_store
 from app.services.bid_generator_service import (
     BidProjectNotFound,
+    ensure_legacy_runtime,
     get_analysis_framework_payload,
     get_health_payload,
+    get_legacy_api_routers,
     get_project_mappings_payload,
     get_project_payload,
     get_supported_entities_payload,
@@ -30,6 +32,7 @@ router = APIRouter(prefix="/bid-generator")
 def require_bid_generator_user(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     if not portal_store.can_access_app(user, APP_CODE):
         raise PlatformError(code="PERMISSION_DENIED", message="当前用户没有访问标书生成的权限。", status_code=403)
+    ensure_legacy_runtime()
     return user
 
 
@@ -38,6 +41,7 @@ def legacy_json(payload: Any, *, status_code: int = 200) -> JSONResponse:
 
 
 @router.get("/health")
+@router.get("/api/health")
 async def get_bid_generator_health(
     user: dict[str, Any] = Depends(require_bid_generator_user),
 ) -> JSONResponse:
@@ -99,6 +103,14 @@ async def get_bid_generator_project_mappings(
         return legacy_json(get_project_mappings_payload(project_id))
     except BidProjectNotFound:
         return legacy_json({"detail": "项目不存在"}, status_code=404)
+
+
+for _legacy_router in get_legacy_api_routers():
+    router.include_router(
+        _legacy_router,
+        prefix="/api",
+        dependencies=[Depends(require_bid_generator_user)],
+    )
 
 
 @router.api_route("", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
