@@ -39,7 +39,7 @@ PYTHON_REQUIREMENTS_BY_APP: dict[str, tuple[str, ...]] = {
     "contract-review": ("legacy/contract_review/requirements.txt",),
     "rag-web-search": ("legacy/chat_with_rag_and_websearch/backend/requirements.txt",),
     "competitor-analysis": ("legacy/company-competitors-analysis/backend/requirements.txt",),
-    "bid-generator": ("legacy/bid-generator/pipt-flask/requirements-lite.txt",),
+    "bid-generator": ("legacy/bid-generator/pipt-flask/requirements-dev.txt",),
 }
 
 FRONTEND_INSTALLS_BY_APP: dict[str, tuple[str, str]] = {
