@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 8-E 阶段在第 7-M 的业务代理与 iframe auth bridge 总体验收、第 8-A 回归基线、第 8-B 本地文件系统边界、第 8-C 诊断边界和第 8-D 第一批 direct API 基础上，新增第二批低风险查询类 direct API，并准备第 8 阶段收口。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块已经具备统一代理入口和 iframe auth bridge 接入。legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的业务逻辑继续由 legacy 后端执行。
+`apps/api` 是 Clover Platform 统一后端基座。第 8-F 阶段在第 7-M 的业务代理与 iframe auth bridge 总体验收、第 8-A 回归基线、第 8-B 本地文件系统边界、第 8-C 诊断边界、第 8-D 第一批 direct API 和第 8-E 第二批低风险查询类 direct API 基础上，对第 8 阶段做整体收口。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块已经具备统一代理入口和 iframe auth bridge 接入。当前处于 `apps/api` direct/proxy 混合阶段，legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的复杂业务逻辑继续由 legacy 后端执行。
 
 ## 当前职责
 
@@ -15,7 +15,7 @@
 - 支持业务 iframe 前端通过 Portal auth bridge 获取内存态 token 和 `apiBaseUrl` 后调用 `apps/api`；token 不通过 iframe URL 传递。
 - 当前不持有统一文件存储，也不是统一任务调度器；复杂文件产物仍由 legacy backend 读写本地文件系统，任务状态继续沿用各 legacy 模块现有机制。
 
-第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。
+第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 第 8 阶段收口见 `docs/stage-8-f-stage-8-rollup.md`。
 
 ## 业务代理入口
 
@@ -127,6 +127,9 @@ WebSocket 不使用统一 envelope。`/ws/core/app-usage` 保持 legacy `/ws/app
 - 不接 MinIO。
 - 不引入 Celery / RQ。
 - 不新增统一文件存储或统一任务队列。
+- 不规划任务队列预留口。
+- 不规划对象存储预留口。
+- 第 9 阶段后续单独规划。
 
 ## 本地文件系统版部署边界
 
