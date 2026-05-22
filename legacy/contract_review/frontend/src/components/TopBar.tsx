@@ -11,6 +11,7 @@ export function TopBar(props: {
   onBack?: () => void
   onGoUpload: () => void
   downloadUrl: string | null
+  onDownload?: (downloadUrl: string) => Promise<void> | void
   onAcceptAllRisks?: () => Promise<void> | void
   canAcceptAllRisks?: boolean
   onUndoLastAction?: () => Promise<void> | void
@@ -53,9 +54,19 @@ export function TopBar(props: {
             上传新合同
           </button>
           {props.downloadUrl ? (
-            <a className="btn btnPrimary" href={props.downloadUrl} target="_blank" rel="noreferrer">
+            <button
+              type="button"
+              className="btn btnPrimary"
+              onClick={async () => {
+                try {
+                  await props.onDownload?.(props.downloadUrl || '')
+                } catch (e) {
+                  handleActionError(e, '下载文档失败')
+                }
+              }}
+            >
               下载法务修订文档
-            </a>
+            </button>
           ) : null}
           <button
             className="btn"

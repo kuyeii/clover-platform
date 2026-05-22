@@ -8,6 +8,7 @@ import { ModernSideNav } from './components/ModernSideNav'
 import { TopBar } from './components/TopBar'
 import { UploadDashboard } from './components/UploadDashboard'
 import { ReviewProgress, computeProgress as computeReviewProgress } from './components/ReviewProgress'
+import { contractReviewFetch } from './services/contractReviewApi'
 import type { AnalysisScopeOption, EditSummary, ReviewHistoryItem, ReviewMeta, ReviewResultPayload, ReviewSideOption } from './types'
 import { readApiError, toUserFacingError } from './utils/appError'
 import { normalizeRiskTextForDisplay } from './utils/riskText'
@@ -17,8 +18,8 @@ async function sleep(ms: number) {
   await new Promise((r) => setTimeout(r, ms))
 }
 
-function fetchNoStore(input: RequestInfo | URL, init?: RequestInit) {
-  return fetch(input, { cache: 'no-store', ...init })
+function fetchNoStore(path: string, init?: RequestInit) {
+  return contractReviewFetch(path, { cache: 'no-store', ...init })
 }
 
 function resolveHistoryUpdatedAt(params: {
@@ -96,6 +97,24 @@ async function fileFromReviewDocumentResponse(runId: string, resp: Response, fal
 async function fetchReviewDocumentFile(runId: string, fallbackName?: string | null, init?: RequestInit) {
   const docResp = await fetchNoStore(`/api/reviews/${runId}/document`, init)
   return fileFromReviewDocumentResponse(runId, docResp, fallbackName)
+}
+
+async function downloadBlobResponse(resp: Response, fallbackName: string) {
+  if (!resp.ok) {
+    throw await readApiError(resp, { title: '下载文档失败' })
+  }
+
+  const blob = await resp.blob()
+  const fileName = pickFilenameFromDisposition(resp.headers.get('content-disposition'), fallbackName)
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = normalizeDocxFilename(fileName, fallbackName)
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
 function createHistoryEntry(runId: string, file: File | null, meta?: ReviewMeta | null): SessionReviewEntry {
@@ -1216,7 +1235,7 @@ export default function App() {
       form.append('contract_type_hint', serverConfig?.contract_type_hint ?? 'service_agreement')
       form.append('analysis_scope', selectedAnalysisScope)
 
-      const resp = await fetch('/api/reviews', { method: 'POST', body: form })
+      const resp = await contractReviewFetch('/api/reviews', { method: 'POST', body: form })
       if (!resp.ok) {
         throw await readApiError(resp, { title: '发起审查失败' })
       }
@@ -1444,7 +1463,7 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const resp = await fetch('/api/config')
+        const resp = await contractReviewFetch('/api/config')
         if (resp.ok) {
           const config = (await resp.json()) as { review_side: string; contract_type_hint: string; analysis_scope?: AnalysisScopeOption | string }
           setServerConfig({
@@ -1661,7 +1680,7 @@ export default function App() {
       const isPreview = String(runId).startsWith('preview_')
 
       if (!isPreview) {
-        const resp = await fetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}`, {
+        const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'rejected' })
@@ -1681,7 +1700,7 @@ export default function App() {
       if (!runId) throw new Error('当前没有可操作的 run_id')
       let handledByPayload = false
       if (!String(runId).startsWith('preview_')) {
-        const resp = await fetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}`, {
+        const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status })
@@ -1758,7 +1777,7 @@ export default function App() {
         let acceptedByAiEndpoint = false
         if (shouldApplyAi) {
           if (!isPreview) {
-            const resp = await fetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_accept`, {
+            const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_accept`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ revised_text: acceptedRevisedText, target_text: acceptedTargetText || undefined })
@@ -1849,7 +1868,7 @@ export default function App() {
         }
         if (shouldApplyAi) {
           if (!isPreview) {
-            const resp = await fetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_accept`, {
+            const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_accept`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ revised_text: acceptedRevisedText, target_text: acceptedTargetText || undefined })
@@ -2038,7 +2057,7 @@ export default function App() {
       // New backend endpoint (optional). If unavailable (404), we fall back to local persistence.
       // Even if we previously detected legacy mode, we still probe once here so upgrades take effect.
 
-      const resp = await fetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_edit`, {
+      const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_edit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ revised_text: revisedText })
@@ -2065,7 +2084,7 @@ export default function App() {
       if (!runId) throw new Error('当前没有可操作的 run_id')
 
       const tryNew = async () => {
-        const resp = await fetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_reject`, {
+        const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_reject`, {
           method: 'POST'
         })
         if (resp.status === 404) {
@@ -2106,7 +2125,7 @@ export default function App() {
   const onAiApplyRisk = useCallback(
     async (riskId: number | string) => {
       if (!runId) throw new Error('当前没有可操作的 run_id')
-      const resp = await fetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_apply`, {
+      const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_apply`, {
         method: 'POST'
       })
       if (!resp.ok) {
@@ -2221,6 +2240,19 @@ export default function App() {
     setIsReviewing(false)
   }, [navigate])
 
+  const handleDownloadReviewedDocx = useCallback(
+    async (downloadUrl: string) => {
+      const target = String(downloadUrl || '').trim()
+      if (!target) return
+      const resp = await fetchNoStore(target)
+      await downloadBlobResponse(
+        resp,
+        `${result?.file_name || meta?.file_name || file?.name || runId || 'contract'}`
+      )
+    },
+    [file, meta, result, runId]
+  )
+
   const onSelectMainNav = useCallback(
     (key: NavKey) => {
       if (key === 'upload') {
@@ -2295,6 +2327,7 @@ export default function App() {
                 }}
                 onGoUpload={goUploadPage}
                 downloadUrl={result?.download_url || null}
+                onDownload={handleDownloadReviewedDocx}
                 onAcceptAllRisks={handleAcceptAllRisks}
                 canAcceptAllRisks={pendingRiskCount > 0}
                 onUndoLastAction={onUndoLastAction}

@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入第 7-J：`competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 已接入 `apps/api` 业务模块代理路径。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`；竞对分析 health/history 由 `apps/api` 直接实现，RAG health/sessions/conversations/conversations sync 由 `apps/api` 直接实现。Portal knowledgeService 已优先走 `/api/v1/rag` 代理入口，Portal 现在通过 iframe auth bridge 向受信任业务 iframe 提供内存态鉴权上下文；竞对分析和 RAG iframe 前端已优先调用对应 `apps/api` 代理入口，RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端执行，合同审查和标书生成 iframe 前端仍保持原链路。
+当前阶段已进入第 7-K：`competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 已接入 `apps/api` 业务模块代理路径。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`；竞对分析 health/history 由 `apps/api` 直接实现，RAG health/sessions/conversations/conversations sync 由 `apps/api` 直接实现。Portal knowledgeService 已优先走 `/api/v1/rag` 代理入口，Portal 现在通过 iframe auth bridge 向受信任业务 iframe 提供内存态鉴权上下文；竞对分析、RAG 和合同审查 iframe 前端已优先调用对应 `apps/api` 代理入口，合同审查业务逻辑仍由 legacy 合同审查后端执行，RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端执行，标书生成 iframe 前端仍保持原链路。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 7-J 阶段：RAG iframe 前端接入 Portal iframe auth bridge，并优先调用 `apps/api` 的 RAG 统一代理入口。
+当前处于第 7-K 阶段：合同审查 iframe 前端接入 Portal iframe auth bridge，并优先调用 `apps/api` 的合同审查代理入口。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback。第 7-G 新增合同审查代理入口 `/api/v1/contract-review/{path:path}`，合同审查业务逻辑仍由 legacy 后端执行。第 7-H 新增标书生成代理入口 `/api/v1/bid-generator/{path:path}`，标书生成业务逻辑仍由 legacy 后端执行。第 7-I 新增 Portal -> iframe auth bridge，并仅将竞对分析 iframe 前端优先切到 `/api/v1/competitor-analysis/**`。第 7-J 将 RAG iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/rag/api/v1/**`；RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端通过 proxy 执行，合同审查和标书生成 iframe 前端仍未切换。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback。第 7-G 新增合同审查代理入口 `/api/v1/contract-review/{path:path}`，合同审查业务逻辑仍由 legacy 后端执行。第 7-H 新增标书生成代理入口 `/api/v1/bid-generator/{path:path}`，标书生成业务逻辑仍由 legacy 后端执行。第 7-I 新增 Portal -> iframe auth bridge，并仅将竞对分析 iframe 前端优先切到 `/api/v1/competitor-analysis/**`。第 7-J 将 RAG iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/rag/api/v1/**`；RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端通过 proxy 执行。第 7-K 将合同审查 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/contract-review/api/**`；合同审查业务逻辑仍由 legacy 合同审查后端通过 proxy 执行，标书生成 iframe 前端仍未切换。
 
 ## Legacy 项目
 
@@ -316,6 +316,14 @@ RAG、合同审查和标书生成 iframe 前端本阶段未切换，仍保持原
 RAG iframe 前端现在优先请求 `/api/v1/rag/api/v1/...` 或对应 platform-api 完整 URL，并携带 `Authorization: Bearer <portal token>` 与 `X-Portal-Client-Id`。bridge 不可用时保留 legacy `VITE_API_BASE_URL` fallback；401 / 403 不 fallback，502 / 503 / network error 可 fallback 到 legacy RAG backend 一次。
 
 RAG chat stream 仍保持 legacy `text/event-stream` 事件格式和读取逻辑，knowledge `create-by-file` 仍使用 `FormData`，RAG chat stream 与 knowledge Dataset 业务逻辑仍由 legacy RAG 后端通过 proxy 执行。Portal knowledgeService 未修改，竞对分析试点不受影响，合同审查和标书生成 iframe 前端仍保持原链路。
+
+## 第 7-K 阶段：合同审查 iframe auth bridge 接入
+
+第 7-K 将合同审查 iframe 前端接入第 7-I 的 Portal auth bridge。合同审查 iframe 通过 `clover:auth-request` 请求鉴权上下文，Portal 父页面校验 iframe origin、`appCode=contract-review`、登录态和应用权限后，通过 `clover:auth-context` 返回 Portal token、`X-Portal-Client-Id` 和合同审查 proxy API base。Portal token 只通过 `postMessage` 传递，不进入 iframe URL，也不写入合同审查子应用长期存储。
+
+合同审查 iframe 前端现在优先请求 `/api/v1/contract-review/api/...` 或对应 platform-api 完整 URL，并携带 `Authorization: Bearer <portal token>` 与 `X-Portal-Client-Id`。bridge 不可用时保留 legacy `VITE_API_BASE_URL` fallback；401 / 403 不 fallback，502 / 503 / network error 可 fallback 到 legacy 合同审查 backend 一次。
+
+合同审查业务逻辑仍由 legacy 合同审查后端通过 proxy 执行，包括文件上传、审查 pipeline、AI 改写、接受、撤销和导出。文件上传仍使用 `FormData` 透传，DOCX 下载改为 authenticated fetch blob。竞对分析和 RAG iframe 前端不受影响，标书生成 iframe 前端仍保持原链路。
 
 ## 第 2 阶段：PostgreSQL 初始化
 
