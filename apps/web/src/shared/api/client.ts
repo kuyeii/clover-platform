@@ -1,4 +1,4 @@
-import { getAccessToken } from "../auth/token";
+import { getAccessToken, getClientId } from "../auth/token";
 
 export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
@@ -6,6 +6,7 @@ export type ApiClientOptions = {
   baseUrl?: string;
   getToken?: () => string | null;
   fetchImpl?: typeof fetch;
+  onUnauthorized?: () => void;
 };
 
 export type RequestOptions = {
@@ -14,6 +15,8 @@ export type RequestOptions = {
   query?: Record<string, string | number | boolean | null | undefined>;
   body?: unknown;
   signal?: AbortSignal;
+  credentials?: RequestCredentials;
+  unwrapEnvelope?: boolean;
 };
 
 export type ApiErrorDetails = {
@@ -62,11 +65,17 @@ export class ApiClient {
   private readonly baseUrl: string;
   private readonly getToken?: () => string | null;
   private readonly fetchImpl: typeof fetch;
+  private onUnauthorized?: () => void;
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = trimTrailingSlash(options.baseUrl || DEFAULT_API_BASE_URL);
     this.getToken = options.getToken;
     this.fetchImpl = options.fetchImpl || fetch;
+    this.onUnauthorized = options.onUnauthorized;
+  }
+
+  setUnauthorizedHandler(handler?: () => void) {
+    this.onUnauthorized = handler;
   }
 
   get<T>(path: string, options: Omit<RequestOptions, "body"> = {}) {
@@ -90,7 +99,8 @@ export class ApiClient {
     const headers = new Headers(options.headers);
 
     headers.set("Accept", "application/json");
-    if (options.body !== undefined) {
+    headers.set("X-Portal-Client-Id", getClientId());
+    if (options.body !== undefined && !(options.body instanceof FormData)) {
       headers.set("Content-Type", "application/json");
     }
     if (token) {
@@ -100,12 +110,22 @@ export class ApiClient {
     const response = await this.fetchImpl(buildUrl(this.baseUrl, path, options.query), {
       method,
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body:
+        options.body === undefined
+          ? undefined
+          : options.body instanceof FormData
+            ? options.body
+            : JSON.stringify(options.body),
+      credentials: options.credentials ?? "include",
       signal: options.signal,
     });
 
     if (!response.ok) {
-      throw await buildApiError(response);
+      const error = await buildApiError(response);
+      if (error.status === 401) {
+        this.onUnauthorized?.();
+      }
+      throw error;
     }
 
     if (response.status === 204) {
@@ -114,7 +134,24 @@ export class ApiClient {
 
     const contentType = response.headers.get("Content-Type") || "";
     if (contentType.includes("application/json")) {
-      return response.json() as Promise<T>;
+      const payload = await response.json();
+      if (options.unwrapEnvelope === false) {
+        return payload as T;
+      }
+      if (payload?.success === true && "data" in payload) {
+        return payload.data as T;
+      }
+      if (payload?.success === false) {
+        throw new ApiRequestError({
+          status: response.status,
+          code: payload?.error?.code || "API_ERROR",
+          message: payload?.error?.message || "请求失败，请稍后重试。",
+          details: payload?.error?.details,
+          requestId: payload?.request_id || response.headers.get("X-Request-ID"),
+          response: payload,
+        });
+      }
+      return payload as T;
     }
 
     return response.text() as Promise<T>;
@@ -176,3 +213,43 @@ function trimTrailingSlash(value: string): string {
 export const apiClient = new ApiClient({
   getToken: getAccessToken,
 });
+
+export function getApiBaseUrl() {
+  return trimTrailingSlash(DEFAULT_API_BASE_URL);
+}
+
+export function getPlatformCoreApiBaseUrl() {
+  const base = getApiBaseUrl();
+  return base.endsWith("/core") ? base : `${base}/core`;
+}
+
+export function getWebSocketBaseUrl() {
+  const explicit = import.meta.env.VITE_WS_BASE_URL;
+  if (explicit) {
+    return trimTrailingSlash(String(explicit));
+  }
+
+  if (/^https?:\/\//i.test(getApiBaseUrl())) {
+    try {
+      const url = new URL(getApiBaseUrl());
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.pathname = "/ws/core";
+      url.search = "";
+      url.hash = "";
+      return trimTrailingSlash(url.toString());
+    } catch {
+      // Fall through to current origin.
+    }
+  }
+
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/ws/core`;
+}
+
+export function getAppUsageWebSocketUrl() {
+  return `${getWebSocketBaseUrl()}/app-usage`;
+}

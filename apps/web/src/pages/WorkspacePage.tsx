@@ -1,42 +1,176 @@
-import { PlaceholderCard } from "../shared/components/PlaceholderCard";
-import { moduleEntries } from "../shared/config/modules";
+import { useState } from "react";
+
 import type { NavigateFn } from "../routes";
+import { useAuth } from "../shared/auth/AuthProvider";
+import { Icon } from "../shared/components/Icon";
+import { useAppUsage } from "../shared/runtime/AppUsageProvider";
+import { useRuntimeApps } from "../shared/runtime/RuntimeAppsProvider";
+import type { ModuleCode, PortalModule } from "../shared/types/portal";
 
-type WorkspacePageProps = {
-  navigate: NavigateFn;
-};
+function ModuleIcon({ code }: { code: ModuleCode }) {
+  if (code === "competitor-analysis") {
+    return <Icon name="chart" />;
+  }
+  if (code === "rag-web-search") {
+    return <Icon name="message" />;
+  }
+  if (code === "contract-review") {
+    return <Icon name="shield" />;
+  }
+  return <Icon name="file" />;
+}
 
-export function WorkspacePage({ navigate }: WorkspacePageProps) {
+function UsageBadge({ appId }: { appId: ModuleCode }) {
+  const { getAppUsage } = useAppUsage();
+  const usage = getAppUsage(appId);
+  if (!usage.inUse) {
+    return null;
+  }
+  const label = usage.inUseByOthers
+    ? usage.otherUserNames.length > 1
+      ? `${usage.otherUserNames.length} 人使用中`
+      : `${usage.otherUserNames[0] || "其他用户"} 使用中`
+    : "我正在使用";
+  return <span className={usage.inUseByOthers ? "usage-badge warning" : "usage-badge"}>{label}</span>;
+}
+
+function ModuleCard({ module, navigate }: { module: PortalModule; navigate: NavigateFn }) {
+  const { canAccessApp } = useAuth();
+  const { enterApp, getAppUsage } = useAppUsage();
+  const [confirming, setConfirming] = useState(false);
+  const [localError, setLocalError] = useState("");
+  const usage = getAppUsage(module.code);
+  const allowed = canAccessApp(module.code);
+  const isNative = module.code === "competitor-analysis";
+
+  const go = async (confirmedConflict = false) => {
+    if (!allowed) {
+      return;
+    }
+    try {
+      await enterApp(module.code, { confirmedConflict });
+      navigate(module.route);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "进入应用失败。");
+    }
+  };
+
+  const handleEnter = () => {
+    setLocalError("");
+    if (usage.inUseByOthers) {
+      setConfirming(true);
+      return;
+    }
+    void go(false);
+  };
+
+  return (
+    <article className={allowed ? "workspace-card" : "workspace-card disabled"}>
+      <div className="workspace-card-head">
+        <span className="module-icon">
+          <ModuleIcon code={module.code} />
+        </span>
+        <UsageBadge appId={module.code} />
+      </div>
+      <div className="workspace-card-copy">
+        <span className="eyebrow">{isNative ? "Native page" : "Iframe bridge"}</span>
+        <h2>{module.name}</h2>
+        <p>{module.description}</p>
+      </div>
+      {localError ? <p className="form-error">{localError}</p> : null}
+      <button type="button" className="secondary-button" disabled={!allowed} onClick={handleEnter}>
+        {allowed ? (isNative ? "打开原生页面" : "进入 iframe") : "暂无权限"}
+        <Icon name={allowed ? "arrow" : "lock"} />
+      </button>
+
+      {confirming ? (
+        <div className="modal-backdrop">
+          <section className="dialog" role="dialog" aria-modal="true">
+            <button className="icon-button dialog-close" type="button" onClick={() => setConfirming(false)}>
+              <Icon name="close" />
+            </button>
+            <span className="dialog-icon warning">
+              <Icon name="users" />
+            </span>
+            <h3>应用正在被使用</h3>
+            <p>{usage.otherUserNames.join("、") || "其他用户"} 当前正在使用 {module.name}，确认后会同时进入，不会中断对方会话。</p>
+            <div className="dialog-actions">
+              <button type="button" className="ghost-button" onClick={() => setConfirming(false)}>取消</button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  setConfirming(false);
+                  void go(true);
+                }}
+              >
+                确认进入
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+export function WorkspacePage({ navigate }: { navigate: NavigateFn }) {
+  const { currentUser } = useAuth();
+  const { modules, error, refreshRuntimeApps } = useRuntimeApps();
+  const { summaries, refreshUsage } = useAppUsage();
+  const accessibleCount = modules.filter((module) =>
+    currentUser?.role === "admin" || currentUser?.appPermissions.includes(module.code),
+  ).length;
+
   return (
     <section className="page-stack">
-      <div className="page-heading">
-        <span className="eyebrow">/workspace</span>
-        <h1>统一工作台占位</h1>
-        <p>
-          当前只建立统一前端骨架和模块入口。四个业务页面仍由 legacy iframe 前端承载，后续阶段再逐个迁入。
-        </p>
-      </div>
+      <header className="page-hero compact">
+        <div>
+          <span className="eyebrow">Workspace</span>
+          <h1>统一工作台</h1>
+          <p>Portal 平台能力已迁入 apps/web。竞对分析是原生页面，RAG、合同审查和标书生成仍通过可信 iframe 接入。</p>
+        </div>
+        <div className="hero-metrics">
+          <div>
+            <span>可访问模块</span>
+            <strong>{accessibleCount}/{modules.length}</strong>
+          </div>
+          <div>
+            <span>占用模块</span>
+            <strong>{summaries.filter((item) => item.inUse).length}</strong>
+          </div>
+        </div>
+      </header>
 
-      <div className="module-grid">
-        {moduleEntries.map((entry) => (
-          <button
-            key={entry.slug}
-            type="button"
-            className="module-card"
-            onClick={() => navigate(entry.route)}
-          >
-            <span className="module-kicker">{entry.code}</span>
-            <strong>{entry.name}</strong>
-            <span>{entry.description}</span>
+      {error ? (
+        <div className="notice warning">
+          <span>{error}</span>
+          <button type="button" className="ghost-button" onClick={() => void refreshRuntimeApps()}>
+            重试
           </button>
+        </div>
+      ) : null}
+
+      <div className="workspace-grid">
+        {modules.map((module) => (
+          <ModuleCard key={module.code} module={module} navigate={navigate} />
         ))}
       </div>
 
-      <PlaceholderCard title="本阶段不迁移业务 UI" eyebrow="迁移边界">
-        <p>
-          `apps/web` 当前只提供统一布局、路由和 API client 骨架。正式业务交互仍在现有 legacy 前端和 iframe 链路中。
-        </p>
-      </PlaceholderCard>
+      <section className="ops-strip">
+        <button type="button" className="ghost-button" onClick={() => void refreshUsage()}>
+          <Icon name="refresh" />
+          刷新占用状态
+        </button>
+        <button type="button" className="ghost-button" onClick={() => navigate("/users")}>
+          <Icon name="users" />
+          用户管理
+        </button>
+        <button type="button" className="ghost-button" onClick={() => navigate("/feedback")}>
+          <Icon name="message" />
+          用户反馈
+        </button>
+      </section>
     </section>
   );
 }

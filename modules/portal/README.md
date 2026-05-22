@@ -2,7 +2,7 @@
 
 ## 模块当前状态
 
-Portal 是统一入口、登录、用户管理、应用权限、运行时应用列表、应用占用状态和 feedback 的平台核心模块。当前业务前端仍在 `legacy/portal-launchpad`，第 10-A 不迁移真实页面。
+Portal 是统一入口、登录、用户管理、应用权限、运行时应用列表、应用占用状态和 feedback 的平台核心模块。第 10-B 后，Portal 前端能力已迁入 `apps/web`。
 
 ## 后端状态
 
@@ -10,11 +10,11 @@ Portal 核心后端能力已在 `apps/api` 的 `/api/v1/core` 中作为主路径
 
 ## 前端状态
 
-当前正式入口仍是 `legacy/portal-launchpad`。`apps/web` 只提供登录页和工作台占位，不替代 legacy Portal。
+`apps/web` 已承载登录、会话恢复、工作台、模块入口、用户管理、runtime apps、app usage、feedback 和 iframe 容器。`legacy/portal-launchpad` 当前作为回滚入口继续保留，不删除。
 
 ## 后续迁移目标
 
-第 10-B 优先迁移 Portal 登录、工作台、用户管理、统一布局和 token 管理，再评估 iframe 容器与 runtime apps 的迁移节奏。
+后续待迁移项主要是进一步补齐生产级反向代理部署说明、视觉细节回归和 iframe 逐步替换后的 Portal 导航策略。RAG、合同审查和标书生成真实页面迁入前，Portal 仍需保留 iframe 容器。
 
 ## 关键风险点
 

@@ -2,7 +2,7 @@
 
 ## 模块当前状态
 
-竞对分析模块当前后端主路径已迁入 `apps/api`，前端仍在 `legacy/company-competitors-analysis` 并通过 iframe 接入 Portal。
+竞对分析模块当前后端主路径已迁入 `apps/api`，第 10-B 后真实前端页面也已迁入 `apps/web/src/modules/competitor-analysis`。
 
 ## 后端状态
 
@@ -10,11 +10,11 @@
 
 ## 前端状态
 
-真实业务前端仍在 `legacy/company-competitors-analysis`。第 10-A 只在 `apps/web` 新增 `/modules/competitor-analysis` 占位页，不迁移业务页面。
+真实业务页面已在 `apps/web` 原生运行，直接调用 `/api/v1/competitor-analysis/**`。`legacy/company-competitors-analysis` 继续保留为回滚入口，不删除。
 
 ## 后续迁移目标
 
-第 10-C 迁移竞对分析前端到 `apps/web/src/modules/competitor-analysis`，逐步替换 iframe 页面，同时保持 API 路径和响应结构兼容。
+后续重点是继续补齐更细粒度的 UI 回归和导出体验；当前 API 路径和响应结构保持 legacy-compatible。
 
 ## 关键风险点
 
@@ -27,6 +27,9 @@
 ## 验收重点
 
 - history、analysis、analysis stream 和 workflow 调用行为不变。
+- history 列表、详情和删除可用。
+- analysis/stream 保持 NDJSON 流式展示。
+- workflow validate、company detail、compare report 和 score 调用保持兼容。
 - 无权限时返回平台 403，不访问业务链路。
 - stream 不缓冲完整结果，不暴露 secret 或 traceback。
-- iframe 回滚路径在迁移期间仍可使用。
+- legacy 回滚路径在迁移期间仍可使用。
