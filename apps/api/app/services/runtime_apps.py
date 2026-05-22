@@ -35,22 +35,16 @@ def _fallback_app_payload(app: dict[str, Any]) -> dict[str, Any] | None:
     if frontend_port is None:
         return None
 
-    backend_port = (
-        _int_config(dev.get("backend_preferred_port"))
-        or _int_config(dev.get("preferred_port"))
-        or frontend_port
-    )
     iframe_url = _localhost_url(frontend_port)
-    health_check = str(dev.get("health_check") or app.get("legacy_health_check") or "")
     return {
         "code": app.get("code"),
         "name": app.get("name"),
         "routePath": app.get("route_path") or "",
         "frontendUrl": iframe_url,
-        "backendUrl": _localhost_url(backend_port),
+        "backendUrl": "",
         "iframeUrl": iframe_url,
         "url": iframe_url,
-        "healthUrl": f"{_localhost_url(backend_port)}{health_check}",
+        "healthUrl": "",
         "enabled": bool(app.get("enabled", True)),
         "devMode": _dev_mode(dev if isinstance(dev, dict) else {}),
     }

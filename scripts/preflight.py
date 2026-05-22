@@ -19,6 +19,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Check Portal frontend and platform-api without business modules.",
     )
+    parser.add_argument(
+        "--with-legacy-backends",
+        action="store_true",
+        help="Also check legacy business backend rollback dependencies.",
+    )
     parser.add_argument("--strict", action="store_true", help="Treat warnings as failures.")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON.")
     return parser.parse_args()
@@ -64,6 +69,26 @@ def _error_json(name: str, message: str) -> str:
     )
 
 
+def _include_platform_for_business_only(apps_config: dict, selected: set[str]) -> set[str]:
+    if not selected:
+        return selected
+    apps = apps_config.get("apps") or {}
+    business_codes = {
+        str(app.get("code") or key)
+        for key, app in apps.items()
+        if isinstance(app, dict) and bool(app.get("iframe_enabled", False))
+    }
+    if selected & business_codes:
+        return set(selected) | {"platform-api"}
+    return selected
+
+
+def _include_portal_backend(*, no_business: bool, only: set[str]) -> bool:
+    if no_business:
+        return False
+    return "portal" in only
+
+
 def main() -> int:
     args = parse_args()
     os.chdir(REPO_ROOT)
@@ -78,13 +103,16 @@ def main() -> int:
         load_dotenv(REPO_ROOT / ".env")
         apps_config = load_apps_config(REPO_ROOT)
         only = resolve_app_tokens(apps_config, args.only)
+        only = _include_platform_for_business_only(apps_config, only)
         include_codes = select_app_codes(apps_config, no_business=args.no_business, only=only)
+        include_portal_backend = _include_portal_backend(no_business=args.no_business, only=only)
         report = run_preflight(
             REPO_ROOT,
             apps_config,
             include_codes=include_codes,
             strict=args.strict,
-            include_portal_backend=not args.no_business,
+            include_portal_backend=include_portal_backend,
+            include_legacy_backends=args.with_legacy_backends,
         )
     except ModuleNotFoundError as exc:
         _dependency_error(exc.name or "unknown", as_json=args.json)

@@ -73,9 +73,13 @@ def _format_config_url(template: str, *, backend_port: int | None, frontend_port
         return template
     if not names.issubset({"backend_port", "frontend_port"}):
         return ""
+    if "backend_port" in names and backend_port is None:
+        return ""
+    if "frontend_port" in names and frontend_port is None:
+        return ""
 
     try:
-        return template.format(backend_port=backend_port or "", frontend_port=frontend_port or "")
+        return template.format(backend_port=backend_port, frontend_port=frontend_port)
     except (KeyError, IndexError, ValueError):
         return ""
 
@@ -109,8 +113,12 @@ def _backend_url_from_config(app: dict[str, Any]) -> str:
     if not isinstance(dev, dict):
         dev = {}
 
-    backend_port = _int_config(dev.get("backend_preferred_port")) or _int_config(dev.get("preferred_port"))
     frontend_port = _int_config(dev.get("frontend_preferred_port")) or _int_config(dev.get("preferred_port"))
+    backend_port = (
+        _int_config(dev.get("backend_preferred_port"))
+        if bool(dev.get("default_start_backend", False))
+        else None
+    )
 
     for key in ("backend_url", "backend_base_url"):
         configured_url = _normalize_backend_url(
@@ -131,7 +139,7 @@ def _backend_url_from_config(app: dict[str, Any]) -> str:
     if backend_port:
         return f"http://127.0.0.1:{backend_port}"
 
-    return _safe_env_url(app.get("iframe_url_env"))
+    return ""
 
 
 def resolve_business_backend_url(app_code: str) -> str:

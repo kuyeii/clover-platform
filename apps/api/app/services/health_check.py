@@ -86,12 +86,15 @@ def _runtime_apps() -> dict[str, Any]:
 
 def _health_url_from_config(app: dict[str, Any]) -> str:
     dev = app.get("dev") or {}
+    kind = str(dev.get("kind") or "")
     health_check = str(dev.get("health_check") or app.get("legacy_health_check") or "")
-    backend_port = dev.get("backend_preferred_port")
+    backend_port = dev.get("backend_preferred_port") if bool(dev.get("default_start_backend", False)) else None
     frontend_port = dev.get("frontend_preferred_port") or dev.get("preferred_port")
 
     if backend_port:
         return f"http://127.0.0.1:{int(backend_port)}{health_check}"
+    if kind == "frontend_backend":
+        return ""
     if frontend_port:
         return f"http://127.0.0.1:{int(frontend_port)}{health_check}"
     return ""
@@ -167,4 +170,3 @@ def get_modules_health(*, self_health_url: str) -> dict[str, Any]:
         )
 
     return {"ok": True, "modules": modules}
-

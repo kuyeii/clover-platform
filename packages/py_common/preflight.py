@@ -532,6 +532,7 @@ def _check_port_plan(
     port_plan: dict[str, Any] | None,
     *,
     include_portal_backend: bool = True,
+    include_legacy_backends: bool = False,
 ) -> list[CheckResult]:
     try:
         plan = port_plan or check_port_plan(
@@ -539,6 +540,7 @@ def _check_port_plan(
             include_codes=selected,
             exclude_codes=skip,
             include_portal_backend=include_portal_backend,
+            include_legacy_backends=include_legacy_backends,
         )
     except PortAllocationError as exc:
         return [CheckResult("port plan", "error", str(exc), "Stop the process using the configured port range or adjust config/apps.yaml.")]
@@ -643,6 +645,38 @@ def _check_module_common(app: dict[str, Any], repo_root: Path) -> list[CheckResu
                 )
             )
 
+    return results
+
+
+def _check_business_frontend(app: dict[str, Any], repo_root: Path) -> list[CheckResult]:
+    code = str(app.get("code"))
+    _, frontend_dir, _ = _module_paths(app, repo_root)
+    install_dir = _relative(frontend_dir, repo_root)
+    results: list[CheckResult] = [
+        _check_file(f"{code} frontend package.json", frontend_dir / "package.json", repo_root),
+        _check_dir(
+            f"{code} frontend node_modules",
+            frontend_dir / "node_modules",
+            repo_root,
+            fix_hint=f"cd {install_dir} && npm install",
+        ),
+    ]
+
+    dev = app.get("dev") or {}
+    command = str(dev.get("frontend_command") or "").strip()
+    if command:
+        command_name = command.split()[0].strip('"')
+        if shutil.which(command_name):
+            results.append(CheckResult(f"{code} frontend command", "ok", f"{command_name} found"))
+        else:
+            results.append(
+                CheckResult(
+                    f"{code} frontend command",
+                    "error",
+                    f"{command_name} is not available on PATH",
+                    f"Install {command_name} and ensure it is available on PATH.",
+                )
+            )
     return results
 
 
@@ -787,6 +821,31 @@ def _check_legacy_module(app: dict[str, Any], repo_root: Path, env_values: dict[
     return results
 
 
+def _check_business_module(
+    app: dict[str, Any],
+    repo_root: Path,
+    env_values: dict[str, Any],
+    *,
+    include_legacy_backend: bool,
+) -> list[CheckResult]:
+    code = str(app.get("code"))
+    if include_legacy_backend:
+        return _check_legacy_module(app, repo_root, env_values)
+
+    results = _check_business_frontend(app, repo_root)
+    results.append(
+        CheckResult(
+            f"{code} legacy backend rollback dependencies",
+            "skip",
+            "Legacy backend process is not part of the default startup path; rerun with --with-legacy-backends to check rollback dependencies.",
+        )
+    )
+    hint = CONFIG_HINTS.get(code)
+    if hint:
+        results.append(CheckResult(f"{code} workflow configuration", "warn", hint))
+    return results
+
+
 def run_preflight(
     repo_root: str | Path,
     apps_config: dict[str, Any],
@@ -796,6 +855,7 @@ def run_preflight(
     strict: bool = False,
     port_plan: dict[str, Any] | None = None,
     include_portal_backend: bool = True,
+    include_legacy_backends: bool = False,
 ) -> PreflightReport:
     root = Path(repo_root).resolve()
     selected = include_codes or auto_start_codes(apps_config)
@@ -843,6 +903,7 @@ def run_preflight(
             skip,
             port_plan,
             include_portal_backend=include_portal_backend,
+            include_legacy_backends=include_legacy_backends,
         )
     )
 
@@ -870,7 +931,16 @@ def run_preflight(
                 results.extend(_check_portal(app, root, env_values))
             else:
                 results.extend(_check_portal_frontend(app, root))
-        else:
+        elif code == "platform-api":
             results.extend(_check_legacy_module(app, root, env_values))
+        else:
+            results.extend(
+                _check_business_module(
+                    app,
+                    root,
+                    env_values,
+                    include_legacy_backend=include_legacy_backends,
+                )
+            )
 
     return PreflightReport(results=results, strict=strict)

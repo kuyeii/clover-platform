@@ -131,6 +131,7 @@ def check_port_plan(
     exclude_codes: set[str] | None = None,
     exclude_module_keys: set[str] | None = None,
     include_portal_backend: bool = True,
+    include_legacy_backends: bool | None = None,
 ) -> dict[str, Any]:
     apps = apps_config.get("apps") or {}
     if not isinstance(apps, dict):
@@ -205,8 +206,16 @@ def check_port_plan(
                     }
                 )
                 plan["services"].append(backend)
+            plan["apps"][code] = app_plan
+            continue
 
-        elif kind == "frontend_backend" and auto_start:
+        start_legacy_backend = (
+            bool(include_legacy_backends)
+            if include_legacy_backends is not None
+            else bool(dev.get("default_start_backend", auto_start))
+        )
+
+        if kind == "frontend_backend" and auto_start:
             frontend = _reserve_port(
                 label=f"{code} frontend",
                 preferred_port=int(_dev_value(dev, "frontend_preferred_port", "preferred_port")),
@@ -214,31 +223,38 @@ def check_port_plan(
                 host=host,
                 reserved=reserved,
             )
-            backend = _reserve_port(
-                label=f"{code} backend",
-                preferred_port=int(dev["backend_preferred_port"]),
-                port_range=dev["backend_port_range"],
-                host=host,
-                reserved=reserved,
-            )
             app_plan.update(
                 {
                     "frontend_port": frontend["port"],
-                    "backend_port": backend["port"],
                     "port": frontend["port"],
                     "frontend": frontend,
-                    "backend": backend,
                     "frontend_url": f"http://127.0.0.1:{frontend['port']}",
-                    "backend_url": f"http://127.0.0.1:{backend['port']}",
                     "url": f"http://127.0.0.1:{frontend['port']}",
                     "iframe_url": f"http://127.0.0.1:{frontend['port']}",
-                    "health_url": _health_url(
-                        f"http://127.0.0.1:{backend['port']}",
-                        dev.get("health_check") or app.get("legacy_health_check"),
-                    ),
                 }
             )
-            plan["services"].extend([frontend, backend])
+            plan["services"].append(frontend)
+            if start_legacy_backend:
+                backend = _reserve_port(
+                    label=f"{code} backend",
+                    preferred_port=int(dev["backend_preferred_port"]),
+                    port_range=dev["backend_port_range"],
+                    host=host,
+                    reserved=reserved,
+                )
+                backend_url = f"http://127.0.0.1:{backend['port']}"
+                app_plan.update(
+                    {
+                        "backend_port": backend["port"],
+                        "backend_url": backend_url,
+                        "backend": backend,
+                        "health_url": _health_url(
+                            backend_url,
+                            dev.get("health_check") or app.get("legacy_health_check"),
+                        ),
+                    }
+                )
+                plan["services"].append(backend)
 
         elif kind == "backend" and auto_start:
             backend = _reserve_port(
@@ -268,10 +284,14 @@ def check_port_plan(
                 preferred_port=_dev_value(dev, "frontend_preferred_port", "preferred_port"),
                 port_range=_dev_value(dev, "frontend_port_range", "port_range"),
             )
-            backend = _static_port(
-                label=f"{code} backend",
-                preferred_port=dev.get("backend_preferred_port"),
-                port_range=dev.get("backend_port_range"),
+            backend = (
+                _static_port(
+                    label=f"{code} backend",
+                    preferred_port=dev.get("backend_preferred_port"),
+                    port_range=dev.get("backend_port_range"),
+                )
+                if start_legacy_backend
+                else None
             )
 
             if frontend:

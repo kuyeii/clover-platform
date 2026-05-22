@@ -82,7 +82,7 @@ def build_ports_payload(
             app_payload["health_url"] = (
                 f"{plan['backend_url']}{health_check}" if health_check else plan["backend_url"]
             )
-        elif frontend_url and health_check:
+        elif frontend_url and health_check and kind != "frontend_backend":
             app_payload["health_url"] = f"{frontend_url}{health_check}"
 
         payload_apps[code] = app_payload

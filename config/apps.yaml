@@ -78,6 +78,10 @@ apps:
       - bid_generator
     dev:
       enabled: true
+      # Stage 9-E: legacy business backend is kept for rollback/debug only.
+      # Default dev startup launches the iframe frontend; use
+      # scripts/dev.py --with-legacy-backends to start this backend.
+      default_start_backend: false
       kind: frontend_backend
       working_dir: legacy/bid-generator
       frontend_working_dir: legacy/bid-generator/frontend-web
@@ -115,6 +119,10 @@ apps:
       - contract_review
     dev:
       enabled: true
+      # Stage 9-E: legacy business backend is kept for rollback/debug only.
+      # Default dev startup launches the iframe frontend; use
+      # scripts/dev.py --with-legacy-backends to start this backend.
+      default_start_backend: false
       kind: frontend_backend
       working_dir: legacy/contract_review
       frontend_working_dir: legacy/contract_review/frontend
@@ -151,6 +159,10 @@ apps:
       - rag_qa
     dev:
       enabled: true
+      # Stage 9-E: legacy business backend is kept for rollback/debug only.
+      # Default dev startup launches the iframe frontend; use
+      # scripts/dev.py --with-legacy-backends to start this backend.
+      default_start_backend: false
       kind: frontend_backend
       working_dir: legacy/chat_with_rag_and_websearch
       frontend_working_dir: legacy/chat_with_rag_and_websearch/frontend
@@ -187,6 +199,10 @@ apps:
       - competitor_analysis
     dev:
       enabled: true
+      # Stage 9-E: legacy business backend is kept for rollback/debug only.
+      # Default dev startup launches the iframe frontend; use
+      # scripts/dev.py --with-legacy-backends to start this backend.
+      default_start_backend: false
       kind: frontend_backend
       working_dir: legacy/company-competitors-analysis
       frontend_working_dir: legacy/company-competitors-analysis
