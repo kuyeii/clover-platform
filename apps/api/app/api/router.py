@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api import app_usage, auth, competitor_analysis, contract_review_proxy, feedback, health, modules, rag_proxy, runtime, users
+from app.api import (
+    app_usage,
+    auth,
+    bid_generator_proxy,
+    competitor_analysis,
+    contract_review_proxy,
+    feedback,
+    health,
+    modules,
+    rag_proxy,
+    runtime,
+    users,
+)
 
 router = APIRouter(prefix="/core")
 router.include_router(health.router, tags=["health"])
@@ -18,3 +30,4 @@ api_router.include_router(router)
 api_router.include_router(competitor_analysis.router, tags=["competitor-analysis"])
 api_router.include_router(rag_proxy.router, tags=["rag"])
 api_router.include_router(contract_review_proxy.router, tags=["contract-review"])
+api_router.include_router(bid_generator_proxy.router, tags=["bid-generator"])
