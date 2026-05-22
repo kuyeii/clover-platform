@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { FileText, ZoomIn, ZoomOut, RotateCcw, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
+import { ProtectedIframe } from './ProtectedIframe';
 
 interface PdfPreviewProps {
     /** 后端返回的 PDF URL（如 /api/projects/pdf/{id}），空则显示空状态 */
@@ -121,7 +122,7 @@ export function PdfPreview({ pdfUrl, fileName, collapsed, onToggleCollapse }: Pd
                                     <div className="w-6 h-6 border-2 border-gray-300 border-t-sky-500 rounded-full animate-spin" />
                                 </div>
                             )}
-                            <iframe
+                            <ProtectedIframe
                                 ref={iframeRef}
                                 src={fullUrl}
                                 onLoad={handleIframeLoad}

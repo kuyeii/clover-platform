@@ -4,10 +4,11 @@ import {
     AlertTriangle, PanelRightOpen, PanelRightClose, Loader2, Download, RefreshCw, CheckCircle2, RotateCcw
 } from 'lucide-react';
 import clsx from 'clsx';
-import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Project, AnalysisNode } from '../../services/projectService';
 import { projectService } from '../../services/projectService';
+import { ProtectedIframe } from '../ProtectedIframe';
+import { ProtectedMarkdown } from '../ProtectedMarkdown';
 
 function TreeNode({ node, depth, activeId, onAnchorClick, extractingIds, selectedIds, onToggleSelect, virtualFilledIds, isLocked: isLockedByParent = false }: {
     node: AnalysisNode;
@@ -914,9 +915,9 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                 prose-table:text-xs prose-td:py-1.5 prose-td:px-2 prose-th:py-1.5 prose-th:px-2
                 prose-p:my-1 prose-p:text-[13px] prose-p:text-gray-700
             ">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ProtectedMarkdown remarkPlugins={[remarkGfm]}>
                     {normalizeMarkdown(txt)}
-                </ReactMarkdown>
+                </ProtectedMarkdown>
             </div>
         );
     };
@@ -1267,7 +1268,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                 <div className="px-3 py-2 bg-white border-b border-gray-200 shrink-0">
                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">原始招标文件</p>
                                 </div>
-                                <iframe
+                                <ProtectedIframe
                                     src={`${project.pdfUrl}#pagemode=none`}
                                     className="flex-1 w-full border-0"
                                     title="招标文件预览"

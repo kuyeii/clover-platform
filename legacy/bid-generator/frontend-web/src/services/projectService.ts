@@ -4,7 +4,7 @@
  */
 
 import api from './api';
-import { getApiBaseUrl, getBackendBaseUrl } from './apiBase';
+import { bidGeneratorFetch, getBackendBaseUrl } from './apiBase';
 import { extractCoreWritingIntent } from './writingHintService';
 
 const DIAGRAM_GENERATION_ENABLED = false;
@@ -1295,7 +1295,6 @@ export function syncBidModulesForProject(
 // ────────────────────── 常量 ──────────────────────
 
 const STORAGE_KEY = 'proengine_projects';
-const API_BASE = getApiBaseUrl();
 let writeQueue: Promise<void> = Promise.resolve();
 const projectChangeListeners = new Set<() => void>();
 const RUNTIME_DONE_STATES = new Set(['succeeded', 'cancelled', 'failed', 'timed_out']);
@@ -1553,6 +1552,16 @@ function normalizeProjectFromServer(raw: Project): Project {
     return { ...normalizedProject, taskRuntime: normalized };
 }
 
+function buildBackendAssetUrl(path: string | undefined): string | undefined {
+    if (!path) {
+        return undefined;
+    }
+    if (/^https?:\/\//i.test(path) || path.startsWith('blob:')) {
+        return path;
+    }
+    return `${getBackendBaseUrl()}${path}`;
+}
+
 function mapExtractStageProgress(stage: string): { step: number; label: string; percent: number } {
     const s = (stage || '').trim();
     if (!s) return { step: 0, label: '准备中...', percent: 0 };
@@ -1589,14 +1598,14 @@ function mapExtractStageProgress(stage: string): { step: number; label: string; 
 function syncProjectSnapshotToServer(project: Project): void {
     enqueueWrite(async () => {
         const payload = { id: project.id, name: project.name, status: project.status, data: project };
-        let resp = await fetch(`${API_BASE}/projects/${project.id}`, {
+        let resp = await bidGeneratorFetch(`/projects/${project.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
         if (!resp.ok) {
             // PUT 失败（项目不存在）→ 尝试 POST 创建
-            resp = await fetch(`${API_BASE}/projects`, {
+            resp = await bidGeneratorFetch(`/projects`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -1623,7 +1632,7 @@ function syncProjectPatchToServer(
             status: fallbackMeta?.status,
             data_patch: patch,
         };
-        const resp = await fetch(`${API_BASE}/projects/${projectId}`, {
+        const resp = await bidGeneratorFetch(`/projects/${projectId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -1643,7 +1652,7 @@ function deleteProjectFromServer(id: string): void {
         // 1) 删除 SQLite 项目记录（project_routes.py），短重试应对瞬时锁冲突
         let projectDeleteOk = false;
         for (let i = 0; i < 3; i += 1) {
-            const pr = await fetch(`${API_BASE}/projects/${id}`, { method: 'DELETE' });
+            const pr = await bidGeneratorFetch(`/projects/${id}`, { method: 'DELETE' });
             if (pr.ok || pr.status === 404) {
                 projectDeleteOk = true;
                 break;
@@ -1655,7 +1664,7 @@ function deleteProjectFromServer(id: string): void {
         if (!projectDeleteOk) throw new Error('project delete failed after retries');
 
         // 2) 删除文件/内存缓存（routes.py）
-        const cr = await fetch(`${API_BASE}/projects/${id}/caches`, { method: 'DELETE' });
+        const cr = await bidGeneratorFetch(`/projects/${id}/caches`, { method: 'DELETE' });
         if (!cr.ok && cr.status !== 404) {
             throw new Error(`cache delete HTTP ${cr.status}`);
         }
@@ -1690,7 +1699,7 @@ async function fetchServerProjects(options?: { waitForWrites?: boolean }): Promi
         if (options?.waitForWrites !== false) {
             await writeQueue;
         }
-        const resp = await fetch(`${API_BASE}/projects`);
+        const resp = await bidGeneratorFetch(`/projects`);
         if (!resp.ok) return null;
         const rows: any[] = await resp.json();
         return rows.map((sp: any) => normalizeProjectFromServer((sp?.data || sp) as Project));
@@ -1702,7 +1711,7 @@ async function fetchServerProjects(options?: { waitForWrites?: boolean }): Promi
 async function fetchServerProject(id: string): Promise<Project | null> {
     try {
         await writeQueue;
-        const resp = await fetch(`${API_BASE}/projects/${encodeURIComponent(id)}`);
+        const resp = await bidGeneratorFetch(`/projects/${encodeURIComponent(id)}`);
         if (!resp.ok) return null;
         const row: any = await resp.json();
         return normalizeProjectFromServer((row?.data || row) as Project);
@@ -1769,7 +1778,7 @@ async function migrateToServer(): Promise<{ created: number; updated: number } |
         const all = loadAll();
         if (!all.length) return null;
         const payload = all.map(p => ({ id: p.id, name: p.name, status: p.status, data: p }));
-        const resp = await fetch(`${API_BASE}/projects/batch`, {
+        const resp = await bidGeneratorFetch(`/projects/batch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -1870,7 +1879,7 @@ export const projectService = {
         let lastError: Error | null = null;
         for (let i = 0; i < 3; i += 1) {
             try {
-                const resp = await fetch(`${API_BASE}/projects/${id}`, {
+                const resp = await bidGeneratorFetch(`/projects/${id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1908,7 +1917,7 @@ export const projectService = {
     /** 查询任务状态（后端标准状态机） */
     async getTaskStatus(taskId: string, projectId?: string): Promise<any> {
         const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        const resp = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/status${qs}`);
+        const resp = await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/status${qs}`);
         if (!resp.ok) {
             throw new Error(`任务状态查询失败: ${resp.status}`);
         }
@@ -2051,7 +2060,7 @@ export const projectService = {
     /** 打开通用任务进度 SSE（outline/extract/content 等） */
     async openTaskProgressStream(taskId: string, projectId: string, signal?: AbortSignal): Promise<Response> {
         const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        return fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/progress${qs}`, { signal });
+        return bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/progress${qs}`, { signal });
     },
 
     /**
@@ -2124,7 +2133,7 @@ export const projectService = {
             max_diagrams: 0,
         };
 
-        const resp = await fetch(`${API_BASE}/tasks/start-outline`, {
+        const resp = await bidGeneratorFetch(`/tasks/start-outline`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -2167,7 +2176,7 @@ export const projectService = {
     /** 请求取消任务：等待后端完成取消收敛 */
     async cancelTask(taskId: string, projectId?: string): Promise<any> {
         const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        const resp = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/cancel${qs}`, {
+        const resp = await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/cancel${qs}`, {
             method: 'POST',
         });
         if (!resp.ok) {
@@ -2208,9 +2217,7 @@ export const projectService = {
                     ? response.analysis_v2
                     : undefined,
                 // PDF 预览 URL — 后端返回相对路径，需拼上后端 origin 才能在 iframe 加载
-                pdfUrl: response.pdf_url
-                    ? `${getBackendBaseUrl()}${response.pdf_url}`
-                    : undefined,
+                pdfUrl: buildBackendAssetUrl(response.pdf_url),
                 bidType: response.bid_type,
                 summary: response.project_summary,
                 mappingTable: response.mapping_table || {},
@@ -2243,7 +2250,6 @@ export const projectService = {
             onError?: (data: { message: string }) => void;
         }
     ): Promise<Project | null> {
-        const apiBase = getApiBaseUrl();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('project_name', file.name.replace(/\.\w+$/, ''));
@@ -2258,7 +2264,7 @@ export const projectService = {
         formData.append('use_vision_parsing', String(useVision));
 
         // 发起后台任务
-        const startResp = await fetch(`${apiBase}/tasks/start-extract`, {
+        const startResp = await bidGeneratorFetch(`/tasks/start-extract`, {
             method: 'POST',
             body: formData,
         });
@@ -2283,7 +2289,7 @@ export const projectService = {
         let resultData: any = null;
         try {
             // 连接 SSE 进度
-            const response = await fetch(`${apiBase}/tasks/${task_id}/progress?project_id=${encodeURIComponent(projectId)}`);
+            const response = await bidGeneratorFetch(`/tasks/${task_id}/progress?project_id=${encodeURIComponent(projectId)}`);
             if (!response.ok) throw new Error(`进度连接失败: ${response.status}`);
 
             const reader = response.body?.getReader();
@@ -2366,9 +2372,7 @@ export const projectService = {
                     ? resultData.analysis_report : undefined,
                 analysisV2: resultData.analysis_v2?.schema_version
                     ? resultData.analysis_v2 : undefined,
-                pdfUrl: resultData.pdf_url
-                    ? `${getBackendBaseUrl()}${resultData.pdf_url}`
-                    : undefined,
+                pdfUrl: buildBackendAssetUrl(resultData.pdf_url),
                 bidType: resultData.bid_type,
                 summary: resultData.project_summary,
                 mappingTable: resultData.mapping_table || {},
@@ -2468,8 +2472,7 @@ export const projectService = {
 
     /** 导出解析报告 PDF（后端生成） */
     async exportReportPdf(projectName: string, nodes: any[]): Promise<void> {
-        const apiBase = getApiBaseUrl();
-        const resp = await fetch(`${apiBase}/projects/export-report`, {
+        const resp = await bidGeneratorFetch(`/projects/export-report`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ project_name: projectName, nodes }),
@@ -2506,7 +2509,6 @@ export const projectService = {
         selectedNodeIds?: string[],
         signal?: AbortSignal,
     ): Promise<void> {
-        const apiBase = getApiBaseUrl();
         const storageKey = `proengine_analyze_task_${projectId}`;
         const currentRuntime = this.getById(projectId)?.taskRuntime;
 
@@ -2530,7 +2532,7 @@ export const projectService = {
             formData.append('selected_node_ids', selectedNodeIds.join(','));
         }
 
-        const startRes = await fetch(`${apiBase}/tasks/start-analyze`, {
+        const startRes = await bidGeneratorFetch(`/tasks/start-analyze`, {
             method: 'POST',
             body: formData,
             signal,
@@ -2605,9 +2607,7 @@ export const projectService = {
         },
         signal?: AbortSignal,
     ): Promise<void> {
-        const apiBase = getApiBaseUrl();
-
-        const response = await fetch(`${apiBase}/tasks/${taskId}/progress?project_id=${encodeURIComponent(projectId)}`, { signal });
+        const response = await bidGeneratorFetch(`/tasks/${taskId}/progress?project_id=${encodeURIComponent(projectId)}`, { signal });
         if (!response.ok) {
             if (response.status === 404) {
                 // 后端重启或任务过期 → 清除残留 task_id，静默退出，不向用户报错
@@ -2727,9 +2727,7 @@ export const projectService = {
         onChunk?: (partial: string) => void,
         onBidAttachments?: (items: BidAttachmentItem[]) => void,
     ): Promise<{ content: string } | null> {
-        const apiBase = getApiBaseUrl();
-
-        const res = await fetch(`${apiBase}/projects/${projectId}/analyze-node`, {
+        const res = await bidGeneratorFetch(`/projects/${projectId}/analyze-node`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ node_id: nodeId, node_label: nodeLabel, extraction_prompt: extractionPrompt }),
@@ -2774,9 +2772,8 @@ export const projectService = {
 
     /** 持久化解析报告到后端 */
     async saveAnalysisReport(projectId: string, nodes: AnalysisNode[]): Promise<void> {
-        const apiBase = getApiBaseUrl();
         try {
-            await fetch(`${apiBase}/projects/${projectId}/analysis-report`, {
+            await bidGeneratorFetch(`/projects/${projectId}/analysis-report`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ analysis_report: nodes }),
@@ -2788,9 +2785,8 @@ export const projectService = {
 
     /** 从后端读取解析报告 */
     async loadAnalysisReport(projectId: string): Promise<AnalysisNode[]> {
-        const apiBase = getApiBaseUrl();
         try {
-            const res = await fetch(`${apiBase}/projects/${projectId}/analysis-report`);
+            const res = await bidGeneratorFetch(`/projects/${projectId}/analysis-report`);
             if (!res.ok) return [];
             const data = await res.json();
             if (data.analysis_v2?.schema_version) {
@@ -3083,8 +3079,6 @@ export const projectService = {
             generationStrategy,
         );
 
-        const apiBase = getApiBaseUrl();
-
         const requestBody = {
             project_id: params.projectId,
             section_id: params.sectionId,
@@ -3118,7 +3112,7 @@ export const projectService = {
         (async () => {
             try {
                 // 发起后台任务
-                const startResp = await fetch(`${apiBase}/tasks/start-content`, {
+                const startResp = await bidGeneratorFetch(`/tasks/start-content`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody),
@@ -3149,7 +3143,7 @@ export const projectService = {
                     if (controller.signal.aborted) break;
 
                     try {
-                        const statusResp = await fetch(`${apiBase}/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
+                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
                         if (!statusResp.ok) {
                             if (statusResp.status === 404) {
                                 setLocalTaskRuntime(params.projectId, {
@@ -3233,7 +3227,7 @@ export const projectService = {
                                     feedback: r.feedback,
                                     replace_report: r.replace_report || [],
                                 };
-                                const dStart = await fetch(`${apiBase}/tasks/start-diagram`, {
+                                const dStart = await bidGeneratorFetch(`/tasks/start-diagram`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(diagramBody),
@@ -3267,7 +3261,7 @@ export const projectService = {
                                         await new Promise<void>(res => setTimeout(res, dpoll));
                                         if (controller.signal.aborted) break;
                                         try {
-                                            const dsr = await fetch(`${apiBase}/tasks/${diagramTid}/status?project_id=${encodeURIComponent(params.projectId)}`);
+                                            const dsr = await bidGeneratorFetch(`/tasks/${diagramTid}/status?project_id=${encodeURIComponent(params.projectId)}`);
                                             if (!dsr.ok) {
                                                 if (dsr.status === 404) {
                                                     setLocalTaskRuntime(params.projectId, {
@@ -3537,7 +3531,6 @@ export const projectService = {
 
         const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
-        const apiBase = getApiBaseUrl();
         const taskStorageKey = buildContentTaskStorageKey(params.projectId, params.sectionId);
         const requestBody = {
             project_id: params.projectId,
@@ -3557,7 +3550,7 @@ export const projectService = {
 
         (async () => {
             try {
-                const startResp = await fetch(`${apiBase}/tasks/start-content-rewrite`, {
+                const startResp = await bidGeneratorFetch(`/tasks/start-content-rewrite`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody),
@@ -3585,7 +3578,7 @@ export const projectService = {
                     await new Promise(r => setTimeout(r, pollMs));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusResp = await fetch(`${apiBase}/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
+                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
                         if (!statusResp.ok) {
                             if (statusResp.status === 404) {
                                 setLocalTaskRuntime(params.projectId, {
@@ -3803,7 +3796,6 @@ export const projectService = {
             };
         });
 
-        const apiBase = getApiBaseUrl();
         const enableDiagrams = DIAGRAM_GENERATION_ENABLED;
         const maxDiagrams = 0;
         const requestBody = {
@@ -3823,7 +3815,7 @@ export const projectService = {
 
         (async () => {
             try {
-                const workflowResp = await fetch(`${apiBase}/config/workflow-status`);
+                const workflowResp = await bidGeneratorFetch(`/config/workflow-status`);
                 if (workflowResp.ok) {
                     const workflowStatus = await workflowResp.json();
                     if (workflowStatus?.content_group_writer?.configured === false) {
@@ -3831,7 +3823,7 @@ export const projectService = {
                         return;
                     }
                 }
-                const startResp = await fetch(`${apiBase}/tasks/start-content-group`, {
+                const startResp = await bidGeneratorFetch(`/tasks/start-content-group`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody),
@@ -3891,10 +3883,11 @@ export const projectService = {
                     await new Promise(r => setTimeout(r, pollMs));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusUrl = new URL(`${apiBase}/tasks/${task_id}/status`, window.location.origin);
-                        statusUrl.searchParams.set('project_id', params.projectId);
-                        statusUrl.searchParams.set('after_event_id', String(lastPartialEventId));
-                        const statusResp = await fetch(statusUrl.toString());
+                        const statusParams = new URLSearchParams({
+                            project_id: params.projectId,
+                            after_event_id: String(lastPartialEventId),
+                        });
+                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?${statusParams.toString()}`);
                         if (!statusResp.ok) {
                             if (statusResp.status === 404) {
                                 setLocalTaskRuntime(params.projectId, {
@@ -4053,7 +4046,6 @@ export const projectService = {
         const projectSummary = proj?.blueprint
             ? `【项目核心定位】\n${proj.blueprint.positioning}\n\n【整体投标策略】\n${proj.blueprint.strategy}\n\n【差异化亮点】\n${proj.blueprint.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${proj.blueprint.writing_style}`
             : (proj?.summary || '');
-        const apiBase = getApiBaseUrl();
         const groupAnalysisContext = (() => {
             if (!proj?.analysisReport?.length) return '';
             const ids = sections.map(item => item.section_id);
@@ -4072,7 +4064,7 @@ export const projectService = {
 
         (async () => {
             try {
-                const startResp = await fetch(`${apiBase}/tasks/start-group-review`, {
+                const startResp = await bidGeneratorFetch(`/tasks/start-group-review`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -4096,7 +4088,7 @@ export const projectService = {
                     await new Promise(r => setTimeout(r, 2000));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusResp = await fetch(`${apiBase}/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
+                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
                         if (!statusResp.ok) {
                             if (statusResp.status === 404) {
                                 callbacks.onError('评估任务不存在或已过期');
@@ -4156,7 +4148,6 @@ export const projectService = {
         onExpired?: () => void;
     }): AbortController {
         const controller = new AbortController();
-        const apiBase = getApiBaseUrl();
         const taskStorageKey = buildContentTaskStorageKey(projectId, sectionId);
 
         (async () => {
@@ -4168,7 +4159,7 @@ export const projectService = {
                 firstCheck = false;
                 if (controller.signal.aborted) break;
                 try {
-                    const resp = await fetch(`${apiBase}/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`);
+                    const resp = await bidGeneratorFetch(`/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`);
                     if (!resp.ok) {
                         if (resp.status === 404) {
                             // 后端重启或任务过期 → 静默清理，重置到 idle（用户可凭「重新生成」恢复）
@@ -4576,8 +4567,7 @@ export const bidAttachmentService = {
     },
 
     getSourceDocx: async (projectId: string): Promise<Blob> => {
-        const apiBase = getApiBaseUrl();
-        const resp = await fetch(`${apiBase}/projects/${encodeURIComponent(projectId)}/source-docx`);
+        const resp = await bidGeneratorFetch(`/projects/${encodeURIComponent(projectId)}/source-docx`);
         if (!resp.ok) {
             const msg = await resp.text().catch(() => '');
             throw new Error(msg || `获取原始 DOCX 失败: HTTP ${resp.status}`);
@@ -4622,8 +4612,7 @@ export const bidAttachmentService = {
         projectId: string,
         params: { attachmentName: string; startBlockId: string; endBlockId: string },
     ): Promise<Blob> => {
-        const apiBase = getApiBaseUrl();
-        const resp = await fetch(`${apiBase}/bid-attachment/extract-by-block-docx`, {
+        const resp = await bidGeneratorFetch(`/bid-attachment/extract-by-block-docx`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -21,10 +21,11 @@ import {
     buildContentTaskStorageKey,
     getContentTaskStorageCandidates,
 } from '../services/projectService';
-import { getApiBaseUrl } from '../services/apiBase';
+import { bidGeneratorFetch } from '../services/apiBase';
 import clsx from 'clsx';
 import { ContentEditor } from './ContentEditor';
 import { TaskLoadingState } from './TaskLoadingState';
+import { ProtectedIframe } from './ProtectedIframe';
 
 interface Props {
     projectId?: string;  // 当前项目 ID
@@ -961,8 +962,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             resumeTargets.forEach(({ blockId, taskId }) => {
                                 // 竞态约束：先快速查一次后端状态，若已 done 则直接应用，不等 resumeContentTask 轮询
                                 // 场景：刷新前任务刚完成但结果还没写入 localStorage，后端已有数据
-                                const apiBase = getApiBaseUrl();
-                                fetch(`${apiBase}/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`)
+                                bidGeneratorFetch(`/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`)
                                     .then(r => r.ok ? r.json() : null)
                                     .then(taskStatus => {
                                         if (taskStatus?.status === 'done' && taskStatus.result) {
@@ -1998,7 +1998,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                 <div className="px-3 py-2 bg-white border-b border-gray-200 shrink-0">
                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">原始招标文件</p>
                                 </div>
-                                <iframe
+                                <ProtectedIframe
                                     src={`${pdfUrl}#pagemode=none`}
                                     className="flex-1 w-full border-0"
                                     title="招标文件预览"

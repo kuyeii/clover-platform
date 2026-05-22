@@ -26,6 +26,7 @@ import {
 import clsx from 'clsx';
 import { marked } from 'marked';
 import turndownService from '../utils/turndown';
+import { resolveProtectedAssetUrl } from '../services/protectedAssetUrl';
 
 export const CONTENT_PREVIEW_PROSE_CLASS =
     'content-editor-prose prose prose-sm prose-sky max-w-none text-gray-700 ' +
@@ -54,6 +55,47 @@ function makeResponsiveSvg(svg: string): string {
     processed = processed.replace(/\s+height="[^"]*"/, ' height="auto"');
     return processed;
 }
+
+function ProtectedImageNode({ node }: NodeViewProps) {
+    const attrs = node.attrs as { src?: string; alt?: string; title?: string };
+    const src = String(attrs.src || '');
+    const [resolvedSrc, setResolvedSrc] = useState(src);
+
+    useEffect(() => {
+        let cancelled = false;
+        resolveProtectedAssetUrl(src)
+            .then((url) => {
+                if (!cancelled) {
+                    setResolvedSrc(url);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setResolvedSrc('');
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [src]);
+
+    return (
+        <NodeViewWrapper className="my-2">
+            <img
+                src={resolvedSrc}
+                alt={attrs.alt || ''}
+                title={attrs.title || undefined}
+                className="max-w-full rounded-lg"
+            />
+        </NodeViewWrapper>
+    );
+}
+
+const ProtectedImageExtension = Image.extend({
+    addNodeView() {
+        return ReactNodeViewRenderer(ProtectedImageNode);
+    },
+});
 
 /** 基础 SVG 清洗：移除 script/foreignObject 与内联事件，降低注入风险 */
 function sanitizeSvg(svg: string): string {
@@ -385,7 +427,7 @@ export function ContentEditor({ content, onChange, readOnly = false, className, 
             Underline,
             Table.configure({ resizable: true }),
             TableRow, TableCell, TableHeader,
-            Image.configure({ allowBase64: true, HTMLAttributes: { class: 'max-w-full rounded-lg my-2' } }),
+            ProtectedImageExtension.configure({ allowBase64: true, HTMLAttributes: { class: 'max-w-full rounded-lg my-2' } }),
             DiagramNode,
         ],
         content: renderContentToHtml(content) || '',
