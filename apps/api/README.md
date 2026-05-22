@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 9-B 阶段继续按模块迁移业务实现，并完成 `rag-web-search` 主要业务 API direct 迁移。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块继续具备统一代理入口和 iframe auth bridge 接入。当前仍处于 `apps/api` direct/proxy 混合阶段：竞对分析和 RAG 主要业务已由 `apps/api` 直接承载，合同审查和标书生成复杂业务仍由对应 legacy 后端执行。
+`apps/api` 是 Clover Platform 统一后端基座。第 9-C 阶段继续按模块迁移业务实现，并完成 `contract-review` 合同审查主要业务 API direct 迁移。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块继续具备统一代理入口和 iframe auth bridge 接入。当前仍处于 `apps/api` direct/proxy 混合阶段：竞对分析、RAG 和合同审查主要业务已由 `apps/api` 直接承载，标书生成复杂业务仍由对应 legacy 后端执行。
 
 ## 当前职责
 
@@ -13,9 +13,9 @@
 - 为 Portal 前端提供 auth、users、app-usage、runtime apps、feedback 和 `/ws/core/app-usage`。
 - 为 `competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 提供鉴权后的业务 API 入口。
 - 支持业务 iframe 前端通过 Portal auth bridge 获取内存态 token 和 `apiBaseUrl` 后调用 `apps/api`；token 不通过 iframe URL 传递。
-- 当前不持有统一文件存储，也不是统一任务调度器；复杂文件产物仍由 legacy backend 读写本地文件系统，任务状态继续沿用各 legacy 模块现有机制。
+- 当前不持有统一文件存储，也不是统一任务调度器；合同审查 direct API 仍读写原 legacy 本地目录，标书生成复杂文件产物仍由 legacy backend 维护，任务状态继续沿用各模块现有机制。
 
-第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 第 8 阶段收口见 `docs/stage-8-f-stage-8-rollup.md`。第 9-A 竞对分析完整迁移见 `docs/stage-9-a-competitor-analysis-full-migration.md`。第 9-B RAG 问答完整迁移见 `docs/stage-9-b-rag-full-migration.md`。
+第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 第 8 阶段收口见 `docs/stage-8-f-stage-8-rollup.md`。第 9-A 竞对分析完整迁移见 `docs/stage-9-a-competitor-analysis-full-migration.md`。第 9-B RAG 问答完整迁移见 `docs/stage-9-b-rag-full-migration.md`。第 9-C 合同审查完整迁移见 `docs/stage-9-c-contract-review-full-migration.md`。
 
 ## 业务代理入口
 
@@ -28,7 +28,7 @@ Direct / proxy 混合状态：
 
 - `competitor-analysis`：`/api/health`、`/api/history*`、`/api/analysis`、`/api/analysis/stream` 和 `/api/workflows/*` 已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
 - `rag-web-search`：`/api/v1/health`、`/api/v1/sessions`、`/api/v1/conversations`、`/api/v1/conversations/sync`、`/api/v1/chat/stream` 和 `/api/v1/knowledge/**` 已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
-- `contract-review`：`/api/health`、`/api/config` direct 到 `apps/api`；`diagnostics/converters`、`reviews/**`、DOCX 下载和 AI 相关接口仍 proxy 到 legacy 合同审查后端。
+- `contract-review`：`/api/health`、`/api/config`、`/api/diagnostics/converters`、`/api/reviews/**`、DOCX document/download 和 AI 改写相关接口已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
 - `bid-generator`：`/health`、`/api/config/workflow-status`、`/api/config/analysis-framework`、`/api/entities`、`GET /api/projects`、`GET /api/projects/{project_id}`、`GET /api/projects/{project_id}/mappings` direct 到 `apps/api`；项目写入、Dify workflow、SSE task、项目文件、knowledge/kb、forge/export/download/preview 相关接口仍 proxy 到 legacy 标书生成后端。
 
 业务 proxy 会在访问 legacy 后端前完成 Portal session 和应用权限校验。代理不会向 legacy 后端转发 `Authorization`、`Cookie` 或 `Set-Cookie`，只转发 `X-Portal-User-Id`、`X-Portal-User-Account`、`X-Portal-User-Role`、`X-Portal-Client-Id`、`X-Request-ID` 等非敏感上下文。multipart、SSE/NDJSON、DOCX/PDF/Excel/图片下载响应通过流式请求和流式响应保留，`Content-Type` 与 `Content-Disposition` 会透传。
@@ -43,7 +43,7 @@ Direct / proxy 混合状态：
 - 代理日志只记录安全路径，不记录敏感 query，不打印 token、key、密码、Cookie 或文件内容。
 - legacy 后端返回的业务错误响应会保持原状态码和响应体流式透传；代理只包装自身无法完成转发时的错误 envelope。
 
-竞对分析 `analysis/stream` 当前由 `apps/api` direct 输出 NDJSON；RAG `chat/stream` 当前由 `apps/api` direct 输出 SSE，并在完成后写入 `rag.chat_turns`；RAG knowledge API 当前由 `apps/api` direct 调用 Dify Dataset，文件上传仍使用本地临时文件并在请求结束后清理。合同审查下载和标书生成任务流仍经 `apps/api` 做鉴权代理透传。合同审查 `data/uploads` / `data/runs`、标书生成 `data/*_cache` / `data/projects` / `data/kb_sync_status` 等真实文件产物仍由对应 legacy 后端维护。当前不引入 MinIO / S3 SDK，不引入 Celery / RQ，也不新增统一任务表。
+竞对分析 `analysis/stream` 当前由 `apps/api` direct 输出 NDJSON；RAG `chat/stream` 当前由 `apps/api` direct 输出 SSE，并在完成后写入 `rag.chat_turns`；RAG knowledge API 当前由 `apps/api` direct 调用 Dify Dataset，文件上传仍使用本地临时文件并在请求结束后清理。合同审查 reviews、DOCX 下载和 AI 改写当前由 `apps/api` direct 执行，文件产物仍写入 `legacy/contract_review/data/uploads` 与 `legacy/contract_review/data/runs`。标书生成任务流仍经 `apps/api` 做鉴权代理透传。标书生成 `data/*_cache` / `data/projects` / `data/kb_sync_status` 等真实文件产物仍由 legacy 后端维护。当前不引入 MinIO / S3 SDK，不引入 Celery / RQ，也不新增统一任务表。
 
 ## 当前接口
 
@@ -73,6 +73,20 @@ Direct / proxy 混合状态：
 - `POST /api/v1/core/feature-requests`
 - `GET /api/v1/contract-review/api/health`
 - `GET /api/v1/contract-review/api/config`
+- `GET /api/v1/contract-review/api/diagnostics/converters`
+- `POST /api/v1/contract-review/api/reviews`
+- `GET /api/v1/contract-review/api/reviews/history`
+- `GET /api/v1/contract-review/api/reviews/{run_id}`
+- `GET /api/v1/contract-review/api/reviews/{run_id}/result`
+- `GET /api/v1/contract-review/api/reviews/{run_id}/document`
+- `GET /api/v1/contract-review/api/reviews/{run_id}/download`
+- `PATCH /api/v1/contract-review/api/reviews/{run_id}/risks/{risk_id}`
+- `POST /api/v1/contract-review/api/reviews/{run_id}/risks/accept_all`
+- `POST /api/v1/contract-review/api/reviews/{run_id}/risks/{risk_id}/ai_apply`
+- `POST /api/v1/contract-review/api/reviews/{run_id}/ai_apply_all`
+- `POST /api/v1/contract-review/api/reviews/{run_id}/risks/{risk_id}/ai_accept`
+- `PATCH /api/v1/contract-review/api/reviews/{run_id}/risks/{risk_id}/ai_edit`
+- `POST /api/v1/contract-review/api/reviews/{run_id}/risks/{risk_id}/ai_reject`
 - `GET /api/v1/bid-generator/health`
 - `GET /api/v1/bid-generator/api/config/workflow-status`
 - `GET /api/v1/bid-generator/api/config/analysis-framework`
@@ -143,7 +157,7 @@ WebSocket 不使用统一 envelope。`/ws/core/app-usage` 保持 legacy `/ws/app
 
 ## 当前不做
 
-- 不重写业务模块 API。
+- 不重写未迁移模块的业务 API。
 - 不替换 legacy 后端。
 - 不修改 Portal session。
 - 不改 JWT。
@@ -157,7 +171,7 @@ WebSocket 不使用统一 envelope。`/ws/core/app-usage` 保持 legacy `/ws/app
 
 ## 本地文件系统版部署边界
 
-`apps/api` 负责统一鉴权、平台 API、运行时应用列表和业务代理，不持有合同审查、标书生成、RAG Dataset 或竞对分析报告文件主存储。部署时需要分别运行 `apps/api`、Portal 前端、四个业务 iframe 前端和四个 legacy 后端，并为 PostgreSQL、Dify / workflow key、本地持久化目录、日志目录和反向代理 / CORS 做独立配置。
+`apps/api` 负责统一鉴权、平台 API、运行时应用列表、业务代理，并在第 9-C 后直接执行合同审查主要业务 API。合同审查文件产物仍保存在 legacy 合同审查本地目录；`apps/api` 不是统一对象存储。部署时需要分别运行 `apps/api`、Portal 前端、四个业务 iframe 前端和仍需保留的 legacy 后端，并为 PostgreSQL、Dify / workflow key、本地持久化目录、日志目录和反向代理 / CORS 做独立配置。
 
 需要持久化挂载的业务目录以第 8-B 文档为准，重点包括 `legacy/contract_review/data/uploads`、`legacy/contract_review/data/runs`、`legacy/bid-generator/data/pdf_cache`、`legacy/bid-generator/data/docx_cache`、`legacy/bid-generator/data/raw_doc_cache`、`legacy/bid-generator/data/extracted_images`、`legacy/bid-generator/data/projects` 和 `legacy/bid-generator/data/kb_sync_status`。RAG 知识库文件当前由 Dify Dataset 管理；竞对分析当前主要写 PostgreSQL。
 
