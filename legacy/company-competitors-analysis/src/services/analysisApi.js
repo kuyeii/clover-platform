@@ -12,7 +12,7 @@ function joinApiUrl(base, path) {
 }
 
 function isRetriablePlatformFailure(error) {
-  return error?.isPlatformApiRequest && (error.status === 0 || error.status === 502);
+  return error?.isPlatformApiRequest && (error.status === 0 || error.status === 502 || error.status === 503);
 }
 
 function isSafeFallbackMethod(options = {}) {

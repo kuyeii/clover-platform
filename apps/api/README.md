@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 7-M 后，Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块也已经具备统一代理入口和 iframe auth bridge 接入。legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的业务逻辑继续由 legacy 后端执行。
+`apps/api` 是 Clover Platform 统一后端基座。第 8-A 阶段在第 7-M 的业务代理与 iframe auth bridge 总体验收基础上，固化回归基线并稳定开发启动链路。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块已经具备统一代理入口和 iframe auth bridge 接入。legacy Portal 后端和四个 legacy 业务后端仍保留，未 direct 的业务逻辑继续由 legacy 后端执行。
 
 ## 当前职责
 
@@ -13,6 +13,8 @@
 - 为 Portal 前端提供 auth、users、app-usage、runtime apps、feedback 和 `/ws/core/app-usage`。
 - 为 `competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 提供鉴权后的业务 API 入口。
 - 支持业务 iframe 前端通过 Portal auth bridge 获取内存态 token 和 `apiBaseUrl` 后调用 `apps/api`；token 不通过 iframe URL 传递。
+
+第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。
 
 ## 业务代理入口
 
