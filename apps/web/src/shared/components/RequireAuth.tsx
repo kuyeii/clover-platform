@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import type { NavigateFn } from "../../routes";
 import { useAuth } from "../auth/AuthProvider";
@@ -12,6 +12,12 @@ interface RequireAuthProps {
 export function RequireAuth({ children, currentPath, navigate }: RequireAuthProps) {
   const { isAuthenticated, isLoading } = useAuth();
 
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      navigate(`/login?from=${encodeURIComponent(currentPath)}`);
+    }
+  }, [currentPath, isAuthenticated, isLoading, navigate]);
+
   if (isLoading) {
     return (
       <div className="page-center-state">
@@ -22,7 +28,6 @@ export function RequireAuth({ children, currentPath, navigate }: RequireAuthProp
   }
 
   if (!isAuthenticated) {
-    navigate(`/login?from=${encodeURIComponent(currentPath)}`);
     return null;
   }
 

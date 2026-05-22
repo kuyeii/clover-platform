@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import type { NavigateFn } from "../routes";
 import { useAuth } from "../shared/auth/AuthProvider";
@@ -20,8 +20,13 @@ export function LoginPage({ navigate }: { navigate: NavigateFn }) {
   const [formError, setFormError] = useState("");
   const redirectTo = useMemo(() => getLoginRedirect(), []);
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(redirectTo);
+    }
+  }, [isAuthenticated, navigate, redirectTo]);
+
   if (isAuthenticated) {
-    navigate(redirectTo);
     return null;
   }
 
@@ -55,7 +60,7 @@ export function LoginPage({ navigate }: { navigate: NavigateFn }) {
           <div className="visual-tile">
             <Icon name="message" />
             <strong>RAG</strong>
-            <span>iframe 保留</span>
+            <span>原生迁入</span>
           </div>
           <div className="visual-tile">
             <Icon name="file" />

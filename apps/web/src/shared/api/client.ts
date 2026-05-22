@@ -1,6 +1,6 @@
 import { getAccessToken, getClientId } from "../auth/token";
 
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type ApiClientOptions = {
   baseUrl?: string;
@@ -70,7 +70,7 @@ export class ApiClient {
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = trimTrailingSlash(options.baseUrl || DEFAULT_API_BASE_URL);
     this.getToken = options.getToken;
-    this.fetchImpl = options.fetchImpl || fetch;
+    this.fetchImpl = options.fetchImpl || ((input, init) => fetch(input, init));
     this.onUnauthorized = options.onUnauthorized;
   }
 
@@ -84,6 +84,10 @@ export class ApiClient {
 
   post<T>(path: string, body?: unknown, options: Omit<RequestOptions, "body"> = {}) {
     return this.request<T>("POST", path, { ...options, body });
+  }
+
+  put<T>(path: string, body?: unknown, options: Omit<RequestOptions, "body"> = {}) {
+    return this.request<T>("PUT", path, { ...options, body });
   }
 
   patch<T>(path: string, body?: unknown, options: Omit<RequestOptions, "body"> = {}) {
