@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 6-E 后 Portal 前端核心平台能力和 feedback 能力默认依赖这里，legacy Portal 后端只作为回滚和过渡兼容保留。第 7-B 起新增竞对分析业务代理试点；合同审查、RAG 和标书生成业务 API 仍由 legacy 后端承载。
+`apps/api` 是 Clover Platform 统一后端基座。第 6-E 后 Portal 前端核心平台能力和 feedback 能力默认依赖这里，legacy Portal 后端只作为回滚和过渡兼容保留。第 7-G 起已接入竞对分析、RAG 和合同审查业务代理；标书生成业务 API 仍由 legacy 后端承载。
 
 ## 当前职责
 
@@ -11,7 +11,7 @@
 - 复用 Portal session token、`Authorization: Bearer <token>` 和 `X-Portal-Client-Id`。
 - 提供统一响应 envelope、request id middleware、统一 404 / 422 / 500 错误响应和基础日志。
 - 为 Portal 前端提供 auth、users、app-usage、runtime apps、feedback 和 `/ws/core/app-usage`。
-- 为 `competitor-analysis` 提供鉴权后的 `/api/v1/competitor-analysis/**` 反向代理，目标仍是 legacy 竞对分析后端。
+- 为 `competitor-analysis`、`rag-web-search` 和 `contract-review` 提供鉴权后的业务 API 入口，未直接迁入的业务逻辑仍由对应 legacy 后端执行。
 
 ## 当前接口
 
@@ -40,6 +40,8 @@
 - `GET /api/v1/core/feature-requests/captcha`
 - `POST /api/v1/core/feature-requests`
 - `ANY /api/v1/competitor-analysis/{path:path}`
+- `ANY /api/v1/rag/{path:path}`
+- `ANY /api/v1/contract-review/{path:path}`
 - `WS /ws/core/app-usage`
 
 ## 响应格式
@@ -103,7 +105,7 @@ python scripts/dev.py --only platform-api
 python scripts/dev.py --no-business
 ```
 
-`--no-business` 会启动 Portal 前端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。竞对分析可通过 `/api/v1/competitor-analysis/**` 经 platform-api 代理到 legacy 后端；其他业务模块 API 仍走各 legacy 模块后端。legacy Portal 后端不在 `--no-business` 默认链路中启动，可通过 `python scripts/dev.py --only portal` 保留回滚和兼容排查路径。
+`--no-business` 会启动 Portal 前端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。竞对分析、RAG 和合同审查可分别通过 `/api/v1/competitor-analysis/**`、`/api/v1/rag/**`、`/api/v1/contract-review/**` 经 platform-api 代理到 legacy 后端；标书生成业务 API 仍走 legacy 模块后端。legacy Portal 后端不在 `--no-business` 默认链路中启动，可通过 `python scripts/dev.py --only portal` 保留回滚和兼容排查路径。
 
 生成 platform-api 端口规划：
 

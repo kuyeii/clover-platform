@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入第 7-F：`competitor-analysis` 与 `rag-web-search` 已开始低风险 API 并行迁入 `apps/api`。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`；竞对分析 health/history 由 `apps/api` 直接实现，RAG health/sessions/conversations/conversations sync 由 `apps/api` 直接实现。Portal knowledgeService 已优先走 `/api/v1/rag` 代理入口，RAG knowledge 业务逻辑仍由 legacy RAG 后端执行并保留 runtime apps `rag-web-search` backendUrl fallback。legacy Portal 后端和 legacy 业务后端仍保留用于回滚和过渡兼容，RAG iframe 前端仍未切换。
+当前阶段已进入第 7-G：`competitor-analysis`、`rag-web-search` 和 `contract-review` 已接入 `apps/api` 业务模块代理路径。Portal auth、users、app-usage、runtime apps、feedback 使用 `apps/api` 的 `/api/v1/core`；竞对分析 health/history 由 `apps/api` 直接实现，RAG health/sessions/conversations/conversations sync 由 `apps/api` 直接实现。Portal knowledgeService 已优先走 `/api/v1/rag` 代理入口，RAG knowledge 业务逻辑仍由 legacy RAG 后端执行并保留 runtime apps `rag-web-search` backendUrl fallback。合同审查新增 `/api/v1/contract-review/**` 代理入口，真实审查、上传、下载和 AI 改写逻辑仍由 legacy 合同审查后端执行。legacy Portal 后端和 legacy 业务后端仍保留用于回滚和过渡兼容，RAG 与合同审查 iframe 前端仍未切换。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 7-F 阶段：Portal knowledgeService 优先切到 `apps/api` 的 RAG 统一代理入口。
+当前处于第 7-G 阶段：合同审查接入 `apps/api` 的统一业务代理入口。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback；RAG chat stream、RAG iframe 前端、合同审查和标书生成 API 尚未迁入。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback。第 7-G 新增合同审查代理入口 `/api/v1/contract-review/{path:path}`，合同审查业务逻辑仍由 legacy 后端执行；RAG chat stream、RAG iframe 前端、合同审查 iframe 前端和标书生成 API 尚未迁入。
 
 ## Legacy 项目
 
@@ -276,6 +276,22 @@ direct routes 直接读写 `rag.conversations`，保持 legacy 的 `status`、`s
 这些请求继续携带 Portal session token 和 `X-Portal-Client-Id`，由 `apps/api` 做 `rag-web-search` 应用权限校验后代理到 legacy RAG 后端。RAG knowledge 业务逻辑、Dify Dataset API、Dify key / dataset id 均未迁移或修改。
 
 RAG iframe 前端仍未切换，RAG chat stream 仍未迁移。Portal knowledgeService 保留 runtime apps 中 `rag-web-search` 的 `backendUrl` fallback：401 / 403 不 fallback，502 / 503 / network error 可 fallback，作为本阶段回滚路径。
+
+## 第 7-G 阶段：合同审查代理接入 apps/api
+
+第 7-G 在 `apps/api` 新增合同审查代理入口：
+
+- `/api/v1/contract-review/**`
+
+所有合同审查代理请求先由 `apps/api` 校验 Portal session token 和 `contract-review` 应用权限，再转发到 legacy 合同审查后端。合同审查业务逻辑仍由 legacy 后端执行，包括合同上传、审查 pipeline、运行状态、风险状态更新、AI 改写和 DOCX 下载。合同审查 iframe 前端本阶段未切换，legacy 合同审查后端继续保留。
+
+当前已有业务代理入口：
+
+- `/api/v1/competitor-analysis/**`
+- `/api/v1/rag/**`
+- `/api/v1/contract-review/**`
+
+标书生成尚未接入 `apps/api` 业务代理，仍由 legacy 标书生成后端服务 iframe 前端。
 
 ## 第 2 阶段：PostgreSQL 初始化
 
