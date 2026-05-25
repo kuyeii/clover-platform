@@ -98,6 +98,45 @@ export class ApiClient {
     return this.request<T>("DELETE", path, options);
   }
 
+  async raw(method: HttpMethod, path: string, options: RequestOptions = {}): Promise<Response> {
+    const token = options.token ?? this.getToken?.() ?? null;
+    const headers = new Headers(options.headers);
+
+    if (!headers.has("Accept")) {
+      headers.set("Accept", "application/json");
+    }
+    headers.set("X-Portal-Client-Id", getClientId());
+    if (options.body !== undefined && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+
+    const response = await this.fetchImpl(buildUrl(this.baseUrl, path, options.query), {
+      method,
+      headers,
+      body:
+        options.body === undefined
+          ? undefined
+          : options.body instanceof FormData
+            ? options.body
+            : JSON.stringify(options.body),
+      credentials: options.credentials ?? "include",
+      signal: options.signal,
+    });
+
+    if (!response.ok) {
+      const error = await buildApiError(response);
+      if (error.status === 401) {
+        this.onUnauthorized?.();
+      }
+      throw error;
+    }
+
+    return response;
+  }
+
   async request<T>(method: HttpMethod, path: string, options: RequestOptions = {}): Promise<T> {
     const token = options.token ?? this.getToken?.() ?? null;
     const headers = new Headers(options.headers);

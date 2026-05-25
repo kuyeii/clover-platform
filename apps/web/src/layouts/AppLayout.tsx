@@ -22,7 +22,8 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
   const { currentUser, isAuthenticated, logout } = useAuth();
   const { leaveApp, connectionState } = useAppUsage();
   const isLogin = currentPath === "/login";
-  const isNativeModule = (code: string) => code === "competitor-analysis" || code === "rag-web-search";
+  const isNativeModule = (code: string) =>
+    code === "competitor-analysis" || code === "rag-web-search" || code === "contract-review";
 
   const handleLogout = () => {
     leaveApp()
@@ -43,7 +44,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
           <span className="portal-brand-mark">C</span>
           <span>
             <strong>Clover Platform</strong>
-            <small>第 10-C 统一前端入口</small>
+            <small>第 10-D 统一前端入口</small>
           </span>
         </a>
 

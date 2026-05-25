@@ -2,7 +2,7 @@
 
 `apps/web` 是 Clover Platform 新的统一前端入口候选。
 
-第 10-C 后，`apps/web` 已具备：
+第 10-D 后，`apps/web` 已具备：
 
 - Portal 登录、会话恢复和退出登录。
 - 工作台与四个模块入口。
@@ -11,9 +11,10 @@
 - ticket / feature request feedback、captcha 和 multipart 附件提交。
 - 竞对分析原生页面、history、analysis stream 和 workflow 调用。
 - RAG 原生页面、sessions、conversations、chat stream 和 knowledge documents。
-- 合同审查、标书生成仍通过 iframe 接入。
+- 合同审查原生页面、DOCX 上传、审查状态、历史记录、风险卡片、AI 改写和 DOCX 下载。
+- 标书生成仍通过 iframe 接入。
 
-`legacy/portal-launchpad`、`legacy/company-competitors-analysis` 和 `legacy/chat_with_rag_and_websearch/frontend` 继续保留为回滚入口。
+`legacy/portal-launchpad`、`legacy/company-competitors-analysis`、`legacy/chat_with_rag_and_websearch/frontend` 和 `legacy/contract_review/frontend` 继续保留为回滚入口。
 
 ## 本地开发
 
@@ -45,4 +46,4 @@ npm --prefix apps/web run build
 
 ## 下一阶段
 
-第 10-D 建议迁入合同审查真实前端页面。标书生成继续按后续阶段单独迁移；合同审查 / 标书生成 iframe 在迁移完成前保留。
+第 10-E 建议迁入标书生成真实前端页面。标书生成 iframe 在迁移完成前保留。

@@ -10,7 +10,7 @@
 
 ## 前端状态
 
-真实业务前端仍在 legacy 标书生成前端。第 10-A 只在 `apps/web` 新增 `/modules/bid-generator` 占位页，不迁移项目管理、编辑器、SSE 任务、DocumentForge 或导出 UI。
+真实业务前端仍在 legacy 标书生成前端，并在第 10-D 继续通过 `apps/web` 的 iframe 页面接入。不迁移项目管理、编辑器、SSE 任务、DocumentForge 或导出 UI。
 
 ## 后续迁移目标
 
