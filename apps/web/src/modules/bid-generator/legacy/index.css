@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-800 antialiased;
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+/* ── 编辑器段落首行缩进 ── */
+.content-editor-prose p {
+  text-indent: 2em;
+}
+.content-editor-prose h1,
+.content-editor-prose h2,
+.content-editor-prose h3,
+.content-editor-prose h4 {
+  text-indent: 0;
+}
+.content-editor-prose li > p,
+.content-editor-prose blockquote > p {
+  text-indent: 0;
+}
+
+/* ── 占位符高亮样式（{{...}} 格式） ── */
+.pipt-placeholder {
+  background: rgba(107, 114, 128, 0.12) !important;
+  color: #374151 !important;
+  padding: 1px 6px !important;
+  border-radius: 4px !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  font-size: 0.85em !important;
+  border: 1px solid rgba(107, 114, 128, 0.25) !important;
+  cursor: default !important;
+  user-select: all !important;
+  white-space: nowrap !important;
+  display: inline !important;
+}
+
+/* ── 解析进度条扫光动画 ── */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); opacity: 0.6; }
+  50%  { opacity: 1; }
+  100% { transform: translateX(300%); opacity: 0.6; }
+}
+
+/* ── 隐藏滚动条（横向可滑动区域） ── */
+.scrollbar-none {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE/Edge */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;                /* Chrome/Safari */
+}
