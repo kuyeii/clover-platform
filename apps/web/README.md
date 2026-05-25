@@ -2,7 +2,7 @@
 
 `apps/web` 是 Clover Platform 新的统一前端入口候选。
 
-第 10-D 后，`apps/web` 已具备：
+第 10-E 后，`apps/web` 已具备：
 
 - Portal 登录、会话恢复和退出登录。
 - 工作台与四个模块入口。
@@ -12,9 +12,9 @@
 - 竞对分析原生页面、history、analysis stream 和 workflow 调用。
 - RAG 原生页面、sessions、conversations、chat stream 和 knowledge documents。
 - 合同审查原生页面、DOCX 上传、审查状态、历史记录、风险卡片、AI 改写和 DOCX 下载。
-- 标书生成仍通过 iframe 接入。
+- 标书生成原生页面、项目 CRUD、文件上传解析、SSE 任务、大纲 / 正文生成、实体映射、脱敏还原、PDF / 图片预览、DOCX / PDF / Excel 导出和 knowledge/kb 操作。
 
-`legacy/portal-launchpad`、`legacy/company-competitors-analysis`、`legacy/chat_with_rag_and_websearch/frontend` 和 `legacy/contract_review/frontend` 继续保留为回滚入口。
+`legacy/portal-launchpad`、`legacy/company-competitors-analysis`、`legacy/chat_with_rag_and_websearch/frontend`、`legacy/contract_review/frontend` 和 `legacy/bid-generator/frontend-web` 继续保留为回滚入口。
 
 ## 本地开发
 
@@ -44,6 +44,6 @@ npm --prefix apps/web run build
 
 构建产物位于 `apps/web/dist`，不提交 Git。
 
-## 下一阶段
+## 回滚边界
 
-第 10-E 建议迁入标书生成真实前端页面。标书生成 iframe 在迁移完成前保留。
+标书生成当前主入口为 `apps/web/src/modules/bid-generator` 原生页面。`config/apps.yaml` 与 legacy iframe 前端仍保留，便于对照验收或临时回滚。

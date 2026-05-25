@@ -42,7 +42,10 @@ function ModuleCard({ module, navigate }: { module: PortalModule; navigate: Navi
   const usage = getAppUsage(module.code);
   const allowed = canAccessApp(module.code);
   const isNative =
-    module.code === "competitor-analysis" || module.code === "rag-web-search" || module.code === "contract-review";
+    module.code === "competitor-analysis" ||
+    module.code === "rag-web-search" ||
+    module.code === "contract-review" ||
+    module.code === "bid-generator";
 
   const go = async (confirmedConflict = false) => {
     if (!allowed) {
@@ -129,7 +132,7 @@ export function WorkspacePage({ navigate }: { navigate: NavigateFn }) {
         <div>
           <span className="eyebrow">Workspace</span>
           <h1>统一工作台</h1>
-          <p>Portal 平台能力已迁入 apps/web。竞对分析、RAG 和合同审查是原生页面，标书生成仍通过可信 iframe 接入。</p>
+          <p>Portal 平台能力已迁入 apps/web。竞对分析、RAG、合同审查和标书生成均为原生页面，legacy iframe 入口保留用于回滚。</p>
         </div>
         <div className="hero-metrics">
           <div>

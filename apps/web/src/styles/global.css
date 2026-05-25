@@ -2226,7 +2226,293 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .rag-session-actions {
-    justify-content: flex-end;
+.rag-session-actions {
+  justify-content: flex-end;
+  }
+}
+
+.bid-page {
+  display: grid;
+  gap: 16px;
+}
+
+.bid-layout {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.bid-sidebar,
+.bid-main,
+.bid-panel,
+.bid-project-list,
+.bid-overview-grid,
+.bid-list-panel,
+.bid-stream-log,
+.bid-knowledge-grid {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.bid-sidebar,
+.bid-panel,
+.bid-status-tile {
+  border: 1px solid rgba(217, 226, 232, 0.9);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.bid-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.bid-project-list {
+  max-height: calc(100vh - 330px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.bid-project-row {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px;
+  text-align: left;
+}
+
+.bid-project-row.active,
+.bid-project-row:hover {
+  border-color: #add0ff;
+  background: #f6faff;
+}
+
+.bid-project-row strong,
+.bid-project-row span,
+.bid-project-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bid-project-row span,
+.bid-project-row small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.bid-status-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bid-status-tile span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.bid-status-tile strong {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.bid-status-tile.good strong {
+  color: var(--green);
+}
+
+.bid-status-tile.warn strong {
+  color: var(--amber);
+}
+
+.bid-tabbar {
+  background: #fff;
+}
+
+.bid-overview-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.bid-summary-block,
+.bid-requirement-row,
+.bid-doc-row,
+.bid-mapping-row,
+.bid-stream-log div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfd;
+  padding: 11px;
+}
+
+.bid-summary-block span,
+.bid-list-panel > .eyebrow,
+.bid-stream-log > .eyebrow {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.bid-summary-block p,
+.bid-requirement-row p,
+.bid-generated-preview p {
+  margin: 6px 0 0;
+  color: #243447;
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.bid-workflow-grid,
+.bid-switch-row,
+.bid-image-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bid-generated-preview {
+  border: 1px solid #d7e3ed;
+  border-radius: 8px;
+  background: #f6f9fb;
+  padding: 12px;
+}
+
+.bid-stream-log {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px dashed #c8d7e4;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.bid-stream-log div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+  background: #fff;
+}
+
+.bid-stream-log strong {
+  color: #174ea6;
+}
+
+.bid-stream-log span {
+  overflow-wrap: anywhere;
+}
+
+.bid-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 12px;
+}
+
+.bid-preview-box {
+  display: grid;
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfd;
+}
+
+.bid-preview-box iframe {
+  width: 100%;
+  min-height: 520px;
+  border: 0;
+}
+
+.bid-preview-box img {
+  max-width: 100%;
+  max-height: 520px;
+  align-self: center;
+  justify-self: center;
+  object-fit: contain;
+}
+
+.bid-preview-box strong {
+  padding: 10px 12px 0;
+}
+
+.bid-image-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  color: #314255;
+}
+
+.bid-image-row:hover {
+  border-color: #add0ff;
+  background: #f6faff;
+}
+
+.bid-knowledge-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bid-doc-row,
+.bid-mapping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.bid-doc-row strong,
+.bid-doc-row span {
+  display: block;
+}
+
+.bid-doc-row span,
+.bid-mapping-row span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.bid-mapping-row code {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1180px) {
+  .bid-layout,
+  .bid-preview-grid,
+  .bid-knowledge-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bid-status-strip,
+  .bid-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bid-project-list {
+    max-height: 360px;
+  }
+}
+
+@media (max-width: 640px) {
+  .bid-status-strip,
+  .bid-overview-grid,
+  .bid-create-row,
+  .bid-stream-log div,
+  .bid-doc-row,
+  .bid-mapping-row {
+    grid-template-columns: 1fr;
   }
 }
