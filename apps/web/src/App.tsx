@@ -54,7 +54,7 @@ export default function App() {
   return (
     <RuntimeAppsProvider>
       <AuthProvider>
-        <AppUsageProvider>
+        <AppUsageProvider currentPath={pathname}>
           <AppLayout currentPath={pathname} onNavigate={onNavigate} navigate={navigate}>
             {route.render({ navigate, currentPath })}
           </AppLayout>

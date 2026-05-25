@@ -1,7 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+
+  * {
+    @apply border-slate-200;
+  }
+}
+
 :root {
   color: #17202a;
   background: #f3f6f8;
-  font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "Manrope", ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -748,34 +770,79 @@ code {
 }
 
 .login-screen {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+  display: flex;
   min-height: 100vh;
-  background: #edf2f5;
+  align-items: center;
+  justify-content: center;
+  overflow-x: hidden;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 52%, #f0f9ff 100%);
+  color: #0f172a;
+  padding: 32px;
 }
 
 .login-visual {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #10324d, #0f766e);
-  padding: 48px;
+  position: relative;
+  display: block;
+  width: min(58vw, 690px);
+  min-height: 640px;
+  overflow: hidden;
+  border-radius: 28px 0 0 28px;
+  background: linear-gradient(135deg, #123a84 0%, #1267a5 58%, #0f766e 100%);
+  color: #ffffff;
+  box-shadow: 0 24px 70px rgba(148, 163, 184, 0.38);
+  padding: 32px;
+}
+
+.login-visual::before {
+  content: "企业智能门户";
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.90);
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 7px 12px;
+}
+
+.login-visual::after {
+  content: "招投标、审文件、查风险、看竞对\a一步到位";
+  position: absolute;
+  left: 32px;
+  top: 92px;
+  max-width: 520px;
+  color: #ffffff;
+  white-space: pre-line;
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
+  font-weight: 900;
+  line-height: 1.14;
 }
 
 .login-visual-grid {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(170px, 1fr));
-  gap: 14px;
-  width: min(620px, 100%);
+  width: min(86%, 500px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  border-radius: 28px;
+  background: rgba(15, 23, 42, 0.18);
+  box-shadow: 0 24px 60px rgba(30, 41, 59, 0.30);
+  padding: 14px;
+  backdrop-filter: blur(12px);
 }
 
 .visual-tile {
-  min-height: 150px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
+  min-height: 92px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.10);
   color: #fff;
-  padding: 18px;
+  padding: 14px;
 }
 
 .visual-tile.primary {
@@ -788,28 +855,34 @@ code {
 }
 
 .visual-tile strong {
-  margin-top: 22px;
-  font-size: 1.35rem;
+  margin-top: 12px;
+  font-size: 1rem;
 }
 
 .visual-tile span {
-  margin-top: 6px;
+  margin-top: 4px;
   color: rgba(255, 255, 255, 0.72);
+  font-size: 0.82rem;
 }
 
 .login-panel {
-  display: grid;
-  place-items: center;
-  padding: 32px;
+  display: flex;
+  width: min(42vw, 590px);
+  min-height: 640px;
+  align-items: center;
+  border-radius: 0 28px 28px 0;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(148, 163, 184, 0.38);
+  padding: 56px;
 }
 
 .login-card {
   width: min(420px, 100%);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   background: #fff;
-  box-shadow: var(--shadow);
-  padding: 28px;
+  box-shadow: none;
+  padding: 0;
 }
 
 .input-with-icon {
@@ -2514,5 +2587,858 @@ code {
   .bid-doc-row,
   .bid-mapping-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Legacy UI restoration: apps/web keeps unified routes/API while matching the
+   original portal-launchpad and business module visual language. */
+:root {
+  --surface: #ffffff;
+  --surface-muted: #f8fbff;
+  --line: #e6eefb;
+  --line-strong: #b9d2ff;
+  --ink: #172033;
+  --muted: #66758b;
+  --blue: #2563eb;
+  --teal: #0f766e;
+  --amber: #b7791f;
+  --red: #b42318;
+  --green: #047857;
+  --shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: #ffffff;
+  color: #111827;
+  font-family: Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  overflow-x: hidden;
+}
+
+:where(.legacy-portal-ui) input:where(:not([class*="border"])),
+:where(.legacy-portal-ui) textarea:where(:not([class*="border"])),
+:where(.legacy-portal-ui) select:where(:not([class*="border"])) {
+  min-height: auto;
+  width: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.rag-legacy-viewport {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #ffffff;
+  isolation: isolate;
+  transform: translateZ(0);
+}
+
+.rag-legacy-scope {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #ffffff;
+}
+
+.rag-legacy-scope > .flex.min-h-screen {
+  min-height: 100%;
+}
+
+.legacy-portal-ui input:where(:not([class*="border"])):focus,
+.legacy-portal-ui textarea:where(:not([class*="border"])):focus,
+.legacy-portal-ui select:where(:not([class*="border"])):focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #b8c7da transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #b8c7da;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.portal-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.portal-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) minmax(0, auto) minmax(180px, 1fr);
+  min-height: 56px;
+  gap: 24px;
+  align-items: center;
+  border-bottom: 1px solid #f1f5f9;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  padding: 0 32px;
+  backdrop-filter: blur(8px);
+}
+
+.portal-topbar-spacer {
+  min-width: 0;
+}
+
+.portal-nav {
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+.portal-return-link {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #3b82f6;
+  transition: background 0.18s, color 0.18s, transform 0.18s;
+}
+
+.portal-return-link:hover {
+  background: #eff6ff;
+  color: #2563eb;
+  transform: translateX(-1px);
+}
+
+.portal-nav-link {
+  position: relative;
+  display: inline-flex;
+  width: 9rem;
+  min-height: 56px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #475569;
+  font-size: 1.05rem;
+  font-weight: 700;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.portal-nav-link:hover {
+  background: transparent;
+  color: #0f172a;
+}
+
+.portal-nav-link.active {
+  background: transparent;
+  color: #2563eb;
+}
+
+.portal-nav-link.active::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+.portal-account {
+  display: flex;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.account-pill {
+  max-width: 12rem;
+  border-color: #e2e8f0;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-state {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.portal-main {
+  min-width: 0;
+  min-height: calc(100vh - 57px);
+  flex: 1 1 auto;
+  padding: 0;
+}
+
+.portal-main > .page-stack,
+.portal-main > .module-frame-page {
+  width: 100%;
+  padding: 24px;
+}
+
+.workspace-launcher {
+  position: relative;
+  display: flex;
+  min-height: calc(100vh - 57px);
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+  padding: 16px 32px 48px;
+}
+
+.workspace-launcher::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 80px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(241, 245, 249, 0.5), rgba(255, 255, 255, 0));
+}
+
+.workspace-launcher::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 96px;
+  pointer-events: none;
+  background: linear-gradient(0deg, rgba(240, 249, 255, 0.5), rgba(255, 255, 255, 0));
+}
+
+.workspace-summary {
+  position: absolute;
+  right: 32px;
+  top: 16px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 6px 12px;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.workspace-summary strong {
+  color: #2563eb;
+}
+
+.workspace-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 100%;
+  max-width: 1600px;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(260px, 1fr);
+  gap: 16px;
+  margin: 0 auto;
+  padding-top: 24px;
+}
+
+.workspace-card {
+  position: relative;
+  display: flex;
+  min-height: 260px;
+  overflow: hidden;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+  border: 0;
+  border-radius: 24px;
+  background: #f8fafc;
+  box-shadow: var(--shadow);
+  padding: 28px;
+  isolation: isolate;
+}
+
+.workspace-card-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: right center;
+  transform: scale(1.08);
+  transition: transform 0.5s ease;
+}
+
+.workspace-card:hover .workspace-card-bg {
+  transform: scale(1.14) translate(1%, -1%);
+}
+
+.workspace-card-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(90deg, #ffffff 0%, rgba(255, 255, 255, 0.86) 52%, rgba(255, 255, 255, 0.10) 100%),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.28));
+}
+
+.workspace-card::before,
+.workspace-card::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 999px;
+  filter: blur(34px);
+  transition: opacity 0.35s, transform 0.35s;
+}
+
+.workspace-card::before {
+  left: -40px;
+  bottom: 24px;
+  width: 160px;
+  height: 112px;
+  background: rgba(59, 130, 246, 0.22);
+}
+
+.workspace-card::after {
+  right: 42px;
+  top: 32px;
+  width: 96px;
+  height: 96px;
+  background: rgba(125, 211, 252, 0.24);
+  opacity: 0;
+}
+
+.workspace-card:hover::before {
+  transform: translate(20px, -4px) scale(1.08);
+}
+
+.workspace-card:hover::after {
+  opacity: 1;
+  transform: translate(8px, 4px);
+}
+
+.workspace-card.disabled {
+  opacity: 0.78;
+}
+
+.workspace-card-head {
+  display: flex;
+  min-height: 28px;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workspace-card-copy {
+  display: grid;
+  max-width: min(560px, 72%);
+  gap: 12px;
+}
+
+.workspace-card-icon {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.10);
+  color: #2563eb;
+}
+
+.workspace-card-copy h2 {
+  margin: 0;
+  color: #020617;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.workspace-card-copy p {
+  margin: 0;
+  color: #334155;
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.workspace-card-banner {
+  display: flex;
+  width: min(100%, 520px);
+  align-items: center;
+  background: linear-gradient(90deg, #2563eb, rgba(59, 130, 246, 0.92), rgba(59, 130, 246, 0));
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.5;
+  padding: 8px 28px;
+}
+
+.workspace-card > .secondary-button {
+  width: fit-content;
+  border-color: #93c5fd;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1d4ed8;
+  font-size: 1.02rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.workspace-card > .secondary-button:hover {
+  background: #eff6ff;
+  transform: translateY(-1px);
+}
+
+.usage-badge {
+  border: 1px solid #dbeafe;
+  background: rgba(255, 255, 255, 0.95);
+  color: #2563eb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.usage-badge.warning {
+  border-color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.95);
+  color: #64748b;
+}
+
+.page-hero {
+  border-color: #e6eefb;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.rag-hero,
+.contract-review-hero,
+.bid-page > .page-hero {
+  display: none;
+}
+
+.rag-page,
+.contract-review-page,
+.bid-page {
+  min-height: calc(100vh - 57px);
+  background: #ffffff;
+  padding: 0;
+}
+
+.rag-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.rag-layout {
+  display: grid;
+  min-height: calc(100vh - 57px);
+  grid-template-columns: 288px minmax(0, 1fr) 320px;
+  gap: 0;
+  align-items: stretch;
+}
+
+.rag-sidebar {
+  height: calc(100vh - 57px);
+  border: 0;
+  border-right: 1px solid #e6eefb;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+  padding: 17px 16px 20px;
+}
+
+.rag-knowledge {
+  height: calc(100vh - 57px);
+  overflow-y: auto;
+  border: 0;
+  border-left: 1px solid #e6eefb;
+  border-radius: 0;
+  background: #fbfdff;
+  box-shadow: none;
+  padding: 18px;
+}
+
+.rag-chat-panel {
+  min-height: calc(100vh - 57px);
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.rag-sidebar .primary-button.full,
+.competitor-sidebar .primary-button.full {
+  height: 40px;
+  border-radius: 7px;
+  background: #0b8fd3;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: none;
+}
+
+.rag-session-row,
+.rag-document-row,
+.history-entry {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.rag-session-row.active,
+.rag-session-row:hover,
+.rag-document-row:hover,
+.history-entry.active,
+.history-entry:hover {
+  background: #f5f9ff;
+}
+
+.rag-message.user {
+  border-color: #0b8fd3;
+  background: #0b8fd3;
+  color: #ffffff;
+}
+
+.rag-message.user .rag-message-role,
+.rag-message.user p {
+  color: #e0f2fe;
+}
+
+.rag-message.assistant {
+  border-color: #e5eef8;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(30, 64, 175, 0.06);
+}
+
+.rag-chat-input {
+  background: #ffffff;
+}
+
+.rag-chat-input-box {
+  border: 1px solid #e5eef8;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 10px;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07);
+}
+
+.rag-chat-input-box textarea {
+  border: 0;
+  box-shadow: none;
+}
+
+.competitor-shell {
+  min-height: calc(100vh - 57px);
+  display: grid;
+  grid-template-columns: 288px minmax(0, 1fr);
+  gap: 0;
+  background: #f5f6f8;
+}
+
+.competitor-sidebar {
+  position: sticky;
+  top: 57px;
+  height: calc(100vh - 57px);
+  align-self: start;
+  overflow-y: auto;
+  border: 0;
+  border-right: 1px solid #e6eaf0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+  padding: 17px 16px 20px;
+}
+
+.competitor-home {
+  min-height: calc(100vh - 57px);
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 78% 18%, rgba(18, 102, 255, 0.10), transparent 28%),
+    #f5f6f8;
+  box-shadow: none;
+  padding: 56px min(7vw, 96px);
+}
+
+.competitor-home::before {
+  content: "";
+  width: 104px;
+  height: 104px;
+  background: url("/hero-analysis-icon.png") center/contain no-repeat;
+}
+
+.competitor-home-head h1 {
+  color: #132044;
+  font-size: clamp(2.4rem, 5vw, 4.8rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.competitor-home-head p {
+  color: #7081a3;
+  font-size: 1.05rem;
+}
+
+.analysis-form {
+  max-width: 1040px;
+  border: 1px solid #e4ebfb;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 48px rgba(34, 79, 160, 0.11);
+  padding: 24px;
+}
+
+.analysis-form-grid {
+  grid-template-columns: minmax(0, 1fr) auto minmax(260px, 0.8fr);
+}
+
+.match-switch,
+.tabbar {
+  border-color: #d4e1fb;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.match-switch button.active,
+.tabbar button.active {
+  background: #1266ff;
+  color: #ffffff;
+}
+
+.competitor-results {
+  padding: 24px;
+}
+
+.company-overview,
+.competitor-section,
+.details-panel {
+  border-color: #e4ebfb;
+  border-radius: 20px;
+  box-shadow: 0 18px 48px rgba(34, 79, 160, 0.11);
+}
+
+.competitor-card {
+  border-color: #e4ebfb;
+  border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(34, 79, 160, 0.08);
+}
+
+.competitor-card.active,
+.competitor-card:hover {
+  border-color: #1266ff;
+  background: #edf4ff;
+}
+
+.contract-review-layout,
+.bid-layout {
+  min-height: calc(100vh - 57px);
+  gap: 0;
+  align-items: stretch;
+}
+
+.contract-review-layout {
+  grid-template-columns: 288px minmax(0, 1fr);
+}
+
+.bid-layout {
+  grid-template-columns: 330px minmax(0, 1fr);
+}
+
+.contract-left-rail,
+.bid-sidebar {
+  position: sticky;
+  top: 57px;
+  height: calc(100vh - 57px);
+  align-self: start;
+  overflow-y: auto;
+  border-right: 1px solid #e6eefb;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(47, 115, 254, 0.10), transparent 34%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 14px 0 34px rgba(31, 72, 126, 0.06);
+  padding: 18px;
+}
+
+.contract-main-panel,
+.bid-main {
+  min-height: calc(100vh - 57px);
+  overflow-y: auto;
+  background: #f8fbff;
+  padding: 22px;
+}
+
+.contract-upload-panel,
+.contract-history-panel,
+.contract-status-panel,
+.contract-result-panel,
+.contract-risk-panel,
+.bid-panel,
+.bid-status-tile,
+.bid-list-panel,
+.bid-stream-log {
+  border-color: #e7f0ff;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 32px rgba(31, 72, 126, 0.07);
+}
+
+.contract-dropzone,
+.contract-empty-state,
+.bid-summary-block,
+.bid-requirement-row,
+.bid-doc-row,
+.bid-mapping-row {
+  border-color: #e7f0ff;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.contract-history-row,
+.bid-project-row {
+  border-color: transparent;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.contract-history-row.active,
+.contract-history-row:hover,
+.bid-project-row.active,
+.bid-project-row:hover {
+  border-color: #b9d2ff;
+  background: #ffffff;
+  box-shadow: 0 10px 22px rgba(47, 115, 254, 0.11);
+}
+
+.primary-button {
+  background: #0b8fd3;
+}
+
+.primary-button:hover {
+  background: #087fbd;
+}
+
+@media (max-width: 1180px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: minmax(280px, auto);
+  }
+
+  .workspace-card-copy {
+    max-width: 78%;
+  }
+
+  .rag-layout,
+  .contract-review-layout,
+  .bid-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .rag-sidebar,
+  .rag-knowledge,
+  .competitor-sidebar,
+  .contract-left-rail,
+  .bid-sidebar {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .portal-topbar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 8px 14px;
+  }
+
+  .portal-topbar-spacer {
+    display: none;
+  }
+
+  .portal-nav,
+  .portal-account {
+    justify-content: flex-start;
+  }
+
+  .portal-nav-link {
+    width: auto;
+    min-height: 42px;
+    font-size: 0.95rem;
+  }
+
+  .workspace-launcher {
+    padding: 12px 14px 24px;
+  }
+
+  .workspace-summary {
+    position: relative;
+    right: auto;
+    top: auto;
+    align-self: flex-start;
+  }
+
+  .workspace-card {
+    min-height: 360px;
+    border-radius: 18px;
+    padding: 22px;
+  }
+
+  .workspace-card-copy {
+    max-width: 100%;
+  }
+
+  .workspace-card-bg {
+    opacity: 0.38;
+    object-position: center bottom;
+  }
+
+  .workspace-card-overlay {
+    background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.92) 58%, rgba(255, 255, 255, 0.66) 100%);
+  }
+
+  .workspace-card-copy h2 {
+    font-size: 2.25rem;
+  }
+
+  .workspace-card-banner {
+    padding-inline: 16px;
+  }
+
+  .competitor-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .competitor-home,
+  .competitor-results,
+  .contract-main-panel,
+  .bid-main {
+    padding: 16px;
   }
 }

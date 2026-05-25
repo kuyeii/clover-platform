@@ -19,6 +19,7 @@ import {
 } from "../api/portal";
 import { getAccessToken, getClientId } from "../auth/token";
 import { useAuth } from "../auth/AuthProvider";
+import { moduleEntries } from "../config/modules";
 import type { AppUsageSummary, ModuleCode } from "../types/portal";
 
 interface EnterAppOptions {
@@ -44,6 +45,13 @@ const AppUsageContext = createContext<AppUsageContextValue | undefined>(undefine
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const WEBSOCKET_RECONNECT_DELAY_MS = 3_000;
 
+const modulePathAliases: Record<ModuleCode, string[]> = {
+  "bid-generator": ["/apps/bid-generator", "/modules/bid-generator"],
+  "contract-review": ["/apps/contract-review", "/modules/contract-review"],
+  "competitor-analysis": ["/apps/competitor-analysis", "/modules/competitor-analysis"],
+  "rag-web-search": ["/apps/rag-web-search", "/apps/rag", "/modules/rag"],
+};
+
 function getEmptySummary(appId: ModuleCode): AppUsageSummary {
   return {
     appId,
@@ -57,7 +65,24 @@ function getEmptySummary(appId: ModuleCode): AppUsageSummary {
   };
 }
 
-export function AppUsageProvider({ children }: { children: ReactNode }) {
+function getRouteAppId(currentPath: string): ModuleCode | null {
+  const normalizedPath = currentPath.split("?")[0] || "/";
+  for (const module of moduleEntries) {
+    const aliases = modulePathAliases[module.code];
+    if (aliases.some((alias) => normalizedPath === alias || normalizedPath.startsWith(`${alias}/`))) {
+      return module.code;
+    }
+  }
+  return null;
+}
+
+export function AppUsageProvider({
+  children,
+  currentPath,
+}: {
+  children: ReactNode;
+  currentPath: string;
+}) {
   const { currentUser, canAccessApp, isAuthenticated } = useAuth();
   const [summaries, setSummaries] = useState<AppUsageSummary[]>([]);
   const [activeAppId, setActiveAppId] = useState<ModuleCode | null>(null);
@@ -220,6 +245,19 @@ export function AppUsageProvider({ children }: { children: ReactNode }) {
       setConnectionState("closed");
     };
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    const routeAppId = getRouteAppId(currentPath);
+    const previousAppId = activeAppIdRef.current;
+
+    if (previousAppId && previousAppId !== routeAppId) {
+      leaveApp(previousAppId).catch(() => undefined);
+    }
+
+    if (routeAppId && routeAppId !== previousAppId && canAccessApp(routeAppId)) {
+      enterApp(routeAppId).catch(() => undefined);
+    }
+  }, [canAccessApp, currentPath, enterApp, leaveApp]);
 
   useEffect(() => {
     if (!currentUser) {

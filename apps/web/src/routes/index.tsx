@@ -4,7 +4,9 @@ import { BidGeneratorPage } from "../modules/bid-generator/BidGeneratorPage";
 import { CompetitorAnalysisPage } from "../modules/competitor-analysis/CompetitorAnalysisPage";
 import { ContractReviewPage } from "../modules/contract-review/ContractReviewPage";
 import { RagPage } from "../modules/rag/RagPage";
+import { BidReferenceSitesPage } from "../pages/BidReferenceSitesPage";
 import { FeedbackPage } from "../pages/FeedbackPage";
+import { KnowledgePage } from "../pages/KnowledgePage";
 import { LoginPage } from "../pages/LoginPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { UserManagementPage } from "../pages/UserManagementPage";
@@ -51,9 +53,34 @@ export const appRoutes: AppRoute[] = [
     render: (context) => protectedPage(context, <WorkspacePage navigate={context.navigate} />),
   },
   {
+    path: "/dashboard",
+    label: "工作台",
+    render: (context) => protectedPage(context, <WorkspacePage navigate={context.navigate} />),
+  },
+  {
+    path: "/knowledge",
+    label: "知识库",
+    render: (context) => protectedPage(context, <KnowledgePage />),
+  },
+  {
     path: "/users",
     label: "用户管理",
     render: (context) => protectedPage(context, <UserManagementPage />),
+  },
+  {
+    path: "/settings",
+    label: "用户管理",
+    render: (context) => protectedPage(context, <UserManagementPage />),
+  },
+  {
+    path: "/admin/users",
+    label: "用户管理",
+    render: (context) => protectedPage(context, <UserManagementPage />),
+  },
+  {
+    path: "/bid-reference-sites",
+    label: "招投标网址",
+    render: (context) => protectedPage(context, <BidReferenceSitesPage />),
   },
   {
     path: "/feedback",
@@ -61,9 +88,24 @@ export const appRoutes: AppRoute[] = [
     render: (context) => protectedPage(context, <FeedbackPage />),
   },
   {
+    path: "/apps/competitor-analysis",
+    label: "企业竞品分析",
+    render: (context) => protectedPage(context, <CompetitorAnalysisPage />),
+  },
+  {
     path: "/modules/competitor-analysis",
     label: "竞对分析",
     render: (context) => protectedPage(context, <CompetitorAnalysisPage />),
+  },
+  {
+    path: "/apps/rag-web-search",
+    label: "RAG 问答",
+    render: (context) => protectedPage(context, <RagPage />),
+  },
+  {
+    path: "/apps/rag",
+    label: "RAG 问答",
+    render: (context) => protectedPage(context, <RagPage />),
   },
   {
     path: "/modules/rag",
@@ -71,9 +113,19 @@ export const appRoutes: AppRoute[] = [
     render: (context) => protectedPage(context, <RagPage />),
   },
   {
+    path: "/apps/contract-review",
+    label: "合同审查",
+    render: (context) => protectedPage(context, <ContractReviewPage />),
+  },
+  {
     path: "/modules/contract-review",
     label: "合同审查",
     render: (context) => protectedPage(context, <ContractReviewPage />),
+  },
+  {
+    path: "/apps/bid-generator",
+    label: "标书生成",
+    render: (context) => protectedPage(context, <BidGeneratorPage />),
   },
   {
     path: "/modules/bid-generator",
@@ -83,6 +135,14 @@ export const appRoutes: AppRoute[] = [
 ];
 
 export function resolveRoute(pathname: string): AppRoute {
+  if (pathname.startsWith("/apps/competitor-analysis/")) {
+    return {
+      path: "/apps/competitor-analysis/*",
+      label: "企业竞品分析",
+      render: (context) => protectedPage(context, <CompetitorAnalysisPage />),
+    };
+  }
+
   return appRoutes.find((route) => route.path === pathname) ?? {
     path: "*",
     label: "404",
