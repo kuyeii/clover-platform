@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-business",
         action="store_true",
-        help="Start Portal frontend and platform-api without business modules.",
+        help="Start apps/web and platform-api without legacy rollback services.",
     )
     parser.add_argument("--write-ports-only", action="store_true", help="Write runtime/ports.json without starting services.")
     parser.add_argument("--only", action="append", default=[], help="Only start selected app code or module key.")
@@ -33,6 +33,16 @@ def parse_args() -> argparse.Namespace:
         "--with-legacy-backends",
         action="store_true",
         help="Also start legacy business backends for rollback/debug fallback.",
+    )
+    parser.add_argument(
+        "--with-legacy-frontends",
+        action="store_true",
+        help="Also start legacy Portal and business frontends for iframe rollback/debug fallback.",
+    )
+    parser.add_argument(
+        "--legacy-portal",
+        action="store_true",
+        help="Also start legacy/portal-launchpad frontend/backend as a rollback entry.",
     )
     parser.add_argument("--skip-preflight", action="store_true", help="Skip startup preflight checks.")
     return parser.parse_args()
@@ -103,18 +113,33 @@ def _inject_portal_platform_env(env: dict[str, str], port_plan: dict[str, Any]) 
     env.setdefault("VITE_PLATFORM_WS_PROXY_TARGET", ws_url)
 
 
+def _inject_apps_web_platform_env(env: dict[str, str], port_plan: dict[str, Any]) -> None:
+    platform_plan = (port_plan.get("apps") or {}).get("platform-api")
+    if not isinstance(platform_plan, dict):
+        return
+
+    backend_url = str(platform_plan.get("backend_url") or "").rstrip("/")
+    backend_port = platform_plan.get("backend_port")
+    if not backend_url and backend_port:
+        backend_url = f"http://127.0.0.1:{backend_port}"
+    if not backend_url:
+        return
+
+    ws_url = backend_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+    env.setdefault("VITE_API_BASE_URL", f"{backend_url}/api/v1")
+    env.setdefault("VITE_WS_BASE_URL", f"{ws_url}/ws/core")
+
+
 def _port_plan_include_codes(
     apps_config: dict[str, Any],
     *,
     no_business: bool,
-    write_ports_only: bool,
     only: set[str],
 ) -> set[str] | None:
     return select_app_codes(
         apps_config,
         no_business=no_business,
         only=only,
-        default_all=write_ports_only,
     )
 
 
@@ -132,10 +157,45 @@ def _include_platform_for_business_only(apps_config: dict[str, Any], selected: s
     return selected
 
 
-def _should_include_portal_backend(*, no_business: bool, only: set[str]) -> bool:
-    if no_business:
-        return False
+def _legacy_business_codes(apps_config: dict[str, Any]) -> set[str]:
+    apps = apps_config.get("apps") or {}
+    return {
+        str(app.get("code") or key)
+        for key, app in apps.items()
+        if isinstance(app, dict) and bool(app.get("iframe_enabled", False))
+    }
+
+
+def _augment_selected_for_legacy_modes(
+    apps_config: dict[str, Any],
+    selected: set[str],
+    *,
+    legacy_portal: bool,
+    with_legacy_frontends: bool,
+    with_legacy_backends: bool,
+) -> set[str]:
+    next_selected = set(selected)
+    has_explicit_selection = bool(selected)
+    legacy_business_codes = _legacy_business_codes(apps_config)
+    legacy_mode = legacy_portal or with_legacy_frontends or with_legacy_backends
+    if legacy_mode and not next_selected:
+        next_selected.update(auto_start_codes(apps_config))
+    if legacy_portal or (with_legacy_frontends and not has_explicit_selection):
+        next_selected.add("portal")
+    if with_legacy_frontends or with_legacy_backends:
+        if next_selected & legacy_business_codes:
+            next_selected.update(next_selected & legacy_business_codes)
+        else:
+            next_selected.update(legacy_business_codes)
+    return next_selected
+
+
+def _should_include_portal_backend(*, only: set[str]) -> bool:
     return "portal" in only
+
+
+def _is_legacy_mode(args: argparse.Namespace) -> bool:
+    return bool(args.legacy_portal or args.with_legacy_frontends or args.with_legacy_backends)
 
 
 def should_start_app(
@@ -144,15 +204,16 @@ def should_start_app(
     no_business: bool,
     only: set[str],
     skip: set[str],
+    force_start_codes: set[str],
 ) -> bool:
     code = str(app.get("code"))
     if code in skip:
         return False
     if only and code not in only:
         return False
-    if no_business and code not in {"portal", "platform-api"}:
+    if no_business and code not in {"apps-web", "platform-api"}:
         return False
-    return bool((app.get("dev") or {}).get("enabled", False))
+    return code in force_start_codes or bool((app.get("dev") or {}).get("enabled", False))
 
 
 def build_process_specs(
@@ -164,6 +225,7 @@ def build_process_specs(
     skip: set[str],
     with_legacy_backends: bool,
     include_portal_backend: bool,
+    force_start_codes: set[str],
 ) -> list[ProcessSpec]:
     specs: list[ProcessSpec] = []
     apps = apps_config.get("apps") or {}
@@ -172,12 +234,17 @@ def build_process_specs(
     for _, app in apps.items():
         code = str(app.get("code"))
         dev = app.get("dev") or {}
-        if not should_start_app(app, no_business=no_business, only=only, skip=skip):
+        if not should_start_app(app, no_business=no_business, only=only, skip=skip, force_start_codes=force_start_codes):
             continue
         plan = plan_by_code[code]
 
         env = _format_env(dev.get("env") or {}, app, plan)
-        if code == "portal":
+        if code == "apps-web":
+            _inject_apps_web_platform_env(env, port_plan)
+            frontend_command = _format_value(str(dev["frontend_command"]), app, plan)
+            frontend_cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))
+            specs.append(ProcessSpec(f"{code}:frontend", frontend_command, frontend_cwd, env))
+        elif code == "portal":
             _inject_portal_platform_env(env, port_plan)
             frontend_command = _format_value(str(dev["frontend_command"]), app, plan)
             frontend_cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))
@@ -193,7 +260,7 @@ def build_process_specs(
             frontend_cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))
             if backend_command and with_legacy_backends and "backend_port" in plan:
                 specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
-            if frontend_command:
+            if frontend_command and "frontend_port" in plan:
                 specs.append(ProcessSpec(f"{code}:frontend", frontend_command, frontend_cwd, env))
         elif str(dev.get("kind") or "") == "backend":
             backend_command = _format_value(str(dev.get("backend_command") or ""), app, plan)
@@ -231,12 +298,19 @@ def main() -> int:
         apps_config = load_apps_config(REPO_ROOT)
         only = resolve_app_tokens(apps_config, args.only)
         only = _include_platform_for_business_only(apps_config, only)
+        only = _augment_selected_for_legacy_modes(
+            apps_config,
+            only,
+            legacy_portal=args.legacy_portal,
+            with_legacy_frontends=args.with_legacy_frontends,
+            with_legacy_backends=args.with_legacy_backends,
+        )
         skip = resolve_app_tokens(apps_config, args.skip)
-        include_portal_backend = _should_include_portal_backend(no_business=args.no_business, only=only)
+        effective_no_business = args.no_business and not _is_legacy_mode(args)
+        include_portal_backend = _should_include_portal_backend(only=only)
         include_codes = _port_plan_include_codes(
             apps_config,
-            no_business=args.no_business,
-            write_ports_only=args.write_ports_only,
+            no_business=effective_no_business,
             only=only,
         )
         port_plan = check_port_plan(
@@ -244,6 +318,7 @@ def main() -> int:
             include_codes=include_codes,
             exclude_codes=skip,
             include_portal_backend=include_portal_backend,
+            include_legacy_frontends=args.with_legacy_frontends,
             include_legacy_backends=args.with_legacy_backends,
         )
     except (OSError, ValueError, PortAllocationError) as exc:
@@ -260,6 +335,7 @@ def main() -> int:
             exclude_codes=skip,
             port_plan=port_plan,
             include_portal_backend=include_portal_backend,
+            include_legacy_frontends=args.with_legacy_frontends,
             include_legacy_backends=args.with_legacy_backends,
         )
         print(preflight_report.format_text())
@@ -279,11 +355,12 @@ def main() -> int:
     specs = build_process_specs(
         apps_config,
         port_plan,
-        no_business=args.no_business,
+        no_business=effective_no_business,
         only=only,
         skip=skip,
         with_legacy_backends=args.with_legacy_backends,
         include_portal_backend=include_portal_backend,
+        force_start_codes=only,
     )
     if not specs:
         print("No services selected.")

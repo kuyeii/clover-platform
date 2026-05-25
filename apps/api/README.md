@@ -232,13 +232,13 @@ WebSocket 不使用统一 envelope。`/ws/core/app-usage` 保持 legacy `/ws/app
 
 ## 本地文件系统版部署边界
 
-`apps/api` 负责统一鉴权、平台 API、运行时应用列表、业务代理，并在第 9-D 后直接执行合同审查与标书生成主要业务 API。合同审查和标书生成文件产物仍保存在 legacy 本地目录；`apps/api` 不是统一对象存储。部署时需要分别运行 `apps/api`、Portal 前端、四个业务 iframe 前端和仍需保留作回滚参考的 legacy 后端，并为 PostgreSQL、Dify / workflow key、本地持久化目录、日志目录和反向代理 / CORS 做独立配置。
+`apps/api` 负责统一鉴权、平台 API、运行时应用列表、业务代理，并在第 9-D 后直接执行合同审查与标书生成主要业务 API。合同审查和标书生成文件产物仍保存在 legacy 本地目录；`apps/api` 不是统一对象存储。第 10-F 后，默认前端主入口是 `apps/web`，部署和本地开发默认不再启动 legacy Portal 或四个 legacy 业务前端；legacy 前端、iframe 和 legacy 后端仍作为回滚 / 调试路径保留。生产部署需要为 `apps/api`、`apps/web`、PostgreSQL、Dify / workflow key、本地持久化目录、日志目录和反向代理 / CORS 做独立配置。
 
-第 9-E 后，本地开发默认不再启动四个 legacy 业务后端进程；生产或联调部署也应把 `apps/api` 视为主业务后端。legacy 源码目录仍可能是 `apps/api` 运行依赖，例如合同审查复用 `legacy/contract_review/src`，标书生成复用 `legacy/bid-generator/pipt-flask/app/api_lite`、`gateway-out` 和 `dify-bridge`。这些目录不能仅因为 legacy 后端进程不默认启动就删除。
+第 10-F 后，本地开发默认不再启动 legacy Portal、四个 legacy 业务前端或四个 legacy 业务后端进程；生产或联调部署也应把 `apps/api` 视为主业务后端，把 `apps/web` 视为主前端。legacy 源码目录仍可能是 `apps/api` 运行依赖，例如合同审查复用 `legacy/contract_review/src`，标书生成复用 `legacy/bid-generator/pipt-flask/app/api_lite`、`gateway-out` 和 `dify-bridge`。这些目录不能仅因为 legacy 前端 / 后端进程不默认启动就删除。
 
 需要持久化挂载的业务目录以第 8-B 文档为准，重点包括 `legacy/contract_review/data/uploads`、`legacy/contract_review/data/runs`、`legacy/bid-generator/data/pdf_cache`、`legacy/bid-generator/data/docx_cache`、`legacy/bid-generator/data/raw_doc_cache`、`legacy/bid-generator/data/extracted_images`、`legacy/bid-generator/data/projects` 和 `legacy/bid-generator/data/kb_sync_status`。RAG 知识库文件当前由 Dify Dataset 管理；竞对分析当前主要写 PostgreSQL。
 
-生产反向代理应把 Portal 与四个 iframe 前端的可信 origin 配入 `apps/api` CORS，不应使用无边界的 `*`。iframe auth bridge 依赖 runtime app 的可信 `iframeUrl` origin；`Authorization` 和 `X-Portal-Client-Id` 只发送到 `apps/api`，fallback 到 legacy backend 时不能携带 Portal token。
+生产反向代理应把 `apps/web` 的可信 origin 配入 `apps/api` CORS，不应使用无边界的 `*`。如启用 legacy iframe 回滚，再把对应 legacy 前端 origin 加入 CORS。iframe auth bridge 依赖 runtime app 的可信 `iframeUrl` origin；`Authorization` 和 `X-Portal-Client-Id` 只发送到 `apps/api`，fallback 到 legacy backend 时不能携带 Portal token。
 
 ## 本地启动
 
@@ -254,25 +254,43 @@ python -m pip install -r apps/api/requirements.txt
 python scripts/dev.py --only platform-api
 ```
 
-启动 Portal + 统一后端，不启动四个业务模块：
+启动统一前端 + 统一后端，不启动 legacy 回滚服务：
 
 ```bash
 python scripts/dev.py --no-business
 ```
 
-`--no-business` 会启动 Portal 前端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`。Portal 前端的 `/api/v1/core` 与 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps 和 feedback 可能不可用。
+`--no-business` 会启动 `apps/web` + platform-api，并向 `apps/web` 注入 `VITE_API_BASE_URL` 和 `VITE_WS_BASE_URL`。`apps/web` 的 `/api/v1/core`、四个业务 `/api/v1/**` 和 `/ws/core` 需要 platform-api；如果通过 `--skip platform-api` 跳过统一后端，登录、用户管理、应用占用、runtime apps、feedback 和业务页面可能不可用。
 
-默认全量启动会启动 Portal 前端、platform-api 和四个业务 iframe 前端，默认不启动四个 legacy 业务后端。四个 iframe 前端会优先调用对应 `apps/api` direct 业务入口；`runtime/ports.json` 默认不写未启动 legacy backend 的 `backend_url`，direct API 不依赖该字段。legacy Portal 后端不在默认链路中启动，可通过 `python scripts/dev.py --only portal` 保留回滚和兼容排查路径。
+默认全量启动会启动 `apps/web` 和 platform-api，默认不启动 legacy Portal、四个 legacy 业务前端或四个 legacy 业务后端。`runtime/ports.json` 默认只写 `apps-web.frontend_url` 和 `platform-api.backend_url` / `health_url`，不写 legacy `iframe_url` 或未启动 legacy backend 的 `backend_url`。
 
-启动全部 legacy 业务后端回滚 / 调试：
+第 10-F 后，platform-api 在 `scripts/dev.py` 统一启动器中默认不使用 `uvicorn --reload`。原因是标书生成 direct API 会复用 legacy `gateway-out`，该兼容层会扩展 Python 搜索路径；reload 子进程继承该状态后可能误解析同名 `main.py`。这只影响开发启动方式，不改变 `apps/api` 业务 API。
+
+启动 legacy Portal 回滚入口：
 
 ```bash
-python scripts/dev.py --with-legacy-backends
+python scripts/dev.py --legacy-portal
 ```
 
-启动单模块回滚 / 调试：
+启动 legacy Portal 和四个 legacy 业务前端完整回滚入口：
 
 ```bash
+python scripts/dev.py --with-legacy-frontends
+```
+
+启动全部 legacy 业务前端和后端回滚 / 调试：
+
+```bash
+python scripts/dev.py --with-legacy-frontends --with-legacy-backends
+```
+
+启动单模块 legacy 前端 / 后端回滚：
+
+```bash
+python scripts/dev.py --only competitor-analysis --with-legacy-frontends
+python scripts/dev.py --only rag-web-search --with-legacy-frontends
+python scripts/dev.py --only contract-review --with-legacy-frontends
+python scripts/dev.py --only bid-generator --with-legacy-frontends
 python scripts/dev.py --only competitor-analysis --with-legacy-backends
 python scripts/dev.py --only rag-web-search --with-legacy-backends
 python scripts/dev.py --only contract-review --with-legacy-backends

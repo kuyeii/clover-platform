@@ -131,6 +131,7 @@ def check_port_plan(
     exclude_codes: set[str] | None = None,
     exclude_module_keys: set[str] | None = None,
     include_portal_backend: bool = True,
+    include_legacy_frontends: bool | None = None,
     include_legacy_backends: bool | None = None,
 ) -> dict[str, Any]:
     apps = apps_config.get("apps") or {}
@@ -209,13 +210,10 @@ def check_port_plan(
             plan["apps"][code] = app_plan
             continue
 
-        start_legacy_backend = (
-            bool(include_legacy_backends)
-            if include_legacy_backends is not None
-            else bool(dev.get("default_start_backend", auto_start))
-        )
-
-        if kind == "frontend_backend" and auto_start:
+        if kind == "frontend":
+            if not auto_start:
+                plan["apps"][code] = app_plan
+                continue
             frontend = _reserve_port(
                 label=f"{code} frontend",
                 preferred_port=int(_dev_value(dev, "frontend_preferred_port", "preferred_port")),
@@ -234,6 +232,40 @@ def check_port_plan(
                 }
             )
             plan["services"].append(frontend)
+            plan["apps"][code] = app_plan
+            continue
+
+        start_legacy_backend = (
+            bool(include_legacy_backends)
+            if include_legacy_backends is not None
+            else bool(dev.get("default_start_backend", auto_start))
+        )
+
+        if kind == "frontend_backend":
+            start_legacy_frontend = (
+                bool(include_legacy_frontends)
+                if include_legacy_frontends is not None
+                else auto_start or include_codes is None
+            )
+            if start_legacy_frontend:
+                frontend = _reserve_port(
+                    label=f"{code} frontend",
+                    preferred_port=int(_dev_value(dev, "frontend_preferred_port", "preferred_port")),
+                    port_range=_dev_value(dev, "frontend_port_range", "port_range"),
+                    host=host,
+                    reserved=reserved,
+                )
+                app_plan.update(
+                    {
+                        "frontend_port": frontend["port"],
+                        "port": frontend["port"],
+                        "frontend": frontend,
+                        "frontend_url": f"http://127.0.0.1:{frontend['port']}",
+                        "url": f"http://127.0.0.1:{frontend['port']}",
+                        "iframe_url": f"http://127.0.0.1:{frontend['port']}",
+                    }
+                )
+                plan["services"].append(frontend)
             if start_legacy_backend:
                 backend = _reserve_port(
                     label=f"{code} backend",

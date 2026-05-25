@@ -1,4 +1,29 @@
 apps:
+  apps_web:
+    name: 统一前端
+    code: apps-web
+    module_key: apps_web
+    description: Clover Platform 统一 React 前端主入口。
+    enabled: true
+    legacy_path:
+    module_path: apps/web
+    route_path: /
+    target_api_prefix:
+    iframe_enabled: false
+    iframe_url_env:
+    permission_default: false
+    legacy_health_check:
+    storage_namespace: web
+    workflow_refs: []
+    dev:
+      enabled: true
+      kind: frontend
+      working_dir: apps/web
+      frontend_working_dir: apps/web
+      frontend_command: npx vite --host 0.0.0.0 --port {frontend_port}
+      frontend_preferred_port: 5300
+      frontend_port_range: [5300, 5309]
+
   portal:
     name: 统一入口
     code: portal
@@ -16,7 +41,9 @@ apps:
     storage_namespace: portal
     workflow_refs: []
     dev:
-      enabled: true
+      enabled: false
+      # Stage 10-F: legacy Portal is kept for rollback only.
+      # Use scripts/dev.py --legacy-portal or --only portal to start it.
       kind: portal
       working_dir: legacy/portal-launchpad
       frontend_working_dir: legacy/portal-launchpad
@@ -54,7 +81,10 @@ apps:
       backend_working_dir: apps/api
       python_bin_env: PLATFORM_API_PYTHON_BIN
       prefer_local_python: false
-      backend_command: "{python} -m uvicorn main:app --host 0.0.0.0 --port {backend_port} --reload"
+      # Keep the default launcher stable after legacy bid-generator extends sys.path
+      # for gateway-out; uvicorn --reload can inherit that path and resolve main.py
+      # from gateway-out instead of apps/api.
+      backend_command: "{python} -m uvicorn main:app --host 0.0.0.0 --port {backend_port}"
       backend_preferred_port: 5220
       backend_port_range: [5220, 5229]
       health_check: /api/v1/core/health
@@ -77,9 +107,9 @@ apps:
     workflow_refs:
       - bid_generator
     dev:
-      enabled: true
-      # Stage 9-E: legacy business backend is kept for rollback/debug only.
-      # Default dev startup launches the iframe frontend; use
+      enabled: false
+      # Stage 10-F: legacy business frontend/backend are kept for rollback/debug only.
+      # Use scripts/dev.py --with-legacy-frontends to start this frontend and
       # scripts/dev.py --with-legacy-backends to start this backend.
       default_start_backend: false
       kind: frontend_backend
@@ -118,9 +148,9 @@ apps:
     workflow_refs:
       - contract_review
     dev:
-      enabled: true
-      # Stage 9-E: legacy business backend is kept for rollback/debug only.
-      # Default dev startup launches the iframe frontend; use
+      enabled: false
+      # Stage 10-F: legacy business frontend/backend are kept for rollback/debug only.
+      # Use scripts/dev.py --with-legacy-frontends to start this frontend and
       # scripts/dev.py --with-legacy-backends to start this backend.
       default_start_backend: false
       kind: frontend_backend
@@ -158,9 +188,9 @@ apps:
     workflow_refs:
       - rag_qa
     dev:
-      enabled: true
-      # Stage 9-E: legacy business backend is kept for rollback/debug only.
-      # Default dev startup launches the iframe frontend; use
+      enabled: false
+      # Stage 10-F: legacy business frontend/backend are kept for rollback/debug only.
+      # Use scripts/dev.py --with-legacy-frontends to start this frontend and
       # scripts/dev.py --with-legacy-backends to start this backend.
       default_start_backend: false
       kind: frontend_backend
@@ -198,9 +228,9 @@ apps:
     workflow_refs:
       - competitor_analysis
     dev:
-      enabled: true
-      # Stage 9-E: legacy business backend is kept for rollback/debug only.
-      # Default dev startup launches the iframe frontend; use
+      enabled: false
+      # Stage 10-F: legacy business frontend/backend are kept for rollback/debug only.
+      # Use scripts/dev.py --with-legacy-frontends to start this frontend and
       # scripts/dev.py --with-legacy-backends to start this backend.
       default_start_backend: false
       kind: frontend_backend

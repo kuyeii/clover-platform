@@ -55,6 +55,17 @@ def build_ports_payload(
             "auto_start": bool(dev.get("enabled", False)),
             "dev_mode": "auto" if bool(dev.get("enabled", False)) else "manual",
         }
+        if kind == "frontend":
+            if "frontend_port" in plan:
+                app_payload["frontend_port"] = plan["frontend_port"]
+            if "port" in plan:
+                app_payload["port"] = plan["port"]
+            if frontend_url:
+                app_payload["frontend_url"] = frontend_url
+                app_payload["url"] = frontend_url
+            payload_apps[code] = app_payload
+            continue
+
         if kind == "backend":
             if "backend_port" in plan:
                 app_payload["backend_port"] = plan["backend_port"]

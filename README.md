@@ -2,7 +2,7 @@
 
 四叶草平台整合主仓库。
 
-当前阶段已进入第 10-E：标书生成前端迁入 `apps/web`。`apps/api` 仍是当前主业务后端；`apps/web` 已迁入 Portal、竞对分析、RAG、合同审查和标书生成真实前端能力；legacy 业务前端与 iframe 配置继续保留为回滚入口。阶段说明见 `docs/stage-10-e-bid-generator-frontend-migration.md`。
+当前阶段已进入第 10-F：统一前端收口与 legacy 前端冻结评估。`apps/web` 是默认前端主入口，`apps/api` 仍是当前主业务后端；Portal、竞对分析、RAG、合同审查和标书生成均已在 `apps/web` 承载真实页面。legacy Portal 与四个 legacy 业务前端默认不启动，继续保留为回滚入口，iframe 代码和 `config/apps.yaml` iframe 配置暂时保留。阶段说明见 `docs/stage-10-f-frontend-rollup-and-legacy-freeze.md`。
 
 ## 项目目标
 
@@ -10,9 +10,9 @@
 
 ## 当前阶段
 
-当前处于第 10-E 阶段：第 10-A 的统一前端骨架、第 10-B 的 Portal / 竞对分析迁移、第 10-C 的 RAG 迁移、第 10-D 的合同审查迁移之后，标书生成真实前端页面已迁入 `apps/web`。`apps/web` 已具备 Portal 登录、会话恢复、工作台、四个模块入口、用户管理、runtime apps、app usage、feedback、竞对分析真实页面、RAG 会话 / 聊天流 / knowledge 文档能力、合同审查上传 / 审查 / AI 改写能力，以及标书生成项目 CRUD、文件上传解析、SSE 任务、大纲 / 正文生成、实体映射、脱敏还原、PDF / 图片预览、DOCX / PDF / Excel 导出和 knowledge/kb 能力。legacy 业务前端和 iframe 配置继续保留回滚，不删除 legacy，不修改业务 API，`apps/api` 仍是统一后端主应用。阶段边界见 `docs/stage-10-e-bid-generator-frontend-migration.md`。
+当前处于第 10-F 阶段：在第 10-A 到第 10-E 已完成统一前端骨架、Portal、竞对分析、RAG、合同审查和标书生成真实页面迁入后，本阶段完成统一前端收口和 legacy 前端默认启动策略调整。`apps/web` 已具备 Portal 登录、会话恢复、工作台、四个模块入口、用户管理、runtime apps、app usage、feedback、竞对分析真实页面、RAG 会话 / 聊天流 / knowledge 文档能力、合同审查上传 / 审查 / AI 改写能力，以及标书生成项目 CRUD、文件上传解析、SSE 任务、大纲 / 正文生成、实体映射、脱敏还原、PDF / 图片预览、DOCX / PDF / Excel 导出和 knowledge/kb 能力。默认 `python scripts/dev.py` 只启动 `apps/web` 和 `apps/api`，不默认启动 legacy Portal、四个 legacy 业务前端或 legacy 业务后端；legacy 前端和 iframe 配置继续保留回滚，不删除 legacy，不修改业务 API，`apps/api` 仍是统一后端主应用。阶段边界见 `docs/stage-10-f-frontend-rollup-and-legacy-freeze.md`。
 
-第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback。第 7-G 新增合同审查代理入口 `/api/v1/contract-review/{path:path}`，合同审查业务逻辑仍由 legacy 后端执行。第 7-H 新增标书生成代理入口 `/api/v1/bid-generator/{path:path}`，标书生成业务逻辑仍由 legacy 后端执行。第 7-I 新增 Portal -> iframe auth bridge，并仅将竞对分析 iframe 前端优先切到 `/api/v1/competitor-analysis/**`。第 7-J 将 RAG iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/rag/api/v1/**`；RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端通过 proxy 执行。第 7-K 将合同审查 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/contract-review/api/**`；合同审查业务逻辑仍由 legacy 合同审查后端通过 proxy 执行。第 7-L 将标书生成 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/bid-generator/api/**`；标书生成业务逻辑仍由 legacy `pipt-lite` 后端通过 proxy 执行。第 7-M 对四个业务代理入口、四个 iframe auth bridge 接入、fallback 安全边界和文档状态做总体验收，并收紧非幂等请求的自动 fallback。第 8-A 将第 7-M 验收结果固化为回归与开发启动基线，详见 `docs/stage-8-a-regression-and-dev-baseline.md`。第 8-B 梳理本地文件系统与任务状态边界，详见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 完善错误诊断与本地文件系统版部署准备，详见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 完成第一批低风险 direct API，详见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 完成第二批低风险查询类 direct API，详见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 对第 8 阶段 direct/proxy 混合状态、复杂链路暂缓原因、部署边界、安全边界和验收清单做整体收口，详见 `docs/stage-8-f-stage-8-rollup.md`。第 9-A 完成竞对分析模块主要业务 API direct 迁移，详见 `docs/stage-9-a-competitor-analysis-full-migration.md`。第 9-B 完成 RAG 问答模块主要业务 API direct 迁移，详见 `docs/stage-9-b-rag-full-migration.md`。第 9-C 完成合同审查模块主要业务 API direct 迁移，详见 `docs/stage-9-c-contract-review-full-migration.md`。第 9-D 完成标书生成模块后端业务 API direct 迁移，详见 `docs/stage-9-d-bid-generator-full-migration.md`。第 9-E 完成四模块迁移收口并调整 legacy 默认启动策略，详见 `docs/stage-9-e-post-migration-startup-rollup.md`。第 10-A 初始化统一前端与模块边界骨架，详见 `docs/stage-10-a-frontend-modules-foundation.md`。第 10-B 迁移 Portal 能力和竞对分析真实前端到 `apps/web`，详见 `docs/stage-10-b-portal-and-competitor-frontend-migration.md`。第 10-C 迁移 RAG 真实前端到 `apps/web`，详见 `docs/stage-10-c-rag-frontend-migration.md`。第 10-D 迁移合同审查真实前端到 `apps/web`，详见 `docs/stage-10-d-contract-review-frontend-migration.md`。第 10-E 迁移标书生成真实前端到 `apps/web`，详见 `docs/stage-10-e-bid-generator-frontend-migration.md`。
+第 1 阶段 monorepo 骨架与 legacy 归档已完成。第 2 阶段 PostgreSQL 18 基础设施已完成。第 3 阶段已完成 Portal 登录、用户管理、应用权限、应用占用状态等核心数据写入 PostgreSQL。第 4 阶段已完成统一开发启动器、端口发现和 runtime iframe URL。第 5-A 阶段已完成竞对分析运行时历史记录和企业校验缓存迁移。第 5-B 阶段已完成 RAG 问答本地对话列表和问答 turn 记录迁移。第 5-C 阶段已完成合同审查运行元数据和结构化 artifact 索引迁移。第 5-D 阶段已完成标书生成 `pipt-lite` 当前 ORM 数据迁移。第 6-A 阶段新增统一 FastAPI 后端基座。第 6-B 阶段在 `apps/api` 中并行新增 Portal 核心 API。第 6-C 阶段已将 Portal 前端 auth、users、app-usage、runtime apps 和 app-usage WebSocket 切到统一后端。第 6-D 阶段已将 Portal feedback 的工单、功能建议、验证码、附件校验和邮件发送迁入 `apps/api`。第 6-E 阶段确认 Portal 前端核心平台 API 不再依赖 legacy Portal 后端，并将 `scripts/dev.py --no-business` 调整为默认只启动 Portal 前端和 platform-api。第 7-A 完成业务模块 API 迁入评估。第 7-B 在 `apps/api` 新增业务代理基座，并接入 `competitor-analysis` 代理试点。第 7-C 将 `competitor-analysis` 的 health/history 直接迁入 `apps/api`；analysis、workflows 和 stream 仍走 legacy proxy fallback。第 7-D 将 RAG 接入 `/api/v1/rag/{path:path}` 鉴权代理。第 7-E 将 RAG health/sessions/conversations/conversations sync 直接迁入 `apps/api`。第 7-F 将 Portal knowledgeService 优先切到 `/api/v1/rag/api/v1/knowledge/...`，knowledge 业务仍由 legacy RAG 后端执行并保留 backendUrl fallback。第 7-G 新增合同审查代理入口 `/api/v1/contract-review/{path:path}`，合同审查业务逻辑仍由 legacy 后端执行。第 7-H 新增标书生成代理入口 `/api/v1/bid-generator/{path:path}`，标书生成业务逻辑仍由 legacy 后端执行。第 7-I 新增 Portal -> iframe auth bridge，并仅将竞对分析 iframe 前端优先切到 `/api/v1/competitor-analysis/**`。第 7-J 将 RAG iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/rag/api/v1/**`；RAG chat stream 和 knowledge 业务逻辑仍由 legacy RAG 后端通过 proxy 执行。第 7-K 将合同审查 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/contract-review/api/**`；合同审查业务逻辑仍由 legacy 合同审查后端通过 proxy 执行。第 7-L 将标书生成 iframe 前端接入同一 auth bridge，并优先切到 `/api/v1/bid-generator/api/**`；标书生成业务逻辑仍由 legacy `pipt-lite` 后端通过 proxy 执行。第 7-M 对四个业务代理入口、四个 iframe auth bridge 接入、fallback 安全边界和文档状态做总体验收，并收紧非幂等请求的自动 fallback。第 8-A 将第 7-M 验收结果固化为回归与开发启动基线，详见 `docs/stage-8-a-regression-and-dev-baseline.md`。第 8-B 梳理本地文件系统与任务状态边界，详见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 完善错误诊断与本地文件系统版部署准备，详见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 完成第一批低风险 direct API，详见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 完成第二批低风险查询类 direct API，详见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 对第 8 阶段 direct/proxy 混合状态、复杂链路暂缓原因、部署边界、安全边界和验收清单做整体收口，详见 `docs/stage-8-f-stage-8-rollup.md`。第 9-A 完成竞对分析模块主要业务 API direct 迁移，详见 `docs/stage-9-a-competitor-analysis-full-migration.md`。第 9-B 完成 RAG 问答模块主要业务 API direct 迁移，详见 `docs/stage-9-b-rag-full-migration.md`。第 9-C 完成合同审查模块主要业务 API direct 迁移，详见 `docs/stage-9-c-contract-review-full-migration.md`。第 9-D 完成标书生成模块后端业务 API direct 迁移，详见 `docs/stage-9-d-bid-generator-full-migration.md`。第 9-E 完成四模块迁移收口并调整 legacy 默认启动策略，详见 `docs/stage-9-e-post-migration-startup-rollup.md`。第 10-A 初始化统一前端与模块边界骨架，详见 `docs/stage-10-a-frontend-modules-foundation.md`。第 10-B 迁移 Portal 能力和竞对分析真实前端到 `apps/web`，详见 `docs/stage-10-b-portal-and-competitor-frontend-migration.md`。第 10-C 迁移 RAG 真实前端到 `apps/web`，详见 `docs/stage-10-c-rag-frontend-migration.md`。第 10-D 迁移合同审查真实前端到 `apps/web`，详见 `docs/stage-10-d-contract-review-frontend-migration.md`。第 10-E 迁移标书生成真实前端到 `apps/web`，详见 `docs/stage-10-e-bid-generator-frontend-migration.md`。第 10-F 完成统一前端收口与 legacy 前端冻结评估，详见 `docs/stage-10-f-frontend-rollup-and-legacy-freeze.md`。
 
 ## Legacy 项目
 
@@ -78,7 +78,7 @@ clover-platform/
 - 不替换 `legacy/portal-launchpad`。
 - 不迁移标书生成的文件缓存、Dify workflow、gateway-out、prompt-forge 或旧 LinCMS 数据层。
 - 不迁移 RAG 的 Dify 知识库数据、本地向量索引或文件缓存。
-- 不修改其他四个 legacy 项目的业务启动逻辑。
+- 不修改其他四个 legacy 项目的业务逻辑。
 
 ## 第 6-A 阶段：统一后端基座
 
@@ -545,52 +545,62 @@ python scripts/check_ports.py
 python scripts/dev.py --write-ports-only
 ```
 
-`--write-ports-only` 默认生成全部模块的端口规划；如果同时传入 `--only` 或 `--skip`，会按筛选后的模块范围生成，Portal runtime 接口会对缺失的模块继续使用静态配置兜底。
+`--write-ports-only` 默认生成当前主路径端口规划，也就是 `apps-web` 和 `platform-api`。如果传入 `--with-legacy-frontends`、`--with-legacy-backends`、`--legacy-portal`、`--only` 或 `--skip`，会按筛选后的范围生成对应回滚端口。
 
-只启动 Portal 前端 + platform-api，不启动 legacy Portal 后端和四个业务模块：
+只启动统一前端 + platform-api，不启动 legacy 回滚服务：
 
 ```bash
 python scripts/dev.py --no-business
 ```
 
-默认命令会启动配置中 `dev.enabled: true` 的主路径服务。第 9-E 后，默认 `python scripts/dev.py` 会启动：
+默认命令会启动配置中 `dev.enabled: true` 的主路径服务。第 10-F 后，默认 `python scripts/dev.py` 会启动：
 
-- Portal 前端
+- apps/web
 - platform-api
-- 标书生成前端
-- 合同审查前端
-- RAG 问答前端
-- 竞对分析前端
 
-默认不启动四个 legacy 业务后端，也不启动 legacy Portal 后端。四个业务 iframe 前端通过 Portal auth bridge 优先调用 `apps/api` direct API；未知路径的 catch-all proxy 仅作为回滚 / 兜底路径。
+默认不启动 legacy Portal、四个 legacy 业务前端或四个 legacy 业务后端。五个前端能力通过 `apps/web` 原生页面进入；iframe 和 legacy 前端仅作为回滚 / 兼容路径保留。
 
-需要 legacy 业务后端回滚 / 调试时使用：
+需要 legacy Portal 回滚入口时使用：
 
 ```bash
-python scripts/dev.py --with-legacy-backends
+python scripts/dev.py --legacy-portal
 ```
 
-该模式会额外启动四个 legacy 业务后端，并在 `runtime/ports.json` 中写入对应 `backend_url`。单模块回滚可使用 `python scripts/dev.py --only <app-code> --with-legacy-backends`。
+需要完整 legacy 前端回滚入口时使用：
+
+```bash
+python scripts/dev.py --with-legacy-frontends
+```
+
+该模式会额外启动 legacy Portal 和四个 legacy 业务前端，并在 `runtime/ports.json` 中写入 `portal.frontend_url` 以及四个业务模块的 `iframe_url`。
+
+需要 legacy 业务前端和后端完整回滚 / 调试时使用：
+
+```bash
+python scripts/dev.py --with-legacy-frontends --with-legacy-backends
+```
+
+该模式会额外启动 legacy Portal、四个 legacy 业务前端和四个 legacy 业务后端，并在 `runtime/ports.json` 中写入对应 `iframe_url` 与 `backend_url`。单模块业务前端回滚可使用 `python scripts/dev.py --only <app-code> --with-legacy-frontends`，需要 legacy 后端时再追加 `--with-legacy-backends`。
 
 第 4.1 阶段的业务模块开发自动启动接入已完成。标书生成的 `gateway-out` 是被 `pipt-flask` 导入调用的 Python 库/CLI，不是常驻 HTTP 服务，本阶段不单独自动启动。
 
-合同审查在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端端口优先使用 `18120`，可在 `18120-18124` 内自动切换；后端端口优先使用 `18125`，可在 `18125-18129` 内自动切换。默认 `runtime/ports.json` 中的 `contract-review.iframe_url` 指向合同审查前端，不写 legacy `backend_url`；回滚模式才写入 `contract-review.backend_url` 并把后端地址注入合同审查前端的 `VITE_API_BASE_URL`。
+合同审查在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。legacy 前端端口优先使用 `18120`，可在 `18120-18124` 内自动切换；legacy 后端端口优先使用 `18125`，可在 `18125-18129` 内自动切换。默认 `runtime/ports.json` 不写 `contract-review.iframe_url` 或 legacy `backend_url`；`--with-legacy-frontends` 才写入 `contract-review.iframe_url`，`--with-legacy-backends` 才写入 `contract-review.backend_url`。
 
-标书生成在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端端口优先使用 `18110`，可在 `18110-18114` 内自动切换；后端端口优先使用 `18115`，可在 `18115-18119` 内自动切换。默认 `runtime/ports.json` 中的 `bid-generator.iframe_url` 指向标书生成前端，不写 legacy `backend_url`；回滚模式才写入 `bid-generator.backend_url` 并把后端地址注入标书生成前端的 `VITE_API_BASE_URL`。
+标书生成在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。legacy 前端端口优先使用 `18110`，可在 `18110-18114` 内自动切换；legacy 后端端口优先使用 `18115`，可在 `18115-18119` 内自动切换。默认 `runtime/ports.json` 不写 `bid-generator.iframe_url` 或 legacy `backend_url`；`--with-legacy-frontends` 才写入 `bid-generator.iframe_url`，`--with-legacy-backends` 才写入 `bid-generator.backend_url`。
 
-RAG 问答在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端端口优先使用 `18140`，可在 `18140-18144` 内自动切换；后端端口优先使用 `18145`，可在 `18145-18149` 内自动切换。默认 `runtime/ports.json` 中的 `rag-web-search.iframe_url` 指向 RAG 前端，不写 legacy `backend_url`；回滚模式才写入 `rag-web-search.backend_url` 并把后端地址注入 RAG 前端的 `VITE_API_BASE_URL`。
+RAG 问答在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。legacy 前端端口优先使用 `18140`，可在 `18140-18144` 内自动切换；legacy 后端端口优先使用 `18145`，可在 `18145-18149` 内自动切换。默认 `runtime/ports.json` 不写 `rag-web-search.iframe_url` 或 legacy `backend_url`；`--with-legacy-frontends` 才写入 `rag-web-search.iframe_url`，`--with-legacy-backends` 才写入 `rag-web-search.backend_url`。
 
-竞对分析在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。前端端口优先使用 `18130`，可在 `18130-18134` 内自动切换；后端端口优先使用 `18135`，可在 `18135-18139` 内自动切换。默认 `runtime/ports.json` 中的 `competitor-analysis.iframe_url` 指向竞对分析前端，不写 legacy `backend_url`；回滚模式才写入 `competitor-analysis.backend_url` 并把后端地址注入竞对分析前端的 `VITE_API_BASE_URL`。
+竞对分析在 `config/apps.yaml` 中使用 `dev.kind: frontend_backend`。legacy 前端端口优先使用 `18130`，可在 `18130-18134` 内自动切换；legacy 后端端口优先使用 `18135`，可在 `18135-18139` 内自动切换。默认 `runtime/ports.json` 不写 `competitor-analysis.iframe_url` 或 legacy `backend_url`；`--with-legacy-frontends` 才写入 `competitor-analysis.iframe_url`，`--with-legacy-backends` 才写入 `competitor-analysis.backend_url`。
 
 统一启动器默认使用当前 Python 解释器启动后端。合同审查可通过 `CONTRACT_REVIEW_PYTHON_BIN` 指定解释器，RAG 问答可通过 `RAG_QA_PYTHON_BIN` 指定解释器；如果未设置且对应后端目录或 legacy 目录下存在 `.venv/bin/python`，会优先使用本地解释器，否则回退到当前 Python。
 
-`runtime/ports.json` 由启动器生成，不提交 Git。默认全量启动时它记录 Portal 前端、platform-api 和四个 iframe 模块的开发 URL；对未启动的 legacy 业务后端不写误导性的 `backend_url`。`--with-legacy-backends` 下才写入对应 legacy `backend_url`，供 catch-all proxy 回滚使用。`--no-business` 下它只记录 Portal 前端和 platform-api 端口。runtime apps 接口只返回前端需要的 `code`、`name`、`iframeUrl`、`enabled` 等字段，不返回 dev command、env 或任何密钥。
+`runtime/ports.json` 由启动器生成，不提交 Git。默认全量启动时它只记录 `apps-web.frontend_url`、`platform-api.backend_url` 和 `platform-api.health_url`。`--with-legacy-frontends` 下才写入 legacy Portal `frontend_url` 和 legacy 业务前端 `iframe_url`，`--with-legacy-backends` 下才写入对应 legacy `backend_url`，供 catch-all proxy 回滚使用。runtime apps 接口只返回前端需要的 `code`、`name`、`iframeUrl`、`enabled` 等字段，不返回 dev command、env 或任何密钥。
 
 `runtime/ports.json` 仅用于本地开发动态端口发现，部署环境不依赖该文件，也不应提交到 Git。
 
-Portal 前端启动后会请求 `/api/v1/core/runtime/apps`。接口可用时，用返回的 `iframeUrl` 覆盖 `src/config/apps.config.ts` 中的静态 URL；接口失败或 `runtime/ports.json` 不存在时，继续使用静态配置兜底。`scripts/dev.py --no-business` 会启动 Portal 前端 + platform-api，并向 Portal 前端注入 `VITE_PLATFORM_API_BASE_URL` 和 `VITE_PLATFORM_WS_BASE_URL`；如果跳过 platform-api，Portal 前端核心平台 API 和 feedback 可能不可用，legacy `/api` 仍只作为保留后端兼容层。
+`apps/web` 会请求 `/api/v1/core/runtime/apps` 获取回滚配置，但五个主业务入口当前均为原生页面。`scripts/dev.py --no-business` 会启动 `apps/web` + platform-api，并向 `apps/web` 注入 `VITE_API_BASE_URL` 和 `VITE_WS_BASE_URL`；如果跳过 platform-api，登录、用户管理、feedback、app usage、runtime apps 和业务页面可能不可用。第 10-F 后，platform-api 在统一启动器中默认不启用 `uvicorn --reload`，避免 legacy 标书生成 `gateway-out` 扩展 Python 搜索路径后 reload 子进程误解析同名 `main.py`；需要调试后端热重载时应在单独终端确认 Python 搜索路径后启动。
 
-当前仍未去 iframe，仍未整合 `apps/web`，也未搬迁 `modules`。legacy 源码目录暂时保留，尤其是合同审查和标书生成仍被 `apps/api` 作为库导入的部分。
+当前 `apps/web` 已完成五个前端能力收口，但仍未删除 iframe 或 legacy 前端。legacy 源码目录暂时保留，尤其是合同审查和标书生成仍被 `apps/api` 作为库导入的部分。
 
 ### 第 4.2 阶段：统一开发环境依赖与启动前检查
 
@@ -633,11 +643,12 @@ python scripts/preflight.py
 python scripts/preflight.py
 python scripts/preflight.py --no-business
 python scripts/preflight.py --only bid-generator
+python scripts/preflight.py --with-legacy-frontends
 python scripts/preflight.py --with-legacy-backends
 python scripts/preflight.py --json
 ```
 
-默认 preflight 检查 platform-api、Portal 前端和业务 iframe 前端，不会因为四个 legacy 业务后端依赖缺失而失败。需要验证 legacy backend 回滚链路时，使用 `--with-legacy-backends` 才检查对应 legacy 后端入口和 Python 依赖。Dify / workflow / Dataset key 继续按 warning 或业务运行时错误处理，不作为默认启动阻塞。
+默认 preflight 检查 `apps/web`、platform-api、数据库、端口和本地文件系统 warning，不会因为 legacy 前端或 legacy 后端依赖缺失而失败。需要验证 legacy Portal 和业务 frontend 回滚链路时使用 `--with-legacy-frontends`，需要验证 legacy backend 回滚链路时使用 `--with-legacy-backends`。Dify / workflow / Dataset key 继续按 warning 或业务运行时错误处理，不作为默认启动阻塞。
 
 `scripts/dev.py` 默认会先执行 preflight；如果检查出现 error，会阻止启动并打印修复建议。warning 只提示，不阻止启动。如需临时跳过：
 
@@ -682,7 +693,10 @@ python -m pip install -r legacy/company-competitors-analysis/backend/requirement
 ```bash
 python scripts/dev.py
 python scripts/dev.py --no-business
+python scripts/dev.py --with-legacy-frontends
 python scripts/dev.py --with-legacy-backends
+python scripts/dev.py --with-legacy-frontends --with-legacy-backends
+python scripts/dev.py --legacy-portal
 python scripts/dev.py --write-ports-only
 python scripts/dev.py --skip-preflight
 python scripts/dev.py --only contract-review
@@ -697,7 +711,7 @@ python scripts/dev.py --only platform-api
 python scripts/dev.py --skip bid-generator
 ```
 
-`python scripts/dev.py --no-business` 启动 Portal 前端 + platform-api，不启动 legacy Portal 后端和四个业务模块。`python scripts/dev.py --only portal` 仍启动 legacy Portal 前后端，用于回滚和兼容排查。`python scripts/dev.py --only platform-api` 只启动统一后端。`python scripts/dev.py --only contract-review`、`python scripts/dev.py --only rag-web-search`、`python scripts/dev.py --only competitor-analysis` 和 `python scripts/dev.py --only bid-generator` 会启动 platform-api 和对应业务 iframe 前端，默认不启动对应 legacy 业务后端；如需单模块 legacy backend 回滚，追加 `--with-legacy-backends`。动态端口只用于开发环境；Docker 正式部署会在后续部署阶段单独处理。
+`python scripts/dev.py --no-business` 启动 `apps/web` + platform-api，不启动 legacy 回滚服务。`python scripts/dev.py --legacy-portal` 会额外启动 legacy Portal 前后端，用于回滚和兼容排查。`python scripts/dev.py --with-legacy-frontends` 会额外启动 legacy Portal 和四个 legacy 业务前端。`python scripts/dev.py --only platform-api` 只启动统一后端。`python scripts/dev.py --only contract-review --with-legacy-frontends`、`python scripts/dev.py --only rag-web-search --with-legacy-frontends`、`python scripts/dev.py --only competitor-analysis --with-legacy-frontends` 和 `python scripts/dev.py --only bid-generator --with-legacy-frontends` 会启动 platform-api 和对应 legacy 业务前端；如需单模块 legacy backend 回滚，追加 `--with-legacy-backends`。动态端口只用于开发环境；Docker 正式部署会在后续部署阶段单独处理。
 
 ## 第 5-A 阶段：竞对分析 PostgreSQL 持久化
 
@@ -895,3 +909,7 @@ Portal iframe 集成不变。
 ## 第 9-E 阶段：四模块迁移收口与 legacy 默认启动策略调整
 
 第 9-E 阶段完成四个业务模块后端迁移收口。`apps/api` 是当前主业务后端，竞对分析、RAG、合同审查和标书生成的常规业务 API 优先由 `apps/api` direct 承载；四个 legacy 业务后端进程默认不再启动，仅通过 `python scripts/dev.py --with-legacy-backends` 作为回滚 / 调试路径启动。legacy 源码目录仍保留，合同审查继续复用 `legacy/contract_review/src`，标书生成继续复用 `legacy/bid-generator/pipt-flask/app/api_lite`、`gateway-out`、`dify-bridge` 等代码。catch-all proxy 继续保留，用于未知路径和回滚兜底；默认无 `backend_url` 时未知路径返回清晰 502。本阶段不删除 legacy，不去 iframe，不接 MinIO，不接 Celery / RQ，不改数据库结构，不新增 Alembic migration，不做前端整合。详细边界见 `docs/stage-9-e-post-migration-startup-rollup.md`。
+
+## 第 10-F 阶段：统一前端收口与 legacy 前端冻结评估
+
+第 10-F 阶段完成统一前端收口。`apps/web` 是默认前端主入口，Portal、竞对分析、RAG、合同审查和标书生成均已由 `apps/web` 原生页面承载；默认 `python scripts/dev.py` 启动 `apps/web` 和 `apps/api`，默认不启动 `legacy/portal-launchpad` 或四个 legacy 业务前端。legacy Portal 可通过 `--legacy-portal` 单独回滚，legacy Portal 加四个 legacy 业务前端可通过 `--with-legacy-frontends` 完整回滚，legacy 业务后端仍通过 `--with-legacy-backends` 回滚。iframe 代码和 `config/apps.yaml` 的 `iframeUrl` 配置暂时保留为兼容路径。本阶段不删除 legacy，不删除 iframe，不修改 `apps/api` 业务 API，不改数据库结构，不新增 Alembic migration，不接 MinIO，不接 Celery / RQ。详细边界见 `docs/stage-10-f-frontend-rollup-and-legacy-freeze.md`。

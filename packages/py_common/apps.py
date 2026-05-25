@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 PREFERRED_APP_ORDER = (
+    "apps-web",
     "portal",
     "platform-api",
     "contract-review",
@@ -86,7 +87,7 @@ def select_app_codes(
     default_all: bool = False,
 ) -> set[str] | None:
     if no_business:
-        selected: set[str] | None = {"portal", "platform-api"}
+        selected: set[str] | None = {"apps-web", "platform-api"}
     elif only:
         selected = set(only)
     elif default_all:

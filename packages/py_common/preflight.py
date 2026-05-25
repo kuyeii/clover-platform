@@ -144,6 +144,7 @@ LEGACY_IMPORTS = {
 }
 
 MODULE_REQUIREMENTS = {
+    "apps-web": "",
     "portal": "requirements.txt",
     "platform-api": "requirements.txt",
     "contract-review": "requirements.txt",
@@ -153,6 +154,7 @@ MODULE_REQUIREMENTS = {
 }
 
 ENTRY_FILES = {
+    "apps-web": "",
     "portal": "backend/main.py",
     "platform-api": "main.py",
     "contract-review": "web_api.py",
@@ -532,6 +534,7 @@ def _check_port_plan(
     port_plan: dict[str, Any] | None,
     *,
     include_portal_backend: bool = True,
+    include_legacy_frontends: bool = False,
     include_legacy_backends: bool = False,
 ) -> list[CheckResult]:
     try:
@@ -540,6 +543,7 @@ def _check_port_plan(
             include_codes=selected,
             exclude_codes=skip,
             include_portal_backend=include_portal_backend,
+            include_legacy_frontends=include_legacy_frontends,
             include_legacy_backends=include_legacy_backends,
         )
     except PortAllocationError as exc:
@@ -645,6 +649,38 @@ def _check_module_common(app: dict[str, Any], repo_root: Path) -> list[CheckResu
                 )
             )
 
+    return results
+
+
+def _check_frontend_app(app: dict[str, Any], repo_root: Path) -> list[CheckResult]:
+    code = str(app.get("code"))
+    dev = app.get("dev") or {}
+    frontend_dir = repo_root / str(dev.get("frontend_working_dir") or dev.get("working_dir") or app.get("module_path"))
+    install_dir = _relative(frontend_dir, repo_root)
+    results: list[CheckResult] = [
+        _check_file(f"{code} frontend package.json", frontend_dir / "package.json", repo_root),
+        _check_dir(
+            f"{code} frontend node_modules",
+            frontend_dir / "node_modules",
+            repo_root,
+            fix_hint=f"cd {install_dir} && npm install",
+        ),
+    ]
+
+    command = str(dev.get("frontend_command") or "").strip()
+    if command:
+        command_name = command.split()[0].strip('"')
+        if shutil.which(command_name):
+            results.append(CheckResult(f"{code} frontend command", "ok", f"{command_name} found"))
+        else:
+            results.append(
+                CheckResult(
+                    f"{code} frontend command",
+                    "error",
+                    f"{command_name} is not available on PATH",
+                    f"Install {command_name} and ensure it is available on PATH.",
+                )
+            )
     return results
 
 
@@ -821,18 +857,154 @@ def _check_legacy_module(app: dict[str, Any], repo_root: Path, env_values: dict[
     return results
 
 
+def _check_legacy_backend_module(app: dict[str, Any], repo_root: Path, env_values: dict[str, Any]) -> list[CheckResult]:
+    code = str(app.get("code"))
+    legacy_path, _, backend_dir = _module_paths(app, repo_root)
+    results: list[CheckResult] = []
+
+    requirement = MODULE_REQUIREMENTS.get(code)
+    if requirement:
+        requirement_path = (legacy_path if code != "rag-web-search" else backend_dir) / requirement
+        if code == "bid-generator":
+            requirement_path = repo_root / "legacy/bid-generator/pipt-flask/pyproject.toml"
+        results.append(_check_file(f"{code} Python requirements", requirement_path, repo_root))
+
+    entry = ENTRY_FILES.get(code)
+    if entry:
+        entry_path = (backend_dir / entry) if code in {"rag-web-search", "bid-generator"} else (legacy_path / entry)
+        if code == "competitor-analysis":
+            entry_path = legacy_path / entry
+        results.append(_check_file(f"{code} backend entry", entry_path, repo_root))
+        results.append(_compile_file(f"{code} backend syntax", entry_path, repo_root))
+
+    dev = app.get("dev") or {}
+    backend_command = str(dev.get("backend_command") or "").strip()
+    if backend_command:
+        command_name = backend_command.split()[0].strip('"')
+        if command_name in {"{python}", "python"}:
+            results.append(CheckResult(f"{code} backend command", "ok", "Python command is resolved by dev.py"))
+        elif shutil.which(command_name):
+            results.append(CheckResult(f"{code} backend command", "ok", f"{command_name} found"))
+        else:
+            results.append(
+                CheckResult(
+                    f"{code} backend command",
+                    "error",
+                    f"{command_name} is not available on PATH",
+                    f"Install {command_name} and ensure it is available on PATH.",
+                )
+            )
+
+    imports = LEGACY_IMPORTS.get(code, {})
+    if imports:
+        results.append(
+            _check_imports(
+                f"{code} backend Python dependencies",
+                imports,
+                missing_status="warn",
+                fix_hint=f"Install this module's Python dependencies before running {code}.",
+            )
+        )
+    else:
+        results.append(CheckResult(f"{code} backend Python dependencies", "ok", "Backend uses the Python standard library for startup"))
+
+    if code == "bid-generator":
+        config_path = repo_root / "legacy/bid-generator/config.yaml"
+        font_path = repo_root / "legacy/bid-generator/gateway-out/fonts/SimSun.ttf"
+        results.append(_check_file("bid-generator config.yaml", config_path, repo_root))
+        results.append(
+            _check_dir(
+                "bid-generator gateway-out",
+                repo_root / "legacy/bid-generator/gateway-out",
+                repo_root,
+                status="warn",
+                fix_hint="Restore legacy/bid-generator/gateway-out if document export support is needed.",
+            )
+        )
+        if font_path.is_file():
+            results.append(CheckResult("bid-generator SimSun font", "ok", "SimSun.ttf exists"))
+        else:
+            results.append(
+                CheckResult(
+                    "bid-generator SimSun font",
+                    "warn",
+                    "SimSun.ttf is missing; exported Word/PDF Chinese typography may be affected",
+                    "Restore legacy/bid-generator/gateway-out/fonts/SimSun.ttf if document export requires SimSun.",
+                )
+            )
+        env_name = str(env_values.get("PIPT_ENV") or "").strip().lower()
+        has_key = bool(env_values.get("PIPT_DB_KEY"))
+        if env_name in {"prod", "production"} and not has_key:
+            results.append(
+                CheckResult(
+                    "bid-generator PIPT_DB_KEY",
+                    "error",
+                    "PIPT_ENV=production requires PIPT_DB_KEY for original_text_enc encryption",
+                    "Set PIPT_DB_KEY to a Fernet key in the runtime environment.",
+                )
+            )
+        elif has_key:
+            results.append(CheckResult("bid-generator PIPT_DB_KEY", "ok", "PIPT_DB_KEY is configured"))
+        else:
+            results.append(
+                CheckResult(
+                    "bid-generator PIPT_DB_KEY",
+                    "warn",
+                    "PIPT_DB_KEY is not configured; pipt-lite stores original_text_enc as plaintext in development",
+                    "Generate a Fernet key before production: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+                )
+            )
+
+    hint = CONFIG_HINTS.get(code)
+    if hint:
+        results.append(CheckResult(f"{code} workflow configuration", "warn", hint))
+
+    workflow_refs = app.get("workflow_refs") or []
+    if workflow_refs:
+        workflows = load_yaml(repo_root / "config" / "workflows.yaml").get("workflows") or {}
+        missing_refs = [ref for ref in workflow_refs if not workflows.get(ref)]
+        if missing_refs:
+            results.append(
+                CheckResult(
+                    f"{code} workflow refs",
+                    "warn",
+                    f"Workflow refs are registered but not configured in config/workflows.yaml: {', '.join(map(str, missing_refs))}",
+                    "Add non-secret workflow env mappings to config/workflows.yaml; keep actual keys in .env or deployment secrets.",
+                )
+            )
+        else:
+            results.append(CheckResult(f"{code} workflow refs", "ok", "Workflow refs are configured"))
+
+    return results
+
+
 def _check_business_module(
     app: dict[str, Any],
     repo_root: Path,
     env_values: dict[str, Any],
     *,
+    include_legacy_frontend: bool,
     include_legacy_backend: bool,
 ) -> list[CheckResult]:
     code = str(app.get("code"))
     if include_legacy_backend:
-        return _check_legacy_module(app, repo_root, env_values)
+        return (
+            _check_legacy_module(app, repo_root, env_values)
+            if include_legacy_frontend
+            else _check_legacy_backend_module(app, repo_root, env_values)
+        )
 
-    results = _check_business_frontend(app, repo_root)
+    results = (
+        _check_business_frontend(app, repo_root)
+        if include_legacy_frontend
+        else [
+            CheckResult(
+                f"{code} legacy frontend rollback dependencies",
+                "skip",
+                "Legacy frontend is not part of the default startup path; rerun with --with-legacy-frontends to check rollback dependencies.",
+            )
+        ]
+    )
     results.append(
         CheckResult(
             f"{code} legacy backend rollback dependencies",
@@ -855,6 +1027,7 @@ def run_preflight(
     strict: bool = False,
     port_plan: dict[str, Any] | None = None,
     include_portal_backend: bool = True,
+    include_legacy_frontends: bool = False,
     include_legacy_backends: bool = False,
 ) -> PreflightReport:
     root = Path(repo_root).resolve()
@@ -903,6 +1076,7 @@ def run_preflight(
             skip,
             port_plan,
             include_portal_backend=include_portal_backend,
+            include_legacy_frontends=include_legacy_frontends,
             include_legacy_backends=include_legacy_backends,
         )
     )
@@ -926,7 +1100,9 @@ def run_preflight(
         if not app:
             results.append(CheckResult(code, "error", "Selected app is not present in config/apps.yaml"))
             continue
-        if code == "portal":
+        if code == "apps-web":
+            results.extend(_check_frontend_app(app, root))
+        elif code == "portal":
             if include_portal_backend:
                 results.extend(_check_portal(app, root, env_values))
             else:
@@ -939,6 +1115,7 @@ def run_preflight(
                     app,
                     root,
                     env_values,
+                    include_legacy_frontend=include_legacy_frontends,
                     include_legacy_backend=include_legacy_backends,
                 )
             )
