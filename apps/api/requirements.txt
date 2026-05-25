@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 python-multipart
 pydantic
 pydantic-settings
@@ -8,3 +8,13 @@ SQLAlchemy
 psycopg[binary]
 PyYAML
 httpx
+requests
+python-docx
+docxcompose
+json_repair
+lxml
+PyMuPDF
+pdf2docx
+opencv-python-headless<4.12
+cryptography
+openpyxl
