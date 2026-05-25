@@ -8,7 +8,7 @@ export function RiskCard(props: {
   busy: boolean;
   onStatusChange: (status: "pending" | "accepted" | "rejected") => void;
   onAiApply: () => void;
-  onAiAccept: (revisedText?: string) => void;
+  onAiAccept: (revisedText?: string, targetText?: string) => void;
   onAiEdit: (revisedText: string) => void;
   onAiReject: () => void;
 }) {
@@ -112,7 +112,7 @@ export function RiskCard(props: {
           disabled={props.busy}
           onClick={() => {
             if (canAcceptAi) {
-              props.onAiAccept(draftText);
+              props.onAiAccept(draftText, targetText);
               return;
             }
             props.onStatusChange("accepted");

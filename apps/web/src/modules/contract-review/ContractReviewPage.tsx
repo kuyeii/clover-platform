@@ -52,7 +52,7 @@ export function ContractReviewPage() {
   const [health, setHealth] = useState<ContractReviewHealth | null>(null);
   const [diagnostics, setDiagnostics] = useState<ConverterDiagnostics | null>(null);
   const [history, setHistory] = useState<ReviewHistoryItem[]>([]);
-  const [runId, setRunId] = useState<string | null>(() => readSessionValue(ACTIVE_RUN_STORAGE_KEY));
+  const [runId, setRunId] = useState<string | null>(() => getInitialRunId());
   const [meta, setMeta] = useState<ReviewMeta | null>(null);
   const [result, setResult] = useState<ReviewResultPayload | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -66,55 +66,76 @@ export function ContractReviewPage() {
   const [downloadingDocument, setDownloadingDocument] = useState(false);
   const [downloadingReviewed, setDownloadingReviewed] = useState(false);
   const pollAbortRef = useRef<AbortController | null>(null);
+  const statusAbortRef = useRef<AbortController | null>(null);
+  const bootstrappedRunRef = useRef(false);
 
   const allowed = canAccessApp("contract-review");
   const status = String(meta?.status || "").toLowerCase();
   const isReviewing = status === "queued" || status === "running" || submitting;
-  const documentReady = Boolean(meta?.document_ready || status === "completed" || result?.download_ready);
+  const sourceDocumentReady = Boolean(meta?.document_ready || result || status === "completed");
+  const reviewedDocumentReady = Boolean(result?.download_ready && status === "completed");
   const riskItems = result?.risk_result_validated?.risk_result?.risk_items || [];
   const riskStats = useMemo(() => buildRiskStats(riskItems), [riskItems]);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async (signal?: AbortSignal) => {
     setLoadingHistory(true);
     try {
-      setHistory(await fetchReviewHistory(30));
+      setHistory(await fetchReviewHistory(30, { signal }));
     } catch (error) {
-      setPageError(toUserMessage(error, "审查记录加载失败。"));
+      if (!isAbortError(error)) {
+        setPageError(toUserMessage(error, "审查记录加载失败。"));
+      }
     } finally {
-      setLoadingHistory(false);
+      if (!signal?.aborted) {
+        setLoadingHistory(false);
+      }
     }
   }, []);
 
-  const loadResult = useCallback(async (targetRunId: string) => {
-    const payload = await fetchReviewResult(targetRunId);
-    setResult(payload);
+  const loadResult = useCallback(async (targetRunId: string, signal?: AbortSignal) => {
+    const payload = await fetchReviewResult(targetRunId, { signal });
+    if (!signal?.aborted) {
+      setResult(payload);
+    }
     return payload;
   }, []);
 
   const loadStatus = useCallback(
-    async (targetRunId = runId) => {
+    async (targetRunId = runId, options: { silent?: boolean; signal?: AbortSignal } = {}) => {
       if (!targetRunId) {
         return null;
       }
-      setStatusLoading(true);
+      if (!options.silent) {
+        setStatusLoading(true);
+      }
       try {
-        const nextMeta = await fetchReviewStatus(targetRunId);
+        const nextMeta = await fetchReviewStatus(targetRunId, { signal: options.signal });
+        if (options.signal?.aborted) {
+          return null;
+        }
         setMeta(nextMeta);
         setRunId(targetRunId);
-        writeSessionValue(ACTIVE_RUN_STORAGE_KEY, targetRunId);
-        if (String(nextMeta.status || "").toLowerCase() === "completed") {
-          await loadResult(targetRunId);
+        syncRunIdToUrl(targetRunId);
+        const nextStatus = String(nextMeta.status || "").toLowerCase();
+        setResult((current) => (current && current.run_id !== targetRunId ? null : current));
+        if (nextStatus === "queued" || nextStatus === "running") {
+          writeSessionValue(ACTIVE_RUN_STORAGE_KEY, targetRunId);
+        } else {
           removeSessionValue(ACTIVE_RUN_STORAGE_KEY);
         }
-        if (String(nextMeta.status || "").toLowerCase() === "failed") {
-          removeSessionValue(ACTIVE_RUN_STORAGE_KEY);
+        if (nextStatus === "completed") {
+          await loadResult(targetRunId, options.signal);
         }
         return nextMeta;
       } catch (error) {
-        setPageError(toUserMessage(error, "审查状态加载失败。"));
+        if (!isAbortError(error)) {
+          setPageError(toUserMessage(error, "审查状态加载失败。"));
+        }
         return null;
       } finally {
-        setStatusLoading(false);
+        if (!options.silent && !options.signal?.aborted) {
+          setStatusLoading(false);
+        }
       }
     },
     [loadResult, runId],
@@ -137,13 +158,17 @@ export function ContractReviewPage() {
     if (!allowed) {
       return;
     }
+    const abortController = new AbortController();
     void (async () => {
       try {
         const [nextConfig, nextHealth, nextDiagnostics] = await Promise.all([
-          fetchContractReviewConfig(),
-          fetchContractReviewHealth(),
-          fetchConverterDiagnostics(),
+          fetchContractReviewConfig({ signal: abortController.signal }),
+          fetchContractReviewHealth({ signal: abortController.signal }),
+          fetchConverterDiagnostics({ signal: abortController.signal }),
         ]);
+        if (abortController.signal.aborted) {
+          return;
+        }
         setConfig(nextConfig);
         setHealth(nextHealth);
         setDiagnostics(nextDiagnostics);
@@ -151,17 +176,37 @@ export function ContractReviewPage() {
         setAnalysisScope(normalizedScope);
         setReviewSide(normalizeReviewSide(nextConfig.review_side));
       } catch (error) {
-        setPageError(toUserMessage(error, "合同审查配置加载失败。"));
+        if (!isAbortError(error)) {
+          setPageError(toUserMessage(error, "合同审查配置加载失败。"));
+        }
       }
-      await loadHistory();
+      await loadHistory(abortController.signal);
     })();
+    return () => abortController.abort();
   }, [allowed, loadHistory]);
 
   useEffect(() => {
-    if (!allowed || !runId) {
+    if (!allowed || bootstrappedRunRef.current) {
       return;
     }
-    void loadStatus(runId);
+    bootstrappedRunRef.current = true;
+    const restoredRunId = getInitialRunId();
+    if (!restoredRunId) {
+      return;
+    }
+    setRunId(restoredRunId);
+    syncRunIdToUrl(restoredRunId, true);
+  }, [allowed]);
+
+  useEffect(() => {
+    if (!allowed || !runId) {
+      return undefined;
+    }
+    statusAbortRef.current?.abort();
+    const abortController = new AbortController();
+    statusAbortRef.current = abortController;
+    void loadStatus(runId, { signal: abortController.signal });
+    return () => abortController.abort();
   }, [allowed, loadStatus, runId]);
 
   useEffect(() => {
@@ -177,22 +222,25 @@ export function ContractReviewPage() {
     async function poll() {
       while (!cancelled) {
         try {
-          const nextMeta = await fetchReviewStatus(runId as string);
+          const nextMeta = await fetchReviewStatus(runId as string, { signal: abortController.signal });
           if (cancelled) {
             return;
           }
           setMeta(nextMeta);
           const nextStatus = String(nextMeta.status || "").toLowerCase();
+          setResult((current) => (current && current.run_id !== runId ? null : current));
           if (nextStatus === "completed") {
-            const payload = await fetchReviewResult(runId as string);
+            const payload = await fetchReviewResult(runId as string, { signal: abortController.signal });
             if (!cancelled) {
               setResult(payload);
+              syncRunIdToUrl(runId as string);
               removeSessionValue(ACTIVE_RUN_STORAGE_KEY);
               void loadHistory();
             }
             return;
           }
           if (nextStatus === "failed") {
+            syncRunIdToUrl(runId as string);
             removeSessionValue(ACTIVE_RUN_STORAGE_KEY);
             void loadHistory();
             return;
@@ -231,6 +279,7 @@ export function ContractReviewPage() {
         analysisScope,
       });
       setRunId(created.run_id);
+      syncRunIdToUrl(created.run_id);
       writeSessionValue(ACTIVE_RUN_STORAGE_KEY, created.run_id);
       setMeta({
         run_id: created.run_id,
@@ -256,6 +305,7 @@ export function ContractReviewPage() {
     setPageNotice("");
     setResult(null);
     setRunId(item.run_id);
+    syncRunIdToUrl(item.run_id);
     writeSessionValue(ACTIVE_RUN_STORAGE_KEY, item.run_id);
     const nextMeta = await loadStatus(item.run_id);
     if (String(nextMeta?.status || "").toLowerCase() !== "completed") {
@@ -407,7 +457,8 @@ export function ContractReviewPage() {
           <ReviewStatus meta={meta} runId={runId} loading={statusLoading} onRefresh={() => void loadStatus()} />
           <DownloadActions
             disabled={!runId}
-            documentReady={documentReady}
+            sourceDocumentReady={sourceDocumentReady}
+            reviewedDocumentReady={reviewedDocumentReady}
             downloadingDocument={downloadingDocument}
             downloadingReviewed={downloadingReviewed}
             onDownloadDocument={() => void handleDownloadDocument()}
@@ -438,7 +489,7 @@ export function ContractReviewPage() {
                 </div>
                 <div>
                   <span>下载状态</span>
-                  <strong>{documentReady ? "可下载" : "未就绪"}</strong>
+                  <strong>{reviewedDocumentReady ? "修订文档可下载" : sourceDocumentReady ? "原始 DOCX 可下载" : "未就绪"}</strong>
                 </div>
               </div>
             ) : (
@@ -506,11 +557,15 @@ export function ContractReviewPage() {
               }
               void runRiskAction(riskId, () => aiApplyRisk(runId, riskId), "AI 改写生成失败。");
             }}
-            onAiAccept={(riskId, revisedText) => {
+            onAiAccept={(riskId, revisedText, targetText) => {
               if (!runId) {
                 return;
               }
-              void runRiskAction(riskId, () => aiAcceptRisk(runId, riskId, { revised_text: revisedText }), "AI 改写接受失败。");
+              void runRiskAction(
+                riskId,
+                () => aiAcceptRisk(runId, riskId, { revised_text: revisedText, target_text: targetText }),
+                "AI 改写接受失败。",
+              );
             }}
             onAiEdit={(riskId, revisedText) => {
               if (!runId) {
@@ -557,11 +612,12 @@ function buildRiskStats(risks: RiskItem[]) {
   return risks.reduce(
     (stats, risk) => {
       stats.total += 1;
-      if (risk.risk_level === "high") {
+      const level = String(risk.risk_level || "").trim().toLowerCase();
+      if (level === "high") {
         stats.high += 1;
-      } else if (risk.risk_level === "medium") {
+      } else if (level === "medium") {
         stats.medium += 1;
-      } else if (risk.risk_level === "low") {
+      } else if (level === "low") {
         stats.low += 1;
       }
       const status = String(risk.status || "pending").toLowerCase();
@@ -650,6 +706,45 @@ function isAbortError(error: unknown) {
     error !== null &&
     (error as { name?: unknown }).name === "AbortError"
   );
+}
+
+function getInitialRunId() {
+  return getRunIdFromUrl() || readSessionValue(ACTIVE_RUN_STORAGE_KEY);
+}
+
+function getRunIdFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return sanitizeRunId(params.get("run_id"));
+  } catch {
+    return null;
+  }
+}
+
+function syncRunIdToUrl(runId: string, replace = false) {
+  const safeRunId = sanitizeRunId(runId);
+  if (!safeRunId) {
+    return;
+  }
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("run_id") === safeRunId) {
+      return;
+    }
+    url.searchParams.set("run_id", safeRunId);
+    if (replace) {
+      window.history.replaceState(null, "", url);
+    } else {
+      window.history.pushState(null, "", url);
+    }
+  } catch {
+    // URL sync is only used for refresh recovery and shareable review links.
+  }
+}
+
+function sanitizeRunId(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  return /^[A-Za-z0-9_-]{6,96}$/.test(raw) ? raw : null;
 }
 
 function readSessionValue(key: string) {

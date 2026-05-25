@@ -2,7 +2,8 @@ import { Icon } from "../../../shared/components/Icon";
 
 export function DownloadActions(props: {
   disabled: boolean;
-  documentReady: boolean;
+  sourceDocumentReady: boolean;
+  reviewedDocumentReady: boolean;
   downloadingDocument: boolean;
   downloadingReviewed: boolean;
   onDownloadDocument: () => void;
@@ -13,7 +14,7 @@ export function DownloadActions(props: {
       <button
         type="button"
         className="secondary-button"
-        disabled={props.disabled || !props.documentReady || props.downloadingDocument}
+        disabled={props.disabled || !props.sourceDocumentReady || props.downloadingDocument}
         onClick={props.onDownloadDocument}
       >
         <Icon name="file" />
@@ -22,7 +23,7 @@ export function DownloadActions(props: {
       <button
         type="button"
         className="primary-button"
-        disabled={props.disabled || !props.documentReady || props.downloadingReviewed}
+        disabled={props.disabled || !props.reviewedDocumentReady || props.downloadingReviewed}
         onClick={props.onDownloadReviewed}
       >
         <Icon name="download" />

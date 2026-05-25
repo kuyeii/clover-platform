@@ -26,6 +26,7 @@ export function ReviewUploader(props: {
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [fileError, setFileError] = useState("");
 
   const openPicker = () => {
     if (props.locked) {
@@ -41,6 +42,12 @@ export function ReviewUploader(props: {
     if (!file || props.locked) {
       return;
     }
+    if (!isSupportedContractFile(file)) {
+      setFileError("文件格式不支持，请上传 PDF 或 Word（.doc/.docx）格式的合同文件。");
+      props.onFileChange(null);
+      return;
+    }
+    setFileError("");
     props.onFileChange(file);
   };
 
@@ -105,6 +112,7 @@ export function ReviewUploader(props: {
           </div>
         )}
       </div>
+      {fileError ? <div className="form-error">{fileError}</div> : null}
 
       <div className="contract-option-grid">
         <div className="contract-option-group">
@@ -186,4 +194,15 @@ function formatFileSize(size: number) {
   }
   const digits = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function isSupportedContractFile(file: File) {
+  const name = String(file.name || "").toLowerCase();
+  const type = String(file.type || "").toLowerCase();
+  return (
+    /\.(pdf|doc|docx)$/.test(name) ||
+    type === "application/pdf" ||
+    type === "application/msword" ||
+    type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  );
 }

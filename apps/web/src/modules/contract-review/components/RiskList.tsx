@@ -12,7 +12,7 @@ export function RiskList(props: {
   onAcceptAll: () => void;
   onRiskStatusChange: (riskId: string | number, status: "pending" | "accepted" | "rejected") => void;
   onAiApply: (riskId: string | number) => void;
-  onAiAccept: (riskId: string | number, revisedText?: string) => void;
+  onAiAccept: (riskId: string | number, revisedText?: string, targetText?: string) => void;
   onAiEdit: (riskId: string | number, revisedText: string) => void;
   onAiReject: (riskId: string | number) => void;
 }) {
@@ -80,7 +80,7 @@ export function RiskList(props: {
                     busy={props.busyRiskId === String(risk.risk_id)}
                     onStatusChange={(status) => props.onRiskStatusChange(risk.risk_id, status)}
                     onAiApply={() => props.onAiApply(risk.risk_id)}
-                    onAiAccept={(revisedText) => props.onAiAccept(risk.risk_id, revisedText)}
+                    onAiAccept={(revisedText, targetText) => props.onAiAccept(risk.risk_id, revisedText, targetText)}
                     onAiEdit={(revisedText) => props.onAiEdit(risk.risk_id, revisedText)}
                     onAiReject={() => props.onAiReject(risk.risk_id)}
                   />
@@ -107,11 +107,12 @@ function getRiskStats(risks: RiskItem[]) {
   return risks.reduce(
     (stats, risk) => {
       stats.total += 1;
-      if (risk.risk_level === "high") {
+      const level = String(risk.risk_level || "").trim().toLowerCase();
+      if (level === "high") {
         stats.high += 1;
-      } else if (risk.risk_level === "medium") {
+      } else if (level === "medium") {
         stats.medium += 1;
-      } else if (risk.risk_level === "low") {
+      } else if (level === "low") {
         stats.low += 1;
       }
       const status = String(risk.status || "pending").toLowerCase();

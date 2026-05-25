@@ -15,20 +15,27 @@ import type {
 const CONTRACT_REVIEW_API_PREFIX = "/contract-review/api";
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-export function fetchContractReviewHealth() {
+type RequestControl = {
+  signal?: AbortSignal;
+};
+
+export function fetchContractReviewHealth(options: RequestControl = {}) {
   return apiClient.get<ContractReviewHealth>(`${CONTRACT_REVIEW_API_PREFIX}/health`, {
+    signal: options.signal,
     unwrapEnvelope: false,
   });
 }
 
-export function fetchContractReviewConfig() {
+export function fetchContractReviewConfig(options: RequestControl = {}) {
   return apiClient.get<ContractReviewConfig>(`${CONTRACT_REVIEW_API_PREFIX}/config`, {
+    signal: options.signal,
     unwrapEnvelope: false,
   });
 }
 
-export function fetchConverterDiagnostics() {
+export function fetchConverterDiagnostics(options: RequestControl = {}) {
   return apiClient.get<ConverterDiagnostics>(`${CONTRACT_REVIEW_API_PREFIX}/diagnostics/converters`, {
+    signal: options.signal,
     unwrapEnvelope: false,
   });
 }
@@ -45,25 +52,27 @@ export function createReview(input: CreateReviewInput) {
   });
 }
 
-export function fetchReviewHistory(limit = 30) {
+export function fetchReviewHistory(limit = 30, options: RequestControl = {}) {
   return apiClient
     .get<{ items?: ReviewHistoryItem[] }>(`${CONTRACT_REVIEW_API_PREFIX}/reviews/history`, {
       query: { limit },
+      signal: options.signal,
       unwrapEnvelope: false,
     })
     .then((payload) => (Array.isArray(payload.items) ? payload.items : []));
 }
 
-export function fetchReviewStatus(runId: string) {
+export function fetchReviewStatus(runId: string, options: RequestControl = {}) {
   return apiClient.get<ReviewMeta>(`${CONTRACT_REVIEW_API_PREFIX}/reviews/${encodeURIComponent(runId)}`, {
+    signal: options.signal,
     unwrapEnvelope: false,
   });
 }
 
-export function fetchReviewResult(runId: string) {
+export function fetchReviewResult(runId: string, options: RequestControl = {}) {
   return apiClient.get<ReviewResultPayload>(
     `${CONTRACT_REVIEW_API_PREFIX}/reviews/${encodeURIComponent(runId)}/result`,
-    { unwrapEnvelope: false },
+    { signal: options.signal, unwrapEnvelope: false },
   );
 }
 
