@@ -1,4 +1,4 @@
-:root {
+.competitor-analysis-legacy-viewport {
   /* 整页基准约 +12.5%（16px → 18px），与 App.css 中显式 px 字号一并调大，便于混用 rem/px 时比例一致 */
   font-size: 112.5%;
   font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -14,12 +14,14 @@
   --app-text: #0f172a;
 }
 
-* {
+.competitor-analysis-legacy-viewport * {
   box-sizing: border-box;
 }
 
-body {
+.competitor-analysis-legacy-viewport {
   margin: 0;
+  width: 100%;
+  flex: 1 1 auto;
   min-height: 100vh;
   background: var(--app-bg);
   color: var(--app-text);

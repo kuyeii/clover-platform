@@ -35,7 +35,7 @@ export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-slate-100/50 to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-sky-50/50 to-transparent" />
 
-      <div className="relative mx-auto grid w-full max-w-8xl flex-1 grid-cols-1 gap-3 md:grid-cols-2 md:grid-rows-2 md:gap-4">
+      <div className="relative grid w-full flex-1 grid-cols-1 gap-3 md:grid-cols-2 md:grid-rows-2 md:gap-4">
         {apps.map((app, index) => (
           <motion.div
             key={app.id}
