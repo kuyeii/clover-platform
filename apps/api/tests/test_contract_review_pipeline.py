@@ -1,13 +1,12 @@
-import io
+from __future__ import annotations
+
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from fastapi.testclient import TestClient
-
-import web_api
+from app.services import contract_review_service as service
 
 
 DIFY_CONNECT_TRACEBACK = """Traceback (most recent call last):
@@ -15,7 +14,9 @@ DIFY_CONNECT_TRACEBACK = """Traceback (most recent call last):
     response = requests.post(url, headers=headers, json=payload, timeout=self.timeout_seconds)
 requests.exceptions.ConnectionError: HTTPConnectionPool(host='10.88.21.6', port=80): Max retries exceeded with url: /v1/workflows/run (Caused by NewConnectionError("HTTPConnection(host='10.88.21.6', port=80): Failed to establish a new connection: [Errno 65] No route to host"))
 
-src.dify_client.DifyWorkflowError: Workflow request could not connect after 3 attempt(s): url=http://10.88.21.6/v1/workflows/run
+The above exception was the direct cause of the following exception:
+
+src.dify_client.DifyWorkflowError: Workflow request could not connect after 3 attempt(s): url=http://10.88.21.6/v1/workflows/run, error=HTTPConnectionPool(host='10.88.21.6', port=80): Max retries exceeded with url: /v1/workflows/run
 """
 
 
@@ -32,23 +33,8 @@ class FakeProcess:
         return self._stdout, self._stderr
 
 
-class WebApiErrorResponseTests(unittest.TestCase):
-    def test_create_review_invalid_file_type_returns_user_facing_payload(self):
-        client = TestClient(web_api.app)
-
-        response = client.post(
-            "/api/reviews",
-            files={"file": ("bad.txt", io.BytesIO(b"not a contract"), "text/plain")},
-        )
-
-        self.assertEqual(response.status_code, 400)
-        payload = response.json()
-        self.assertEqual(payload["error"]["code"], "UNSUPPORTED_FILE_TYPE")
-        self.assertEqual(payload["error"]["title"], "文件格式不支持")
-        self.assertEqual(payload["error"]["message"], "请上传 PDF 或 Word（.doc/.docx）格式的合同文件后再试。")
-        self.assertIn(".txt", str(payload.get("detail", "")))
-
-    def test_pipeline_retries_retryable_dify_connect_failure_with_resume(self):
+class ContractReviewPipelineTests(unittest.TestCase):
+    def test_pipeline_retries_retryable_dify_connect_failure_with_resume(self) -> None:
         writes: list[tuple[str, dict]] = []
 
         with tempfile.TemporaryDirectory() as td:
@@ -65,11 +51,11 @@ class WebApiErrorResponseTests(unittest.TestCase):
             ]
 
             with (
-                patch.object(web_api, "RUN_ROOT", run_root),
-                patch.object(web_api, "UPLOAD_ROOT", upload_root),
-                patch.object(web_api, "_write_meta", side_effect=lambda run_id, payload: writes.append((run_id, dict(payload)))),
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "UPLOAD_ROOT", upload_root),
+                patch.object(service, "_write_meta", side_effect=lambda run_id, payload: writes.append((run_id, dict(payload)))),
                 patch.object(
-                    web_api,
+                    service,
                     "normalize_upload_to_docx",
                     return_value=SimpleNamespace(
                         working_docx_path=source_docx,
@@ -78,14 +64,14 @@ class WebApiErrorResponseTests(unittest.TestCase):
                         warnings=[],
                     ),
                 ),
-                patch.object(web_api.subprocess, "Popen", side_effect=processes) as popen,
-                patch.object(web_api.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")),
-                patch.object(web_api, "_safe_json", return_value={"is_valid": True}),
-                patch.object(web_api, "get_or_create_reviewed_risks", return_value={}),
-                patch.object(web_api, "_has_rewrite_workflow_key", return_value=False),
-                patch.dict(web_api.os.environ, {"CONTRACT_REVIEW_PIPELINE_RETRY_ATTEMPTS": "2"}),
+                patch.object(service.subprocess, "Popen", side_effect=processes) as popen,
+                patch.object(service.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")),
+                patch.object(service, "_safe_json", return_value={"is_valid": True}),
+                patch.object(service, "get_or_create_reviewed_risks", return_value={}),
+                patch.object(service, "_has_rewrite_workflow_key", return_value=False),
+                patch.dict(service.os.environ, {"CONTRACT_REVIEW_PIPELINE_RETRY_ATTEMPTS": "2"}),
             ):
-                web_api._run_pipeline_impl(
+                service._run_pipeline_impl(
                     run_id="retry_ok",
                     file_path=upload_root / "retry_ok.docx",
                     file_name="retry_ok.docx",
@@ -99,7 +85,7 @@ class WebApiErrorResponseTests(unittest.TestCase):
         self.assertIn("--resume", retry_cmd)
         self.assertEqual(writes[-1][1]["status"], "completed")
 
-    def test_pipeline_exhausted_dify_connect_failure_writes_user_facing_error(self):
+    def test_pipeline_exhausted_dify_connect_failure_writes_user_facing_error(self) -> None:
         writes: list[tuple[str, dict]] = []
 
         with tempfile.TemporaryDirectory() as td:
@@ -116,11 +102,11 @@ class WebApiErrorResponseTests(unittest.TestCase):
             ]
 
             with (
-                patch.object(web_api, "RUN_ROOT", run_root),
-                patch.object(web_api, "UPLOAD_ROOT", upload_root),
-                patch.object(web_api, "_write_meta", side_effect=lambda run_id, payload: writes.append((run_id, dict(payload)))),
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "UPLOAD_ROOT", upload_root),
+                patch.object(service, "_write_meta", side_effect=lambda run_id, payload: writes.append((run_id, dict(payload)))),
                 patch.object(
-                    web_api,
+                    service,
                     "normalize_upload_to_docx",
                     return_value=SimpleNamespace(
                         working_docx_path=source_docx,
@@ -129,10 +115,10 @@ class WebApiErrorResponseTests(unittest.TestCase):
                         warnings=[],
                     ),
                 ),
-                patch.object(web_api.subprocess, "Popen", side_effect=processes) as popen,
-                patch.dict(web_api.os.environ, {"CONTRACT_REVIEW_PIPELINE_RETRY_ATTEMPTS": "2"}),
+                patch.object(service.subprocess, "Popen", side_effect=processes) as popen,
+                patch.dict(service.os.environ, {"CONTRACT_REVIEW_PIPELINE_RETRY_ATTEMPTS": "2"}),
             ):
-                web_api._run_pipeline_impl(
+                service._run_pipeline_impl(
                     run_id="retry_failed",
                     file_path=upload_root / "retry_failed.docx",
                     file_name="retry_failed.docx",

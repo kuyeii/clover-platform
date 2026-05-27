@@ -3936,6 +3936,48 @@ def _has_rewrite_workflow_key() -> bool:
     return bool(str(settings.dify_rewrite_workflow_api_key or "").strip())
 
 
+def _pipeline_retry_attempts() -> int:
+    raw = os.getenv("CONTRACT_REVIEW_PIPELINE_RETRY_ATTEMPTS", "2")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 2
+
+
+def _is_retryable_dify_connect_failure(stderr: str, stdout: str = "") -> bool:
+    raw = f"{stderr}\n{stdout}".lower()
+    if "/workflows/run" not in raw and "difyworkflowerror" not in raw:
+        return False
+    markers = (
+        "workflow request could not connect",
+        "failed to establish a new connection",
+        "no route to host",
+        "connecttimeout",
+        "connectionerror",
+        "max retries exceeded",
+    )
+    return any(marker in raw for marker in markers)
+
+
+def _build_pipeline_failure_meta(stderr: str, stdout: str = "") -> dict[str, Any]:
+    raw_error = (stderr or stdout or "未知错误").strip()
+    if _is_retryable_dify_connect_failure(stderr, stdout):
+        return {
+            "status": "failed",
+            "step": "Dify 工作流连接失败",
+            "progress": 100,
+            "error": "Dify 工作流连接失败，系统已自动重试但仍未成功。请稍后重试，或联系管理员检查合同审查 Dify 服务地址和运行环境。",
+            "error_detail": raw_error,
+            "error_code": "DIFY_WORKFLOW_CONNECT_FAILED",
+        }
+    return {
+        "status": "failed",
+        "step": "主流程执行失败",
+        "progress": 100,
+        "error": raw_error,
+    }
+
+
 def _start_ai_rewrite_job(run_id: str) -> bool:
     if not _has_rewrite_workflow_key():
         return False
@@ -4033,75 +4075,91 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
         },
     )
 
-    cmd = [sys.executable, "app.py", str(source_docx), "--run-id", run_id]
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(BASE_DIR),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except OSError as exc:
-        _write_meta(
-            run_id,
-            {
-                "status": "failed",
-                "step": "审查流程启动失败",
-                "progress": 100,
-                "error": "无法启动后端审查流程，请检查 Python 运行环境后重试。",
-                "error_detail": str(exc),
-            },
-        )
-        return
-
-    last_phase = ""
-    while True:
-        merged_ready = (run_dir / "merged_clauses.json").exists()
-        validated_ready = (run_dir / "risk_result_validated.json").exists()
-        if validated_ready:
-            phase = "assemble"
-            phase_step = "风险识别完成，正在生成结果"
-            phase_progress = 85
-        elif merged_ready:
-            phase = "scan"
-            phase_step = "正在识别风险点"
-            phase_progress = 65
-        else:
-            phase = "parse"
-            phase_step = "正在解析与拆分合同"
-            phase_progress = 35
-
-        if phase != last_phase:
+    max_pipeline_attempts = _pipeline_retry_attempts()
+    stdout = ""
+    stderr = ""
+    returncode = 1
+    for attempt in range(1, max_pipeline_attempts + 1):
+        cmd = [sys.executable, "app.py", str(source_docx), "--run-id", run_id]
+        if attempt > 1:
+            cmd.append("--resume")
             _write_meta(
                 run_id,
                 {
                     "status": "running",
-                    "step": phase_step,
-                    "progress": phase_progress,
+                    "step": f"Dify 工作流连接失败，正在重试审查流程（{attempt}/{max_pipeline_attempts}）",
+                    "progress": 35,
                 },
             )
-            last_phase = phase
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(BASE_DIR),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except OSError as exc:
+            _write_meta(
+                run_id,
+                {
+                    "status": "failed",
+                    "step": "审查流程启动失败",
+                    "progress": 100,
+                    "error": "无法启动后端审查流程，请检查 Python 运行环境后重试。",
+                    "error_detail": str(exc),
+                },
+            )
+            return
 
-        if proc.poll() is not None:
+        last_phase = ""
+        while True:
+            merged_ready = (run_dir / "merged_clauses.json").exists()
+            validated_ready = (run_dir / "risk_result_validated.json").exists()
+            if validated_ready:
+                phase = "assemble"
+                phase_step = "风险识别完成，正在生成结果"
+                phase_progress = 85
+            elif merged_ready:
+                phase = "scan"
+                phase_step = "正在识别风险点"
+                phase_progress = 65
+            else:
+                phase = "parse"
+                phase_step = "正在解析与拆分合同"
+                phase_progress = 35
+
+            if phase != last_phase:
+                _write_meta(
+                    run_id,
+                    {
+                        "status": "running",
+                        "step": phase_step,
+                        "progress": phase_progress,
+                    },
+                )
+                last_phase = phase
+
+            if proc.poll() is not None:
+                break
+            time.sleep(1.0)
+
+        stdout, stderr = proc.communicate()
+        returncode = int(proc.returncode or 0)
+        (run_dir / "app.stdout.log").write_text(stdout or "", encoding="utf-8")
+        (run_dir / "app.stderr.log").write_text(stderr or "", encoding="utf-8")
+        if max_pipeline_attempts > 1:
+            (run_dir / f"app.attempt_{attempt}.stdout.log").write_text(stdout or "", encoding="utf-8")
+            (run_dir / f"app.attempt_{attempt}.stderr.log").write_text(stderr or "", encoding="utf-8")
+
+        if returncode == 0:
             break
-        time.sleep(1.0)
+        if attempt >= max_pipeline_attempts or not _is_retryable_dify_connect_failure(stderr, stdout):
+            break
 
-    stdout, stderr = proc.communicate()
-    (run_dir / "app.stdout.log").write_text(stdout or "", encoding="utf-8")
-    (run_dir / "app.stderr.log").write_text(stderr or "", encoding="utf-8")
-
-    if proc.returncode != 0:
-        _write_meta(
-            run_id,
-            {
-                "status": "failed",
-                "step": "主流程执行失败",
-                "progress": 100,
-                "error": (stderr or stdout or "未知错误").strip(),
-            },
-        )
+    if returncode != 0:
+        _write_meta(run_id, _build_pipeline_failure_meta(stderr, stdout))
         return
 
     validated = _safe_json(run_dir / "risk_result_validated.json") or {}
