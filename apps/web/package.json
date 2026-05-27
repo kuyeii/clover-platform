@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5300",
+    "test:api-paths": "node --test src/modules/contract-review/legacy/services/contractReviewApi.test.mjs src/modules/bid-generator/legacy/services/apiBasePolicy.test.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5300"
   },

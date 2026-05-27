@@ -1,6 +1,7 @@
 import { PortalBridgeAuthError, getPortalAuthContext } from './portalBridge';
 import { getApiBaseUrl as getPlatformApiBaseUrl } from '../../../../shared/api/client';
 import { getAccessToken, getClientId } from '../../../../shared/auth/token';
+import { shouldUseLegacyFallbackTarget } from './apiBasePolicy';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:5000/api';
 
@@ -17,6 +18,14 @@ export type BidGeneratorRequestError = Error & {
 };
 
 let hasWarnedLegacyFallback = false;
+
+function isTopLevelUnifiedFrontend(): boolean {
+    return typeof window !== 'undefined' && window.parent === window;
+}
+
+function canUseLegacyFallbackTarget(): boolean {
+    return shouldUseLegacyFallbackTarget(isTopLevelUnifiedFrontend());
+}
 
 function trimTrailingSlash(value: string): string {
     return value.replace(/\/$/, '');
@@ -55,7 +64,7 @@ export function getApiBaseUrl(): string {
     if (runtimeBase && String(runtimeBase).includes('/bid-generator')) {
         return withApiPath(runtimeBase);
     }
-    if (typeof window !== 'undefined' && window.parent === window) {
+    if (isTopLevelUnifiedFrontend()) {
         return `${getPlatformApiBaseUrl()}/bid-generator/api`;
     }
     return trimTrailingSlash(import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL);
@@ -205,14 +214,14 @@ export async function bidGeneratorFetch(
             return response;
         }
 
-        if (!isSafeFallbackMethod(init)) {
+        if (!isSafeFallbackMethod(init) || !canUseLegacyFallbackTarget()) {
             return response;
         }
 
         warnLegacyFallback(createApiRequestError(`请求失败（HTTP ${response.status}）`, response.status, true));
         return fetchWithTarget(path, init, legacyApiTarget());
     } catch (error) {
-        if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod(init)) {
+        if (!isRetriablePlatformFailure(error) || !isSafeFallbackMethod(init) || !canUseLegacyFallbackTarget()) {
             throw error;
         }
         warnLegacyFallback(error);

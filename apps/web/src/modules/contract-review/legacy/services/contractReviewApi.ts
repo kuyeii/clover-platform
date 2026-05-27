@@ -1,4 +1,18 @@
 import { PortalBridgeAuthError, getPortalAuthContext } from './portalBridge'
+import { getAccessToken, getClientId } from '../../../../shared/auth/token'
+import {
+  buildContractReviewApiUrl,
+  buildContractReviewFallbackHeaders,
+  normalizeContractReviewApiPath,
+  resolveContractReviewApiBaseForRuntime,
+} from './contractReviewApiPaths'
+
+export {
+  buildContractReviewApiUrl,
+  buildContractReviewFallbackHeaders,
+  normalizeContractReviewApiPath,
+  resolveContractReviewApiBaseForRuntime,
+} from './contractReviewApiPaths'
 
 type ApiTarget = {
   baseUrl: string
@@ -14,26 +28,10 @@ type ApiRequestError = Error & {
 let hasWarnedLegacyFallback = false
 
 function getLegacyApiBase() {
-  const base = import.meta.env.VITE_API_BASE_URL ?? ''
-  return String(base).replace(/\/$/, '')
-}
-
-function joinApiUrl(base: string, path: string) {
-  return `${base.replace(/\/$/, '')}${path}`
-}
-
-function normalizeLegacyApiPath(path: string) {
-  const value = String(path || '').trim()
-  if (!/^https?:\/\//i.test(value)) {
-    return value.startsWith('/') ? value : `/${value}`
-  }
-
-  try {
-    const url = new URL(value)
-    return `${url.pathname}${url.search}`
-  } catch {
-    return value
-  }
+  return resolveContractReviewApiBaseForRuntime(
+    String(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, ''),
+    window.location.origin,
+  )
 }
 
 function isAbortError(error: unknown) {
@@ -96,9 +94,11 @@ async function resolveApiTarget(): Promise<ApiTarget> {
 }
 
 function legacyApiTarget(): ApiTarget {
+  const token = getAccessToken()
+
   return {
     baseUrl: getLegacyApiBase(),
-    headers: {},
+    headers: buildContractReviewFallbackHeaders(token, getClientId()),
     isPlatformApi: false,
   }
 }
@@ -127,9 +127,8 @@ async function fetchWithTarget(
   init: RequestInit,
   target: ApiTarget,
 ): Promise<Response> {
-  const normalizedPath = normalizeLegacyApiPath(path)
   try {
-    return await fetch(joinApiUrl(target.baseUrl, normalizedPath), {
+    return await fetch(buildContractReviewApiUrl(target.baseUrl, path, window.location.origin), {
       ...init,
       headers: mergeHeaders(target, init.headers),
     })

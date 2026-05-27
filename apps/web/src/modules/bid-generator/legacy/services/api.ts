@@ -5,6 +5,7 @@ import {
     resolveBidGeneratorApiTarget,
     warnLegacyFallback,
 } from './apiBase';
+import { shouldUseLegacyFallbackTarget } from './apiBasePolicy';
 
 type BidGeneratorAxiosConfig = InternalAxiosRequestConfig & {
     bidGeneratorTargetIsPlatformApi?: boolean;
@@ -12,6 +13,10 @@ type BidGeneratorAxiosConfig = InternalAxiosRequestConfig & {
 };
 
 export const baseURL = getApiBaseUrl();
+
+function isTopLevelUnifiedFrontend(): boolean {
+    return typeof window !== 'undefined' && window.parent === window;
+}
 
 const api = axios.create({
     // 因为引入了多模态打标和 PIPT 实体本地校验，并发量大时后端模型推理以及Dify生成可能需要长达 1小时
@@ -46,6 +51,9 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 function shouldFallbackToLegacy(error: AxiosError) {
     const config = error.config as BidGeneratorAxiosConfig | undefined;
     if (!config?.bidGeneratorTargetIsPlatformApi || config.bidGeneratorRetriedLegacy) {
+        return false;
+    }
+    if (!shouldUseLegacyFallbackTarget(isTopLevelUnifiedFrontend())) {
         return false;
     }
     if (error.response?.status === 502 || error.response?.status === 503) {
