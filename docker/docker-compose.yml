@@ -1,3 +1,80 @@
-# Current development can use the external PostgreSQL 18 instance configured by .env.
-# If local PostgreSQL is needed, add a local-only compose service in a later phase or
-# in an uncommitted override file. Do not commit real production passwords here.
+services:
+  postgres:
+    image: postgres:18
+    container_name: clover-postgres18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres123456}
+      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+    ports:
+      - "${POSTGRES_PUBLISHED_PORT:-5432}:5432"
+    volumes:
+      - postgres18_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: clover-api
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres123456}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres123456}@postgres:5432/${POSTGRES_DB:-app_db}
+      LIBREOFFICE_PATH: /usr/bin/libreoffice
+      SOFFICE_PATH: /usr/bin/libreoffice
+      RUN_ROOT: /app/legacy/contract_review/data/runs
+      CONTRACT_REVIEW_RUNTIME_ROOT: /app/legacy/contract_review/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - contract_review_uploads:/app/legacy/contract_review/data/uploads
+      - contract_review_runs:/app/legacy/contract_review/data/runs
+      - bid_generator_pdf_cache:/app/legacy/bid-generator/data/pdf_cache
+      - bid_generator_docx_cache:/app/legacy/bid-generator/data/docx_cache
+      - bid_generator_raw_doc_cache:/app/legacy/bid-generator/data/raw_doc_cache
+      - bid_generator_extracted_images:/app/legacy/bid-generator/data/extracted_images
+      - bid_generator_kb_sync_status:/app/legacy/bid-generator/data/kb_sync_status
+      - bid_generator_knowledge_base:/app/legacy/bid-generator/data/knowledge_base
+      - bid_generator_templates:/app/legacy/bid-generator/data/templates
+    expose:
+      - "5220"
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    container_name: clover-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_PUBLISHED_PORT:-5200}:5200"
+
+volumes:
+  postgres18_data:
+  contract_review_uploads:
+  contract_review_runs:
+  bid_generator_pdf_cache:
+  bid_generator_docx_cache:
+  bid_generator_raw_doc_cache:
+  bid_generator_extracted_images:
+  bid_generator_kb_sync_status:
+  bid_generator_knowledge_base:
+  bid_generator_templates:

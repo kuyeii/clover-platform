@@ -62,6 +62,63 @@ clover-platform/
   runtime/
 ```
 
+## Docker 部署
+
+当前 Docker 部署默认在同一台机器上启动 `web`、`api` 和 PostgreSQL 18。`web`
+使用 Nginx 托管 `apps/web` 构建产物，并把 `/api/v1/*` 和 `/ws/core/*`
+反向代理到 `api:5220`。`api` 直接承载当前统一后端和已迁入的业务能力，不默认启动
+legacy 前端或 legacy 后端进程。
+
+1. 准备环境变量：
+
+```bash
+cp .env.example .env
+```
+
+上线前至少修改 `.env` 中的 `POSTGRES_PASSWORD`、`PORTAL_ADMIN_PASSWORD` 和
+`PIPT_DB_KEY`。如果本机没有 Python cryptography，可先执行
+`python -m pip install cryptography`。`PIPT_DB_KEY` 可用下面命令生成：
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+2. 构建镜像：
+
+```bash
+docker compose -f docker/docker-compose.yml build
+```
+
+3. 首次初始化数据库：
+
+```bash
+docker compose -f docker/docker-compose.yml run --rm api python scripts/init_db.py
+docker compose -f docker/docker-compose.yml run --rm api alembic upgrade head
+docker compose -f docker/docker-compose.yml run --rm api python scripts/check_db.py
+```
+
+`scripts/init_db.py` 会初始化 schema、表、索引、模块元数据，并在缺少管理员时使用
+`PORTAL_ADMIN_USERNAME`、`PORTAL_ADMIN_PASSWORD` 和 `PORTAL_ADMIN_DISPLAY_NAME`
+创建默认 Portal 管理员。
+
+4. 启动平台：
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
+
+默认访问地址为 `http://<服务器IP>:5200`。健康检查：
+
+```bash
+curl http://127.0.0.1:5200/api/v1/core/health
+curl http://127.0.0.1:5200/api/v1/core/health/db
+```
+
+Compose 会创建 `postgres18_data`、合同审查上传 / 运行产物、标书生成文档缓存 /
+图片缓存 / 知识库 / 模板等持久化 volume。首次创建模板 volume 时，Docker 会把镜像内
+默认模板复制进 volume；后续更新镜像不会自动覆盖已存在的模板 volume。不要用
+`docker compose down -v` 清理生产环境，除非已经完成数据库和业务文件备份。
+
 ## 当前不做的事情
 
 - 不合并五个后端。
