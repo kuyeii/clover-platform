@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, getPlatformCoreApiBaseUrl } from "./client";
 import { clearAccessToken, getAccessToken, getClientId, setAccessToken } from "../auth/token";
 import type {
   AppUsageSummary,
@@ -107,7 +107,7 @@ export function leaveAllAppsBeacon() {
     token,
     clientId: getClientId(),
   });
-  const target = `${window.location.origin}/api/v1/core/app-usage/leave-all-beacon`;
+  const target = `${getPlatformCoreApiBaseUrl()}/app-usage/leave-all-beacon`;
 
   if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
     const blob = new Blob([payload], { type: "application/json" });

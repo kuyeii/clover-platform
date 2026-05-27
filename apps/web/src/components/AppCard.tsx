@@ -65,7 +65,7 @@ export function AppCard({ app, navigate }: AppCardProps) {
       return;
     }
 
-    if (usage.inUseByOthers) {
+    if (usage.inUse) {
       setIsConfirmOpen(true);
       return;
     }
@@ -161,7 +161,7 @@ export function AppCard({ app, navigate }: AppCardProps) {
       {isConfirmOpen ? (
         <AppEntryConfirmDialog
           app={app}
-          userNames={usage.otherUserNames}
+          userNames={usage.inUseByOthers ? usage.otherUserNames : usage.userNames}
           onCancel={() => setIsConfirmOpen(false)}
           onConfirm={() => {
             setIsConfirmOpen(false);
