@@ -16,23 +16,6 @@ const builtinSites = getBidReferenceSites();
 const customSitesStorageKey = "clover-bid-reference-custom-sites";
 const favoriteSitesStorageKey = "clover-bid-reference-favorites";
 const emptyForm: SiteForm = { name: "", url: "" };
-const categoryTabs = [
-  "不限",
-  "常用网站",
-  "CA办理",
-  "公共资源",
-  "国企采购",
-  "实用工具",
-  "招标投标",
-  "政府采购",
-  "政策法规",
-  "文库文档",
-  "服务平台",
-  "杂志报刊",
-  "行业协会",
-  "资质查询",
-  "采购意向",
-];
 
 function readJsonArray<T>(key: string): T[] {
   if (typeof window === "undefined") {
@@ -193,36 +176,6 @@ export function BidReferenceSitesPage() {
                 已收录 {builtinSites.length} 个招投标参考入口，点击网站名称会在新窗口打开。
               </p>
             </div>
-            <a
-              href="/workspace"
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              <Icon name="back" className="h-4 w-4" strokeWidth={1.7} />
-              返回首页
-            </a>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-slate-100 pb-4 text-sm">
-            <span className="text-slate-400">范围选择</span>
-            <button type="button" className="h-8 min-w-48 rounded-xl border border-slate-200 bg-white px-3 text-left text-slate-600">
-              全国
-            </button>
-            <button type="button" className="h-8 min-w-48 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-slate-400">
-              请选择城市
-            </button>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-slate-100 pb-4 text-sm">
-            <span className="text-slate-400">业务类型</span>
-            {categoryTabs.map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={item === "常用网站" ? "rounded-full bg-blue-600 px-3 py-1 font-semibold text-white" : "text-slate-700 hover:text-blue-700"}
-              >
-                {item}
-              </button>
-            ))}
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

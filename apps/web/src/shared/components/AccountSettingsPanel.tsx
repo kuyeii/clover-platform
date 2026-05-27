@@ -77,12 +77,12 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
 
   return (
     <section className="min-w-0">
-      <div className="mb-4 grid w-full grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-4 grid w-full grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1">
         <button
           type="button"
           className={[
             "h-10 min-w-0 rounded-lg px-3 text-sm font-semibold transition-colors",
-            activeTab === "profile" ? "bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100",
+            activeTab === "profile" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800",
           ].join(" ")}
           onClick={() => setActiveTab("profile")}
         >
@@ -92,7 +92,7 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
           type="button"
           className={[
             "h-10 min-w-0 rounded-lg px-3 text-sm font-semibold transition-colors",
-            activeTab === "password" ? "bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100",
+            activeTab === "password" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800",
           ].join(" ")}
           onClick={() => setActiveTab("password")}
         >
