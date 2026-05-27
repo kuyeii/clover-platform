@@ -1,17 +1,20 @@
 type IconName =
   | "arrow"
   | "back"
+  | "book"
   | "building"
   | "chart"
   | "check"
   | "close"
   | "download"
   | "file"
+  | "globe"
   | "grid"
   | "key"
   | "lock"
   | "logout"
   | "message"
+  | "moon"
   | "plus"
   | "refresh"
   | "save"
@@ -19,16 +22,17 @@ type IconName =
   | "send"
   | "shield"
   | "spark"
+  | "sun"
   | "upload"
   | "user"
   | "users";
 
-export function Icon({ name, className = "" }: { name: IconName; className?: string }) {
+export function Icon({ name, className = "", strokeWidth = 1.9 }: { name: IconName; className?: string; strokeWidth?: number }) {
   const common = {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "1.9",
+    strokeWidth,
     strokeLinecap: "round",
     strokeLinejoin: "round",
     "aria-hidden": true,
@@ -42,6 +46,13 @@ export function Icon({ name, className = "" }: { name: IconName; className?: str
       </>
     ),
     back: <path d="M15 18 9 12l6-6" />,
+    book: (
+      <>
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+        <path d="M4 5.5v16" />
+        <path d="M8 7h8" />
+      </>
+    ),
     building: (
       <>
         <path d="M5 20V5.8C5 4.8 5.8 4 6.8 4h10.4c1 0 1.8.8 1.8 1.8V20" />
@@ -75,12 +86,20 @@ export function Icon({ name, className = "" }: { name: IconName; className?: str
         <path d="M14 3v5h5" />
       </>
     ),
+    globe: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18" />
+        <path d="M12 3c2.4 2.5 3.6 5.5 3.6 9S14.4 18.5 12 21" />
+        <path d="M12 3c-2.4 2.5-3.6 5.5-3.6 9S9.6 18.5 12 21" />
+      </>
+    ),
     grid: (
       <>
-        <path d="M4 4h7v7H4z" />
-        <path d="M13 4h7v7h-7z" />
-        <path d="M4 13h7v7H4z" />
-        <path d="M13 13h7v7h-7z" />
+        <rect width="7" height="7" x="3" y="3" rx="1" />
+        <rect width="7" height="7" x="14" y="3" rx="1" />
+        <rect width="7" height="7" x="3" y="14" rx="1" />
+        <rect width="7" height="7" x="14" y="14" rx="1" />
       </>
     ),
     key: (
@@ -109,6 +128,7 @@ export function Icon({ name, className = "" }: { name: IconName; className?: str
         <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
       </>
     ),
+    moon: <path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 7 7 0 1 0 20 15.5Z" />,
     plus: (
       <>
         <path d="M12 5v14" />
@@ -152,6 +172,12 @@ export function Icon({ name, className = "" }: { name: IconName; className?: str
       <>
         <path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3Z" />
         <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" />
+      </>
+    ),
+    sun: (
+      <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
       </>
     ),
     upload: (

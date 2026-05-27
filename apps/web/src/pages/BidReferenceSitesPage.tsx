@@ -1,163 +1,323 @@
-import { ExternalLink, Globe2, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-import {
-  BidReferenceSite,
-  bidReferenceSites,
-} from "./bidReferenceSites.config";
+import { getBidReferenceSites, type BidReferenceSite } from "../services/bidReferenceSitesService";
+import { Icon } from "../shared/components/Icon";
 
-function getInitialSite(): BidReferenceSite {
-  return bidReferenceSites[0];
+type BookmarkSite = BidReferenceSite & {
+  custom?: boolean;
+};
+
+type SiteForm = {
+  name: string;
+  url: string;
+};
+
+const builtinSites = getBidReferenceSites();
+const customSitesStorageKey = "clover-bid-reference-custom-sites";
+const favoriteSitesStorageKey = "clover-bid-reference-favorites";
+const emptyForm: SiteForm = { name: "", url: "" };
+const categoryTabs = [
+  "不限",
+  "常用网站",
+  "CA办理",
+  "公共资源",
+  "国企采购",
+  "实用工具",
+  "招标投标",
+  "政府采购",
+  "政策法规",
+  "文库文档",
+  "服务平台",
+  "杂志报刊",
+  "行业协会",
+  "资质查询",
+  "采购意向",
+];
+
+function readJsonArray<T>(key: string): T[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const value = window.localStorage.getItem(key);
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function openSite(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function BidReferenceSitesPage() {
-  const [keyword, setKeyword] = useState("");
-  const [activeSite, setActiveSite] = useState<BidReferenceSite>(() => getInitialSite());
+  const [favoriteKeyword, setFavoriteKeyword] = useState("");
+  const [customSites, setCustomSites] = useState<BookmarkSite[]>(() => readJsonArray<BookmarkSite>(customSitesStorageKey));
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readJsonArray<string>(favoriteSitesStorageKey));
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState<SiteForm>(emptyForm);
+  const [formError, setFormError] = useState("");
 
-  const filteredSites = useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLowerCase();
-    if (!normalizedKeyword) {
-      return bidReferenceSites;
+  const allSites = useMemo<BookmarkSite[]>(() => [...customSites, ...builtinSites], [customSites]);
+  const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+  const favoriteSites = useMemo(() => allSites.filter((site) => favoriteSet.has(site.id)), [allSites, favoriteSet]);
+  const visibleFavoriteSites = useMemo(() => {
+    const keyword = favoriteKeyword.trim().toLowerCase();
+    if (!keyword) {
+      return favoriteSites;
     }
+    return favoriteSites.filter((site) =>
+      [site.name, site.url, site.description, site.tag].join(" ").toLowerCase().includes(keyword),
+    );
+  }, [favoriteKeyword, favoriteSites]);
 
-    return bidReferenceSites.filter((site) => {
-      const searchableText = [site.name, site.description, site.tag, site.url]
-        .join(" ")
-        .toLowerCase();
-      return searchableText.includes(normalizedKeyword);
-    });
-  }, [keyword]);
+  useEffect(() => {
+    window.localStorage.setItem(customSitesStorageKey, JSON.stringify(customSites));
+  }, [customSites]);
+
+  useEffect(() => {
+    window.localStorage.setItem(favoriteSitesStorageKey, JSON.stringify(favoriteIds));
+  }, [favoriteIds]);
+
+  const toggleFavorite = (siteId: string) => {
+    setFavoriteIds((current) => (current.includes(siteId) ? current.filter((id) => id !== siteId) : [...current, siteId]));
+  };
+
+  const handleCreate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    const name = form.name.trim();
+    const url = normalizeUrl(form.url);
+    if (!name || !url) {
+      setFormError("请填写网站名称和链接。");
+      return;
+    }
+    const site: BookmarkSite = {
+      id: `custom-${Date.now()}`,
+      name,
+      url,
+      description: "自定义网站",
+      tag: "自定义",
+      custom: true,
+    };
+    setCustomSites((current) => [site, ...current]);
+    setFavoriteIds((current) => [site.id, ...current]);
+    setForm(emptyForm);
+    setDialogOpen(false);
+  };
 
   return (
     <div className="legacy-portal-ui flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50">
       <section className="flex min-h-0 flex-1 flex-col gap-4 p-4 md:flex-row md:p-5">
-        <aside className="flex min-h-0 shrink-0 flex-col rounded-3xl border border-white/80 bg-white shadow-lg md:w-[22rem]">
+        <aside className="flex min-h-[360px] shrink-0 flex-col rounded-3xl border border-white/80 bg-white shadow-lg md:w-[20rem]">
           <div className="border-b border-slate-100 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                <Globe2 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg font-semibold text-slate-950">招投标网址汇集</h1>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  已收录 {bidReferenceSites.length} 个招投标参考入口，点击左侧条目后在右侧展示网页。
-                </p>
-              </div>
-            </div>
-
+            <h1 className="text-lg font-semibold text-slate-950">收藏列表</h1>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              收藏常用入口或添加自定义网站，刷新后仍会保留。
+            </p>
             <label className="mt-4 flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm shadow-sm focus-within:border-blue-200 focus-within:ring-2 focus-within:ring-blue-100">
-              <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
               <input
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
+                value={favoriteKeyword}
+                onChange={(event) => setFavoriteKeyword(event.target.value)}
                 type="search"
-                placeholder="搜索网站、用途或分类…"
+                placeholder="搜索收藏网站"
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
               />
+              <Icon name="search" className="h-4 w-4 text-slate-400" strokeWidth={1.7} />
             </label>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {filteredSites.length > 0 ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {visibleFavoriteSites.length ? (
               <div className="space-y-1">
-                {filteredSites.map((site) => {
-                  const isActive = site.id === activeSite.id;
-
-                  return (
-                    <button
-                      key={site.id}
-                      type="button"
-                      onClick={() => setActiveSite(site)}
-                      className={[
-                        "group flex w-full gap-3 rounded-2xl px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200",
-                        isActive ? "bg-blue-50" : "hover:bg-slate-50",
-                      ].join(" ")}
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      <span
-                        className={[
-                          "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors",
-                          isActive
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-slate-100 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600",
-                        ].join(" ")}
-                      >
-                        <Globe2 className="h-4 w-4" aria-hidden="true" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center justify-between gap-3">
-                          <span
-                            className={[
-                              "truncate text-sm font-bold",
-                              isActive ? "text-blue-800" : "text-slate-900",
-                            ].join(" ")}
-                          >
-                            {site.name}
-                          </span>
-                          <span
-                            className={[
-                              "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold",
-                              isActive ? "bg-white text-blue-700" : "bg-slate-100 text-slate-500",
-                            ].join(" ")}
-                          >
-                            {site.tag}
-                          </span>
-                        </span>
-                        <span className="mt-1 block text-xs leading-5 text-slate-500">
-                          {site.description}
-                        </span>
-                        <span className="mt-1 block truncate text-[0.7rem] text-slate-400">
-                          {site.url}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
+                {visibleFavoriteSites.map((site) => (
+                  <button
+                    key={site.id}
+                    type="button"
+                    className="group w-full min-w-0 rounded-2xl px-3 py-3 text-left transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    onClick={() => openSite(site.url)}
+                    title={site.url}
+                  >
+                    <span className="block truncate text-sm font-bold text-slate-900 group-hover:text-blue-800">
+                      {site.name}
+                    </span>
+                    <span className="mt-1 block truncate text-xs text-slate-500">{site.url}</span>
+                  </button>
+                ))}
               </div>
             ) : (
-              <div className="px-4 py-10 text-center text-sm text-slate-500">
-                没有匹配的网站，换个关键词试试。
+              <div className="grid h-full min-h-48 place-items-center text-center text-sm text-slate-500">
+                <div>
+                  <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-blue-50 text-blue-200">
+                    <Icon name="book" className="h-8 w-8" strokeWidth={1.5} />
+                  </div>
+                  <p>暂无收藏</p>
+                </div>
               </div>
             )}
           </div>
+
+          <div className="border-t border-slate-100 p-4">
+            <button
+              type="button"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-colors hover:bg-blue-700"
+              onClick={() => {
+                setForm(emptyForm);
+                setFormError("");
+                setDialogOpen(true);
+              }}
+            >
+              <Icon name="plus" className="h-4 w-4" strokeWidth={1.8} />
+              新建网站
+            </button>
+          </div>
         </aside>
 
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-white/80 bg-white shadow-lg">
-          <div className="flex shrink-0 flex-col gap-3 border-b border-slate-100 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <main className="min-w-0 flex-1 overflow-y-auto rounded-3xl border border-white/80 bg-white px-5 py-5 shadow-lg">
+          <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-base font-semibold text-slate-950 md:text-lg">
-                  {activeSite.name}
-                </h2>
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                  {activeSite.tag}
-                </span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="h-3 w-1 rounded-full bg-blue-600" />
+                <h2 className="truncate text-base font-semibold text-slate-950 md:text-lg">常用网站</h2>
               </div>
-              <p className="mt-1 truncate text-xs text-slate-500">{activeSite.url}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                已收录 {builtinSites.length} 个招投标参考入口，点击网站名称会在新窗口打开。
+              </p>
             </div>
-
             <a
-              href={activeSite.url}
-              target="_blank"
-              rel="noreferrer"
+              href="/workspace"
               className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
             >
-              <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              新窗口打开
+              <Icon name="back" className="h-4 w-4" strokeWidth={1.7} />
+              返回首页
             </a>
           </div>
 
-          <div className="relative min-h-0 flex-1 bg-slate-100">
-            <iframe
-              key={activeSite.id}
-              title={`${activeSite.name} 网页预览`}
-              src={activeSite.url}
-              allow="clipboard-read; clipboard-write; fullscreen"
-              className="block h-full min-h-0 w-full border-0 bg-white"
-            />
+          <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-slate-100 pb-4 text-sm">
+            <span className="text-slate-400">范围选择</span>
+            <button type="button" className="h-8 min-w-48 rounded-xl border border-slate-200 bg-white px-3 text-left text-slate-600">
+              全国
+            </button>
+            <button type="button" className="h-8 min-w-48 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-slate-400">
+              请选择城市
+            </button>
           </div>
-        </section>
+
+          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-slate-100 pb-4 text-sm">
+            <span className="text-slate-400">业务类型</span>
+            {categoryTabs.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={item === "常用网站" ? "rounded-full bg-blue-600 px-3 py-1 font-semibold text-white" : "text-slate-700 hover:text-blue-700"}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {allSites.map((site) => {
+              const isFavorite = favoriteSet.has(site.id);
+              return (
+                <article
+                  key={site.id}
+                  className="group flex min-h-14 min-w-0 items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-2 shadow-sm transition hover:border-blue-100 hover:shadow-md"
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => openSite(site.url)}
+                    title={site.url}
+                  >
+                    <span className="block truncate text-sm font-bold text-slate-900 group-hover:text-blue-800">
+                      {site.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-slate-500">{site.description}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={[
+                      "ml-3 inline-grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors",
+                      isFavorite ? "bg-blue-50 text-blue-600" : "text-slate-300 hover:bg-blue-50 hover:text-blue-600",
+                    ].join(" ")}
+                    onClick={() => toggleFavorite(site.id)}
+                    aria-label={isFavorite ? "取消收藏" : "加入收藏"}
+                    title={isFavorite ? "取消收藏" : "加入收藏"}
+                  >
+                    <Icon name={isFavorite ? "check" : "plus"} className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+
+          <p className="mt-10 text-center text-sm text-slate-400">-- 没有更多了 --</p>
+        </main>
       </section>
+
+      {dialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <section className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-label="新建网站">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-950">新建网站</h2>
+              <button
+                type="button"
+                className="inline-grid h-8 w-8 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                onClick={() => setDialogOpen(false)}
+                aria-label="关闭"
+              >
+                <Icon name="close" className="h-4 w-4" strokeWidth={1.7} />
+              </button>
+            </div>
+
+            <form className="space-y-4" onSubmit={handleCreate}>
+              <label className="grid gap-2 sm:grid-cols-[88px_minmax(0,1fr)] sm:items-center">
+                <span className="text-sm text-slate-600">网站名称：</span>
+                <input
+                  value={form.name}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                  className="h-9 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  placeholder="请输入网站名称"
+                />
+              </label>
+              <label className="grid gap-2 sm:grid-cols-[88px_minmax(0,1fr)] sm:items-center">
+                <span className="text-sm text-slate-600">网站链接：</span>
+                <input
+                  value={form.url}
+                  onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))}
+                  className="h-9 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  placeholder="请输入网站链接"
+                />
+              </label>
+
+              {formError ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{formError}</p> : null}
+
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  className="h-9 rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-600 transition hover:bg-slate-50"
+                  onClick={() => setDialogOpen(false)}
+                >
+                  取消
+                </button>
+                <button type="submit" className="h-9 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700">
+                  确定
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
