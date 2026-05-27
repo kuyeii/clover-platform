@@ -99,8 +99,6 @@ export function BidGeneratorPage() {
     [activeProjectId, projects],
   );
   const activeData = useMemo(() => normalizeProjectData(activeProject), [activeProject]);
-  const workflowSummary = useMemo(() => summarizeWorkflowStatus(workflowStatus), [workflowStatus]);
-  const projectStats = useMemo(() => buildProjectStats(projects), [projects]);
   const imageAssets = useMemo(() => collectImageAssets(activeData.imageMap), [activeData.imageMap]);
   const outlineItems = useMemo(() => flattenOutline(activeData.outline || []), [activeData.outline]);
   const generatedEntries = useMemo(() => Object.entries(activeData.generatedContent || {}), [activeData.generatedContent]);
@@ -675,28 +673,6 @@ export function BidGeneratorPage() {
 
   return (
     <section className="bid-page">
-      <header className="page-hero compact">
-        <div>
-          <span className="eyebrow">Bid Generator</span>
-          <h1>标书生成</h1>
-          <p>项目、解析、生成、导出和知识库已在 apps/web 原生承载，legacy iframe 配置继续保留用于回滚。</p>
-        </div>
-        <div className="hero-metrics">
-          <div>
-            <span>项目</span>
-            <strong>{projects.length}</strong>
-          </div>
-          <div>
-            <span>解析完成</span>
-            <strong>{projectStats.reportDone}</strong>
-          </div>
-          <div>
-            <span>Workflow</span>
-            <strong>{workflowSummary.configured}/{workflowSummary.total}</strong>
-          </div>
-        </div>
-      </header>
-
       {pageError ? (
         <div className="notice warning">
           <span>{pageError}</span>
@@ -1257,23 +1233,6 @@ function createClientProjectId() {
     return crypto.randomUUID();
   }
   return `bid-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function summarizeWorkflowStatus(status: Record<string, BidWorkflowStatusItem>) {
-  const items = Object.values(status || {});
-  return {
-    total: items.length,
-    configured: items.filter((item) => item.configured).length,
-  };
-}
-
-function buildProjectStats(projects: BidProjectRecord[]) {
-  return {
-    reportDone: projects.filter((project) => {
-      const status = String(project.status || "");
-      return status === "report_done" || status === "outline_ready" || status === "editing" || status === "done";
-    }).length,
-  };
 }
 
 function countFrameworkNodes(payload: unknown): number {

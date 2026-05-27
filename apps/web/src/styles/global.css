@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color: #17202a;
   background: #f3f6f8;
@@ -62,7 +66,7 @@ select {
 
 input,
 select {
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 12px;
 }
 
@@ -94,71 +98,18 @@ code {
   flex: 0 0 auto;
 }
 
-.portal-shell {
-  min-height: 100vh;
-  background: #f3f6f8;
-}
-
-.portal-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 18px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.94);
-  padding: 12px 22px;
-  backdrop-filter: blur(12px);
-}
-
-.portal-brand {
-  display: grid;
-  grid-template-columns: 42px 1fr;
-  gap: 12px;
-  align-items: center;
-}
-
-.portal-brand-mark {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border-radius: 8px;
-  background: #153a5b;
-  color: #fff;
-  font-weight: 800;
-}
-
-.portal-brand strong,
-.portal-brand small {
-  display: block;
-}
-
-.portal-brand small,
 .muted-text {
   color: var(--muted);
 }
 
-.portal-nav,
-.portal-account,
 .row-actions,
 .dialog-actions,
-.ops-strip,
 .section-title-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.portal-nav {
-  min-width: 0;
-  overflow-x: auto;
-}
-
-.portal-nav-link,
-.sidebar-link,
 .ghost-button,
 .secondary-button,
 .primary-button,
@@ -168,55 +119,15 @@ code {
   transition: border-color 0.16s, background 0.16s, color 0.16s, transform 0.16s;
 }
 
-.portal-nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 8px 12px;
-  color: #435363;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.portal-nav-link:hover,
-.portal-nav-link.active {
-  background: #ecf4ff;
-  color: #174ea6;
-}
-
-.portal-account {
-  justify-content: flex-end;
-}
-
-.account-pill,
-.ws-state,
-.usage-badge,
 .status-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border-radius: 999px;
   padding: 6px 10px;
-  font-size: 0.82rem;
+  font-size: 0.95rem;
   font-weight: 700;
   white-space: nowrap;
-}
-
-.account-pill {
-  border: 1px solid var(--line);
-  background: #fff;
-}
-
-.ws-state {
-  background: #eef7f5;
-  color: var(--teal);
-}
-
-.ws-state--closed,
-.ws-state--reconnecting {
-  background: #fff7e8;
-  color: var(--amber);
 }
 
 .icon-button {
@@ -239,22 +150,6 @@ code {
   color: var(--ink);
 }
 
-.portal-body {
-  display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  min-height: calc(100vh - 67px);
-}
-
-.portal-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  border-right: 1px solid var(--line);
-  background: #eaf0f4;
-  padding: 22px 16px;
-}
-
-.nav-title,
 .eyebrow {
   color: var(--muted);
   font-size: 0.76rem;
@@ -263,31 +158,13 @@ code {
   text-transform: uppercase;
 }
 
-.sidebar-link {
-  display: grid;
-  grid-template-columns: 34px 1fr;
-  gap: 10px;
-  align-items: center;
-  padding: 11px 10px;
-  color: #314255;
-}
-
-.sidebar-link:hover,
-.sidebar-link.active {
-  border-color: #c9d9e7;
-  background: #fff;
-  color: #174ea6;
-}
-
-.sidebar-link small,
 .form-field small {
   display: block;
   margin-top: 3px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.88rem;
 }
 
-.sidebar-link-icon,
 .module-icon,
 .panel-title > .ui-icon,
 .dialog-icon {
@@ -300,11 +177,6 @@ code {
   color: var(--blue);
 }
 
-.portal-main {
-  min-width: 0;
-  padding: 24px;
-}
-
 .page-stack {
   display: grid;
   gap: 22px;
@@ -314,7 +186,6 @@ code {
 
 .page-hero,
 .panel-card,
-.workspace-card,
 .company-overview,
 .competitor-section,
 .details-panel,
@@ -335,7 +206,6 @@ code {
 }
 
 .page-hero h1,
-.login-heading h1,
 .competitor-home-head h1 {
   margin: 6px 0 0;
   color: var(--ink);
@@ -344,7 +214,6 @@ code {
 }
 
 .page-hero p,
-.login-heading p,
 .competitor-home-head p {
   margin: 10px 0 0;
   max-width: 760px;
@@ -378,50 +247,11 @@ code {
   font-size: 1.4rem;
 }
 
-.workspace-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.workspace-card {
-  display: grid;
-  min-height: 260px;
-  gap: 16px;
-  padding: 18px;
-}
-
-.workspace-card.disabled {
-  opacity: 0.68;
-}
-
-.workspace-card-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 .module-icon {
   width: 44px;
   height: 44px;
 }
 
-.workspace-card-copy h2 {
-  margin: 8px 0;
-  font-size: 1.45rem;
-}
-
-.workspace-card-copy p {
-  color: var(--muted);
-  line-height: 1.55;
-}
-
-.usage-badge {
-  background: #eaf6ff;
-  color: #075985;
-}
-
-.usage-badge.warning,
 .status-chip {
   background: #fff7e8;
   color: var(--amber);
@@ -439,19 +269,20 @@ code {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 9px 14px;
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: 1rem;
   font-weight: 800;
 }
 
 .primary-button {
-  border-color: #1d4ed8;
-  background: #1d4ed8;
+  border-color: var(--blue);
+  background: var(--blue);
   color: #fff;
 }
 
 .primary-button:hover {
-  background: #1744bd;
+  background: #1d4ed8;
 }
 
 .primary-button.full {
@@ -464,7 +295,7 @@ code {
 }
 
 .primary-button.small {
-  min-height: 38px;
+  min-height: 40px;
 }
 
 .secondary-button,
@@ -550,11 +381,12 @@ code {
   display: block;
   margin-bottom: 6px;
   color: #344254;
+  font-size: 1rem;
   font-weight: 800;
 }
 
 .form-field.compact span {
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   color: var(--muted);
 }
 
@@ -585,7 +417,9 @@ code {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  padding: 9px 10px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  font-weight: 800;
 }
 
 .permission-chip.active {
@@ -643,6 +477,8 @@ code {
   border-radius: 8px;
   background: #fff;
   padding: 12px;
+  font-size: 1rem;
+  font-weight: 800;
   text-align: left;
 }
 
@@ -656,7 +492,8 @@ code {
   display: block;
   margin-top: 4px;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .attachment-list {
@@ -747,143 +584,6 @@ code {
   }
 }
 
-.login-screen {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
-  min-height: 100vh;
-  background: #edf2f5;
-}
-
-.login-visual {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #10324d, #0f766e);
-  padding: 48px;
-}
-
-.login-visual-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(170px, 1fr));
-  gap: 14px;
-  width: min(620px, 100%);
-}
-
-.visual-tile {
-  min-height: 150px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  padding: 18px;
-}
-
-.visual-tile.primary {
-  grid-column: span 2;
-}
-
-.visual-tile strong,
-.visual-tile span {
-  display: block;
-}
-
-.visual-tile strong {
-  margin-top: 22px;
-  font-size: 1.35rem;
-}
-
-.visual-tile span {
-  margin-top: 6px;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.login-panel {
-  display: grid;
-  place-items: center;
-  padding: 32px;
-}
-
-.login-card {
-  width: min(420px, 100%);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: var(--shadow);
-  padding: 28px;
-}
-
-.input-with-icon {
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  padding: 0 12px;
-}
-
-.input-with-icon input {
-  border: 0;
-  padding-inline: 0;
-  box-shadow: none;
-}
-
-.module-frame-page {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: calc(100vh - 115px);
-  gap: 12px;
-}
-
-.frame-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
-}
-
-.frame-header h1 {
-  margin: 4px 0 0;
-}
-
-.runtime-url {
-  color: var(--muted);
-  font-size: 0.86rem;
-}
-
-.module-frame-wrap {
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.module-frame-wrap iframe {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-height: 560px;
-  border: 0;
-}
-
-.frame-loading,
-.frame-error {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.frame-error {
-  color: var(--red);
-}
-
 .competitor-shell {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -970,7 +670,8 @@ code {
 .tabbar button {
   border: 0;
   background: #fff;
-  padding: 10px 14px;
+  padding: 11px 16px;
+  font-size: 1rem;
   font-weight: 800;
 }
 
@@ -1444,9 +1145,9 @@ code {
 }
 
 .ghost-button.small {
-  min-height: 32px;
-  padding: 5px 9px;
-  font-size: 0.82rem;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 0.95rem;
 }
 
 .rag-version-pager {
@@ -1517,9 +1218,9 @@ code {
 }
 
 .rag-search-toggle.active {
-  border-color: #add0ff;
-  background: #edf5ff;
-  color: #174ea6;
+  border-color: rgba(37, 99, 235, 0.28);
+  background: #eff6ff;
+  color: var(--blue);
 }
 
 .rag-upload-box {
@@ -2135,7 +1836,6 @@ code {
 }
 
 @media (max-width: 1180px) {
-  .workspace-grid,
   .competitor-grid-native {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2153,34 +1853,13 @@ code {
 }
 
 @media (max-width: 960px) {
-  .portal-topbar,
-  .portal-body,
   .competitor-shell,
   .admin-grid,
-  .feedback-layout,
-  .login-screen {
+  .feedback-layout {
     grid-template-columns: 1fr;
   }
 
-  .portal-sidebar {
-    display: none;
-  }
-
-  .portal-topbar {
-    position: static;
-  }
-
-  .portal-nav,
-  .portal-account {
-    justify-content: flex-start;
-  }
-
-  .login-visual {
-    display: none;
-  }
-
   .two-column,
-  .workspace-grid,
   .competitor-grid-native,
   .analysis-form-grid,
   .user-edit-grid {
@@ -2193,19 +1872,12 @@ code {
 }
 
 @media (max-width: 640px) {
-  .portal-main {
-    padding: 14px;
-  }
-
   .page-hero,
-  .portal-topbar,
-  .user-row-head,
-  .frame-header {
+  .user-row-head {
     display: grid;
   }
 
   .page-hero h1,
-  .login-heading h1,
   .competitor-home-head h1 {
     font-size: 1.8rem;
   }

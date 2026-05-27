@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiRequestError } from "../../shared/api/client";
 import { useAuth } from "../../shared/auth/AuthProvider";
@@ -75,7 +75,6 @@ export function ContractReviewPage() {
   const sourceDocumentReady = Boolean(meta?.document_ready || result || status === "completed");
   const reviewedDocumentReady = Boolean(result?.download_ready && status === "completed");
   const riskItems = result?.risk_result_validated?.risk_result?.risk_items || [];
-  const riskStats = useMemo(() => buildRiskStats(riskItems), [riskItems]);
 
   const loadHistory = useCallback(async (signal?: AbortSignal) => {
     setLoadingHistory(true);
@@ -395,28 +394,6 @@ export function ContractReviewPage() {
 
   return (
     <section className="contract-review-page">
-      <header className="page-hero compact contract-review-hero">
-        <div>
-          <span className="eyebrow">Contract Review</span>
-          <h1>合同审查</h1>
-          <p>原生页面已接入 apps/api，支持合同上传、状态轮询、风险卡片、AI 改写和 DOCX 鉴权下载。</p>
-        </div>
-        <div className="hero-metrics">
-          <div>
-            <span>服务状态</span>
-            <strong>{health?.status || health?.service || "—"}</strong>
-          </div>
-          <div>
-            <span>风险总数</span>
-            <strong>{riskStats.total}</strong>
-          </div>
-          <div>
-            <span>待处理</span>
-            <strong>{riskStats.pending}</strong>
-          </div>
-        </div>
-      </header>
-
       {pageError ? (
         <div className="notice warning">
           <span>{pageError}</span>
@@ -606,28 +583,6 @@ function withRiskItems(result: ReviewResultPayload, riskItems: RiskItem[]): Revi
       },
     },
   };
-}
-
-function buildRiskStats(risks: RiskItem[]) {
-  return risks.reduce(
-    (stats, risk) => {
-      stats.total += 1;
-      const level = String(risk.risk_level || "").trim().toLowerCase();
-      if (level === "high") {
-        stats.high += 1;
-      } else if (level === "medium") {
-        stats.medium += 1;
-      } else if (level === "low") {
-        stats.low += 1;
-      }
-      const status = String(risk.status || "pending").toLowerCase();
-      if (!status || status === "pending") {
-        stats.pending += 1;
-      }
-      return stats;
-    },
-    { total: 0, high: 0, medium: 0, low: 0, pending: 0 },
-  );
 }
 
 function normalizeAnalysisScope(value?: string): AnalysisScopeOption {

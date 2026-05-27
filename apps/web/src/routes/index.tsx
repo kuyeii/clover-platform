@@ -4,7 +4,9 @@ import { BidGeneratorPage } from "../modules/bid-generator/BidGeneratorPage";
 import { CompetitorAnalysisPage } from "../modules/competitor-analysis/CompetitorAnalysisPage";
 import { ContractReviewPage } from "../modules/contract-review/ContractReviewPage";
 import { RagPage } from "../modules/rag/RagPage";
+import { BidReferenceSitesPage } from "../pages/BidReferenceSitesPage";
 import { FeedbackPage } from "../pages/FeedbackPage";
+import { KnowledgePage } from "../pages/KnowledgePage";
 import { LoginPage } from "../pages/LoginPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { UserManagementPage } from "../pages/UserManagementPage";
@@ -54,6 +56,16 @@ export const appRoutes: AppRoute[] = [
     path: "/users",
     label: "用户管理",
     render: (context) => protectedPage(context, <UserManagementPage />),
+  },
+  {
+    path: "/knowledge",
+    label: "知识库",
+    render: (context) => protectedPage(context, <KnowledgePage />),
+  },
+  {
+    path: "/bid-reference-sites",
+    label: "招投标网址",
+    render: (context) => protectedPage(context, <BidReferenceSitesPage />),
   },
   {
     path: "/feedback",

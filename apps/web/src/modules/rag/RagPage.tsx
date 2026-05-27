@@ -535,24 +535,6 @@ export function RagPage() {
 
   return (
     <section className="rag-page">
-      <header className="page-hero compact rag-hero">
-        <div>
-          <span className="eyebrow">RAG</span>
-          <h1>RAG 问答</h1>
-          <p>原生接入 apps/api 的会话、流式问答和 Dify Dataset 知识库文档能力。</p>
-        </div>
-        <div className="hero-metrics">
-          <div>
-            <span>对话</span>
-            <strong>{Math.max(0, conversations.filter((conversation) => conversation.messages.length > 0).length)}</strong>
-          </div>
-          <div>
-            <span>联网</span>
-            <strong>{webSearchEnabled ? "开" : "关"}</strong>
-          </div>
-        </div>
-      </header>
-
       {healthError ? (
         <div className="notice warning">
           <span>{healthError}</span>

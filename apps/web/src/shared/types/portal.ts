@@ -26,10 +26,11 @@ export interface PortalModule {
   name: string;
   shortName: string;
   description: string;
+  bannerText: string;
+  ctaLabel: string;
+  backgroundImage: string;
   route: string;
-  iframeRoute?: string;
   apiPrefix: string;
-  legacyFrontend: string;
   status: AppStatus;
 }
 
