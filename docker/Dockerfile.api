@@ -33,11 +33,11 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu \
     && python -m pip install -r legacy/bid-generator/pipt-flask/requirements-lite.txt \
     && python -m pip install \
-      docx2pdf>=0.1.8 \
-      exrex>=0.12.0 \
-      markdown>=3.6 \
-      olefile>=0.47 \
-      pymupdf4llm>=0.0.5
+      "docx2pdf>=0.1.8" \
+      "exrex>=0.12.0" \
+      "markdown>=3.6" \
+      "olefile>=0.47" \
+      "pymupdf4llm>=0.0.5"
 
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
