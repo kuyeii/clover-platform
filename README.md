@@ -85,12 +85,13 @@ legacy 前端或 legacy 后端进程。
 cp .env.example .env
 ```
 
-上线前至少修改 `.env` 中的 `POSTGRES_PASSWORD`、`PORTAL_ADMIN_PASSWORD` 和
-`PIPT_DB_KEY`。如果本机没有 Python cryptography，可先执行
-`python -m pip install cryptography`。`PIPT_DB_KEY` 可用下面命令生成：
+上线前必须修改 `.env` 中的 `POSTGRES_PASSWORD`、`PORTAL_ADMIN_PASSWORD`，并
+配置 `PIPT_DB_KEY`。`PIPT_ENV=prod` 时未配置 `PIPT_DB_KEY` 会导致标书生成的
+脱敏 / 还原等接口无法运行；Compose 会在启动前拦截这种配置。如果本机没有 Python cryptography，可先执行
+`python3 -m pip install cryptography`。`PIPT_DB_KEY` 可用下面命令生成：
 
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 2. 构建镜像：
@@ -160,8 +161,9 @@ cp .env.external-postgres.example .env.external-postgres
 
 把 `.env.external-postgres` 中的 `EXTERNAL_POSTGRES_HOST` 改成外部 PostgreSQL
 服务器 IP 或域名。如果外部数据库使用上面的配置，端口、库名、用户名和密码可保持为
-`5432`、`app_db`、`postgres`、`postgres123456`；生产环境仍建议修改数据库密码、
-`PORTAL_ADMIN_PASSWORD` 和 `PIPT_DB_KEY`。
+`5432`、`app_db`、`postgres`、`postgres123456`。生产环境必须修改数据库密码、
+`PORTAL_ADMIN_PASSWORD`，并配置 `PIPT_DB_KEY`；`PIPT_ENV=prod` 时缺少
+`PIPT_DB_KEY` 会导致标书生成脱敏 / 还原等接口在运行时失败，Compose 会在启动前拦截这种配置。
 
 构建镜像：
 

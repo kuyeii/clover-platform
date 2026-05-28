@@ -16,6 +16,8 @@ services:
       POSTGRES_USER: ${EXTERNAL_POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${EXTERNAL_POSTGRES_PASSWORD:-postgres123456}
       DATABASE_URL: postgresql+psycopg://${EXTERNAL_POSTGRES_USER:-postgres}:${EXTERNAL_POSTGRES_PASSWORD:-postgres123456}@${EXTERNAL_POSTGRES_HOST:?Set EXTERNAL_POSTGRES_HOST to the external PostgreSQL server IP or DNS name}:${EXTERNAL_POSTGRES_PORT:-5432}/${EXTERNAL_POSTGRES_DB:-app_db}
+      PIPT_ENV: ${PIPT_ENV:-prod}
+      PIPT_DB_KEY: ${PIPT_DB_KEY:?Set PIPT_DB_KEY to a Fernet key before starting the production Docker deployment}
       LIBREOFFICE_PATH: /usr/bin/libreoffice
       SOFFICE_PATH: /usr/bin/libreoffice
       RUN_ROOT: /app/legacy/contract_review/data/runs
