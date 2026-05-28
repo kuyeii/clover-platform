@@ -15,6 +15,15 @@ test("company overview news list scrolls when many items are returned", () => {
   assert.match(cssSource, /\.overview-news ul\s*{[^}]*overflow-y:\s*auto/s);
 });
 
+test("company overview does not fall back to demo news items", () => {
+  assert.equal(appSource.includes("DEMO_TARGET_DETAIL"), false);
+  assert.equal(appSource.includes("DEMO_COMPETITORS"), false);
+  assert.equal(appSource.includes("buildDemo"), false);
+  assert.equal(appSource.includes("演示数据"), false);
+  assert.match(appSource, /Array\.isArray\(targetDetail\?\.latelyItems\) \? targetDetail\.latelyItems : \[\]/);
+  assert.match(appSource, /暂无近期动态。/);
+});
+
 test("all scrollbars use a compact style with lighter idle and stronger hover states", () => {
   assert.match(cssSource, /--scrollbar-thumb-idle:\s*rgba\(78,\s*105,\s*154,\s*0\.16\);/);
   assert.match(cssSource, /\*\s*{[^}]*scrollbar-width:\s*thin/s);

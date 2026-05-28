@@ -77,123 +77,6 @@ const PROVINCES = [
   "澳门特别行政区"
 ];
 
-const DEMO_COMPETITORS = [
-  {
-    id: "competitor-1",
-    name: "之江实验室",
-    intro: "浙江省政府与浙江大学、阿里巴巴等共建，聚焦人工智能、网络空间安全、云计算与新型实验室方向。",
-    threatScore: 94,
-    sourceTag: "自动搜索结果"
-  },
-  {
-    id: "competitor-2",
-    name: "鹏城实验室",
-    intro: "深圳市政府主导建设，聚焦人工智能、通信网络、网络安全、低空经济等前沿领域。",
-    threatScore: 89,
-    sourceTag: "自动搜索结果"
-  },
-  {
-    id: "competitor-3",
-    name: "紫金山实验室",
-    intro: "江苏省与南京市共建，聚焦 6G、内生安全、安全计算等技术攻关。",
-    threatScore: 78,
-    sourceTag: "自动搜索结果"
-  },
-  {
-    id: "competitor-4",
-    name: "北京智源人工智能研究院",
-    intro: "围绕 AI 基础研究与大模型，推动前沿技术和开放合作。",
-    threatScore: 72,
-    sourceTag: "自动搜索结果"
-  },
-  {
-    id: "competitor-5",
-    name: "上海人工智能实验室",
-    intro: "由上海市支持，聚焦大模型与基础研究，推进 AI 技术应用创新。",
-    threatScore: 66,
-    sourceTag: "自动搜索结果"
-  }
-];
-
-const DEMO_TARGET_DETAIL = {
-  lately: "近三个月围绕新一代智能计算平台、科研合作与产业化项目持续更新。",
-  latelyItems: [
-    {
-      id: "news-1",
-      title: "发布新一代数据智能平台 v3.0",
-      time: "2025-04",
-      content: "平台强化多源数据汇聚、智能分析与安全协同能力。",
-      source: "公开信息"
-    },
-    {
-      id: "news-2",
-      title: "与多家头部机构共建联合实验室",
-      time: "2025-03",
-      content: "围绕人工智能、量子计算和安全可信方向推进联合研发。",
-      source: "公开信息"
-    },
-    {
-      id: "news-3",
-      title: "参与国家级重点项目合作",
-      time: "2025-02",
-      content: "在关键技术攻关与产业协同创新方面形成阶段成果。",
-      source: "公开信息"
-    }
-  ],
-  product: "数据智能平台、智能计算平台、科研协同工具、数据要素治理与行业生态软件。",
-  tech: "大模型技术、异构安全防护、云计算平台、可信数据流通、知识图谱与多模态分析。"
-};
-
-function buildDemoCompetitorDetail(name) {
-  return {
-    lately: `${name}近期在技术平台、产业合作和科研项目上保持活跃。`,
-    latelyItems: [
-      {
-        id: "news-1",
-        title: "强化重点方向技术攻关",
-        time: "2025-04",
-        content: "围绕核心科研方向推进平台建设与能力升级。",
-        source: "公开信息"
-      },
-      {
-        id: "news-2",
-        title: "推进开放合作生态",
-        time: "2025-03",
-        content: "与高校、企业及行业机构开展联合验证与项目合作。",
-        source: "公开信息"
-      }
-    ],
-    product: "科研平台、行业解决方案、开放工具链、联合实验室服务。",
-    tech: "大模型、网络安全、云计算、边缘智能、数据工程与工程化落地。"
-  };
-}
-
-function buildDemoScoreResult(competitors) {
-  return {
-    评分维度介绍: {
-      技术力: "技术路线、人才梯队和工程化能力，权重 35 分",
-      产品服务: "平台化产品、行业方案与客户适配能力，权重 25 分",
-      市场与合作: "生态伙伴、项目资源与区域影响力，权重 25 分",
-      近期动向: "最近公开进展的活跃度和战略指向，权重 15 分"
-    },
-    竞争对手分析与打分: competitors.map((item, index) => ({
-      竞争对手企业: item.name,
-      威胁分数: item.threatScore || Math.max(58, 92 - index * 7),
-      各维度得分详情: {
-        技术力: Math.max(56, 92 - index * 5),
-        产品服务: Math.max(54, 86 - index * 4),
-        市场与合作: Math.max(52, 84 - index * 4),
-        近期动向: Math.max(50, 82 - index * 5)
-      },
-      竞争分析小结: `${item.name}在技术储备、合作生态与公开项目活跃度上具备较强竞争信号，建议持续跟踪其平台化产品和产业协同进展。`
-    })),
-    整体结论: {
-      威胁度排名: competitors.map((item) => item.name),
-      整体小结: "头部实验室在基础研究、平台工具与生态合作上形成组合优势；我方可围绕差异化场景、产品化节奏和区域生态合作建立持续优势。"
-    }
-  };
-}
-
 const COMPANY_ALIAS_PATTERN = /（([^（）]+)）|\(([^()]+)\)|【([^【】]+)】|\[([^\[\]]+)\]|「([^「」]+)」|『([^『』]+)』/g;
 const COMPANY_PUNCTUATION_PATTERN = /[\s（）()【】\[\]「」『』·•.。,:：;；,，、\-＿_\/\\]/g;
 
@@ -1433,11 +1316,7 @@ function CompetitorCard({ item, scoreItem, detailData, detailStatus = "idle", re
 function CompanyOverview({ targetName, targetCompanyInfo, targetDetail, detailStatus = "idle", detailError = "", isLoading = false }) {
   const detailLoading = detailStatus === "loading" || isLoading;
   const detailFailed = detailStatus === "error";
-  const latelyItems = targetDetail?.latelyItems?.length
-    ? targetDetail.latelyItems
-    : detailLoading || detailFailed
-      ? []
-      : DEMO_TARGET_DETAIL.latelyItems;
+  const latelyItems = Array.isArray(targetDetail?.latelyItems) ? targetDetail.latelyItems : [];
   const businessText = targetCompanyInfo?.business || (detailLoading ? "正在补全主营业务" : detailFailed ? "企业详情加载失败" : "人工智能 / 量子计算 / 数据智能平台建设");
   const businessItems = businessText
     .split(/[、/，,；;]+/)
@@ -1493,6 +1372,7 @@ function CompanyOverview({ targetName, targetCompanyInfo, targetDetail, detailSt
           ))}
           {detailLoading && latelyItems.length === 0 && <li className="overview-news-placeholder"><ResultPendingText>正在补全近期动态</ResultPendingText></li>}
           {detailFailed && latelyItems.length === 0 && <li className="overview-news-placeholder overview-news-placeholder--error">{detailError || "企业详情加载失败"}</li>}
+          {!detailLoading && !detailFailed && latelyItems.length === 0 && <li className="overview-news-placeholder">暂无近期动态。</li>}
         </ul>
       </div>
     </section>

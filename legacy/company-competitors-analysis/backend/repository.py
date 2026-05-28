@@ -57,6 +57,10 @@ def _json_value(value: Any, fallback: Any) -> Any:
     return fallback
 
 
+def _is_demo_history_record(record: Any) -> bool:
+    return isinstance(record, dict) and record.get("mode") == "demo"
+
+
 def _safe_database_target() -> str:
     try:
         url = make_url(get_settings().resolved_database_url())
@@ -69,6 +73,8 @@ def _record_from_row(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
     if row is None:
         return None
     record = _json_value(row.get("record_json"), {})
+    if _is_demo_history_record(record):
+        return None
     return record if isinstance(record, dict) else None
 
 
@@ -130,6 +136,8 @@ def set_storage_meta(key: str, value: str) -> None:
 
 
 def save_history_record(record: dict[str, Any], *, max_items: int) -> dict[str, Any]:
+    if _is_demo_history_record(record):
+        raise ValueError("演示历史记录已停用，不能保存。")
     ensure_storage()
     input_value = record.get("input") if isinstance(record.get("input"), dict) else {}
     with _connect() as conn:

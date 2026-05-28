@@ -55,6 +55,10 @@ def _json_value(value: Any, fallback: Any) -> Any:
     return fallback
 
 
+def _is_demo_history_record(record: Any) -> bool:
+    return isinstance(record, dict) and record.get("mode") == "demo"
+
+
 def _database_error(exc: Exception) -> PlatformError:
     logger.exception("Competitor-analysis history PostgreSQL operation failed")
     return PlatformError(
@@ -69,6 +73,8 @@ def _record_from_row(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
     if row is None:
         return None
     record = _json_value(row.get("record_json"), {})
+    if _is_demo_history_record(record):
+        return None
     return record if isinstance(record, dict) else None
 
 
@@ -93,6 +99,8 @@ def ensure_history_storage() -> None:
 def save_history_record(record: Any, *, max_items: int = HISTORY_MAX_ITEMS) -> dict[str, Any]:
     if not isinstance(record, dict):
         raise CompetitorAnalysisBadRequest("请求体必须为对象")
+    if _is_demo_history_record(record):
+        raise CompetitorAnalysisBadRequest("演示历史记录已停用，不能保存。", code="DEMO_HISTORY_DISABLED", status_code=400)
     if not record.get("id") or not record.get("createdAt"):
         raise CompetitorAnalysisBadRequest("缺少必要字段 id/createdAt")
 
@@ -1615,7 +1623,7 @@ def run_company_name_validation_workflow(
     return response
 
 
-NO_RECENT_NEWS = "未检索到企业近期信息"
+NO_RECENT_NEWS = "暂无近期动态"
 
 
 def normalize_lately(raw_lately: Any) -> Dict[str, Any]:
@@ -1941,11 +1949,6 @@ def has_duplicate_company_names(names: List[str]) -> bool:
     return False
 
 
-def should_use_demo(error: Exception) -> bool:
-    message = str(getattr(error, "message", error) or "")
-    return getattr(error, "code", None) == "MISSING_API_KEY" or "未配置" in message or "API_KEY" in message or "API Key" in message
-
-
 def format_date_time(date: Optional[datetime] = None) -> str:
     date = date or datetime.now()
     return date.strftime("%Y-%m-%d %H:%M")
@@ -2105,127 +2108,6 @@ def hydrate_competitor_intros(
     return hydrated
 
 
-DEMO_COMPETITORS = [
-    {
-        "id": "competitor-1",
-        "name": "之江实验室",
-        "intro": "浙江省政府与浙江大学、阿里巴巴等共建，聚焦人工智能、网络空间安全、云计算与新型实验室方向。",
-        "threatScore": 94,
-        "sourceTag": "自动搜索结果",
-    },
-    {
-        "id": "competitor-2",
-        "name": "鹏城实验室",
-        "intro": "深圳市政府主导建设，聚焦人工智能、通信网络、网络安全、低空经济等前沿领域。",
-        "threatScore": 89,
-        "sourceTag": "自动搜索结果",
-    },
-    {
-        "id": "competitor-3",
-        "name": "紫金山实验室",
-        "intro": "江苏省与南京市共建，聚焦 6G、内生安全、安全计算等技术攻关。",
-        "threatScore": 78,
-        "sourceTag": "自动搜索结果",
-    },
-    {
-        "id": "competitor-4",
-        "name": "北京智源人工智能研究院",
-        "intro": "围绕 AI 基础研究与大模型，推动前沿技术和开放合作。",
-        "threatScore": 72,
-        "sourceTag": "自动搜索结果",
-    },
-    {
-        "id": "competitor-5",
-        "name": "上海人工智能实验室",
-        "intro": "由上海市支持，聚焦大模型与基础研究，推进 AI 技术应用创新。",
-        "threatScore": 66,
-        "sourceTag": "自动搜索结果",
-    },
-]
-
-DEMO_TARGET_DETAIL = {
-    "lately": "近三个月围绕新一代智能计算平台、科研合作与产业化项目持续更新。",
-    "latelyItems": [
-        {
-            "id": "news-1",
-            "title": "发布新一代数据智能平台 v3.0",
-            "time": "2025-04",
-            "content": "平台强化多源数据汇聚、智能分析与安全协同能力。",
-            "source": "公开信息",
-        },
-        {
-            "id": "news-2",
-            "title": "与多家头部机构共建联合实验室",
-            "time": "2025-03",
-            "content": "围绕人工智能、量子计算和安全可信方向推进联合研发。",
-            "source": "公开信息",
-        },
-        {
-            "id": "news-3",
-            "title": "参与国家级重点项目合作",
-            "time": "2025-02",
-            "content": "在关键技术攻关与产业协同创新方面形成阶段成果。",
-            "source": "公开信息",
-        },
-    ],
-    "product": "数据智能平台、智能计算平台、科研协同工具、数据要素治理与行业生态软件。",
-    "tech": "大模型技术、异构安全防护、云计算平台、可信数据流通、知识图谱与多模态分析。",
-}
-
-
-def build_demo_competitor_detail(name: str) -> Dict[str, Any]:
-    return {
-        "lately": f"{name}近期在技术平台、产业合作和科研项目上保持活跃。",
-        "latelyItems": [
-            {
-                "id": "news-1",
-                "title": "强化重点方向技术攻关",
-                "time": "2025-04",
-                "content": "围绕核心科研方向推进平台建设与能力升级。",
-                "source": "公开信息",
-            },
-            {
-                "id": "news-2",
-                "title": "推进开放合作生态",
-                "time": "2025-03",
-                "content": "与高校、企业及行业机构开展联合验证与项目合作。",
-                "source": "公开信息",
-            },
-        ],
-        "product": "科研平台、行业解决方案、开放工具链、联合实验室服务。",
-        "tech": "大模型、网络安全、云计算、边缘智能、数据工程与工程化落地。",
-    }
-
-
-def build_demo_score_result(competitors: List[Dict[str, Any]]) -> Dict[str, Any]:
-    return {
-        "评分维度介绍": {
-            "技术力": "技术路线、人才梯队和工程化能力，权重 35 分",
-            "产品服务": "平台化产品、行业方案与客户适配能力，权重 25 分",
-            "市场与合作": "生态伙伴、项目资源与区域影响力，权重 25 分",
-            "近期动向": "最近公开进展的活跃度和战略指向，权重 15 分",
-        },
-        "竞争对手分析与打分": [
-            {
-                "竞争对手企业": item.get("name"),
-                "威胁分数": item.get("threatScore") or max(58, 92 - index * 7),
-                "各维度得分详情": {
-                    "技术力": max(56, 92 - index * 5),
-                    "产品服务": max(54, 86 - index * 4),
-                    "市场与合作": max(52, 84 - index * 4),
-                    "近期动向": max(50, 82 - index * 5),
-                },
-                "竞争分析小结": f"{item.get('name')}在技术储备、合作生态与公开项目活跃度上具备较强竞争信号，建议持续跟踪其平台化产品和产业协同进展。",
-            }
-            for index, item in enumerate(competitors)
-        ],
-        "整体结论": {
-            "威胁度排名": [item.get("name") for item in competitors],
-            "整体小结": "头部实验室在基础研究、平台工具与生态合作上形成组合优势；我方可围绕差异化场景、产品化节奏和区域生态合作建立持续优势。",
-        },
-    }
-
-
 def build_record(
     *,
     currentForm: Dict[str, Any],
@@ -2283,67 +2165,6 @@ def build_record(
             "isLoading": isLoading,
         },
     }
-
-
-def build_demo_record(
-    current_form: Dict[str, Any],
-    current_query_time: str,
-    manual_names: List[str],
-    warning: str,
-    record_id: str = "",
-    created_at: str = "",
-) -> Dict[str, Any]:
-    current_competitors = (
-        [
-            {
-                "id": f"manual-{index + 1}",
-                "name": name,
-                "intro": f"{name}是本次指定分析对象，重点关注其技术路线、产品服务、客户生态与近期动态。",
-                "threatScore": max(62, 88 - index * 6),
-                "sourceTag": "指定竞争对手",
-            }
-            for index, name in enumerate(manual_names)
-        ]
-        if manual_names
-        else DEMO_COMPETITORS
-    )
-    current_single_mode = len(manual_names) == 1
-    current_target_info = {
-        "intro": "由浙江省政府发起设立的新型研发机构，聚焦人工智能、量子计算、空天信息、先进芯片等国家战略科技方向。",
-        "business": "人工智能 / 量子计算 / 数据智能平台建设",
-    }
-    current_competitor_details = {
-        item["id"]: {"status": "success", "data": build_demo_competitor_detail(item["name"]), "error": ""}
-        for item in current_competitors
-    }
-    target_company_name = current_form.get("targetCompanyName") or "我方企业"
-    current_compare_reports = {
-        item["id"]: {
-            "status": "success",
-            "text": f"# {target_company_name} vs {item['name']}\n\n## 产品/服务\n我方更强调数据智能平台与科研协同能力，{item['name']}在细分技术方向和开放合作生态方面具备优势。\n\n## 技术力\n双方均具备基础研究与工程化能力，建议重点跟踪大模型、云计算、网络安全与行业化落地。\n\n## 近期动态\n{item['name']}近期公开动作较活跃，可能在重点项目和生态合作上形成竞争压力。\n\n## 结论\n建议以差异化场景、产品化速度和联合生态作为下一阶段竞争策略。",
-            "error": "",
-        }
-        for item in current_competitors
-    }
-    return build_record(
-        currentForm=current_form,
-        currentQueryTime=current_query_time,
-        currentTargetInfo=current_target_info,
-        currentTargetDetail=DEMO_TARGET_DETAIL,
-        currentCompetitors=current_competitors,
-        currentCompetitorDetails=current_competitor_details,
-        currentCompareReports=current_compare_reports,
-        currentScoreResult=build_demo_score_result(current_competitors),
-        currentSingleMode=current_single_mode,
-        warnings=[warning] if warning else [],
-        mode="demo",
-        recordId=record_id,
-        createdAt=created_at,
-        targetDetailStatus="success",
-        scoreStatus="success",
-        isLoading=False,
-    )
-
 
 def run_full_analysis(
     targetCompanyName: str = "",
@@ -2512,68 +2333,8 @@ def run_full_analysis(
             warnings=warnings,
             mode="live",
         )
-    except Exception as error:
-        if should_use_demo(error):
-            return build_demo_record(
-                current_form,
-                current_query_time,
-                manual_names,
-                "未检测到完整接口密钥，后端已切换为演示数据。配置 .env.local 后会调用真实工作流。",
-            )
+    except Exception:
         raise
-
-
-def emit_demo_analysis_events(
-    *,
-    current_form: Dict[str, Any],
-    current_query_time: str,
-    manual_names: List[str],
-    warning: str,
-    emit: Any,
-    record_id: str = "",
-    created_at: str = "",
-) -> Dict[str, Any]:
-    """Emit a complete demo analysis sequence for the NDJSON endpoint."""
-    record = build_demo_record(current_form, current_query_time, manual_names, warning, record_id=record_id, created_at=created_at)
-    snap = record.get("stateSnapshot") or {}
-    demo_competitors = snap.get("competitors") if isinstance(snap.get("competitors"), list) else []
-    emit("competitors_ready", demo_competitors)
-    emit(
-        "target_detail_ready",
-        {
-            "status": "success",
-            "data": snap.get("targetDetail") or {},
-            "targetCompanyInfo": snap.get("targetCompanyInfo") or {},
-        },
-    )
-    for item in demo_competitors:
-        competitor_id = item.get("id")
-        detail = (snap.get("competitorDetails") or {}).get(competitor_id) or {}
-        emit(
-            "competitor_detail_ready",
-            {
-                "competitorId": competitor_id,
-                "status": detail.get("status") or "success",
-                "data": detail.get("data") or {},
-                "error": detail.get("error") or "",
-            },
-        )
-    for item in demo_competitors:
-        competitor_id = item.get("id")
-        report = (snap.get("compareReports") or {}).get(competitor_id) or {}
-        emit(
-            "compare_report_ready",
-            {
-                "competitorId": competitor_id,
-                "status": report.get("status") or "success",
-                "text": report.get("text") or "",
-                "error": report.get("error") or "",
-            },
-        )
-    emit("score_ready", {"status": "success", "data": snap.get("scoreResult") or {}})
-    save_history_record(record)
-    emit("analysis_finished", {"record": record})
-    return record
 
 
 def run_full_analysis_stream(
@@ -2907,16 +2668,6 @@ def run_full_analysis_stream(
         safe_emit("analysis_finished", {"record": record})
         return record
     except Exception as error:
-        if should_use_demo(error):
-            return emit_demo_analysis_events(
-                current_form=current_form,
-                current_query_time=current_query_time,
-                manual_names=manual_names,
-                warning="未检测到完整接口密钥，后端已切换为演示数据。配置 .env.local 后会调用真实工作流。",
-                emit=safe_emit,
-                record_id=record_id,
-                created_at=record_created_at,
-            )
         error_message = getattr(error, "message", str(error))
         error_record = build_record(
             currentForm=current_form,
