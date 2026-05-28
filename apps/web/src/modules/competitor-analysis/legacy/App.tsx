@@ -16,7 +16,7 @@ const lookupCompanyNameValidationCache = runCompanyNameValidationWorkflow;
 
 const DEFAULT_COMPETITOR_ROWS = 1;
 const MAX_COMPETITOR_COUNT = 5;
-const COMPANY_VALIDATION_DEBOUNCE_MS = 3000;
+const COMPANY_VALIDATION_DEBOUNCE_MS = 2000;
 const DEFAULT_PROVINCE = "全国";
 const SAME_COMPANY_NAME_ERROR = "竞争对手名称不能与我方企业名称相同。";
 const DUPLICATE_COMPETITOR_NAME_ERROR = "竞争对手名称不能重复。";
