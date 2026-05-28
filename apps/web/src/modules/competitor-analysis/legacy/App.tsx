@@ -196,6 +196,15 @@ function getRecordRouteOptions(record, overrides = {}) {
   };
 }
 
+function isRunningHistoryRecord(record) {
+  const snap = record?.stateSnapshot || {};
+  return record?.mode === "running" && snap.isLoading !== false;
+}
+
+function isSettledHistoryRecord(record) {
+  return Boolean(record?.id) && record?.mode !== "running" && record?.mode !== "demo";
+}
+
 const RUNNING_ANALYSIS_STORAGE_KEY = "company-competitors-analysis:running-analysis";
 const RUNNING_ANALYSIS_STORAGE_TTL = 24 * 60 * 60 * 1000;
 
@@ -566,7 +575,7 @@ function Sidebar({ historyItems, runningItem, onNewCompare, onRestoreHistory, on
             </a>
           )}
           {renderedHistoryItems.map((item) => {
-            const isRunningRecord = item.mode === "running";
+            const isRunningRecord = isRunningHistoryRecord(item);
             return (
             <a
               key={item.id}
@@ -1994,10 +2003,30 @@ export default function LegacyCompetitorAnalysisApp() {
   const [runningResultId, setRunningResultId] = useState(initialRunningSnapshot ? storedRunningAnalysis.id : "");
   const latestRouteRuntimeRef = useRef({ runningResultId, competitors });
   const lastRestoredRouteKeyRef = useRef("");
+  const settledHistoryRecordsRef = useRef(new Map());
 
   useEffect(() => {
     latestRouteRuntimeRef.current = { runningResultId, competitors };
   }, [runningResultId, competitors]);
+
+  const rememberSettledHistoryRecord = useCallback((record) => {
+    if (isSettledHistoryRecord(record)) {
+      settledHistoryRecordsRef.current.set(record.id, record);
+    }
+  }, []);
+
+  const normalizeHistoryRecord = useCallback((record) => {
+    if (!record?.id) return record;
+    const settledRecord = settledHistoryRecordsRef.current.get(record.id);
+    const normalized = settledRecord && isRunningHistoryRecord(record) ? settledRecord : record;
+    rememberSettledHistoryRecord(normalized);
+    return normalized;
+  }, [rememberSettledHistoryRecord]);
+
+  const normalizeHistoryItems = useCallback(
+    (items) => (Array.isArray(items) ? items.map((item) => normalizeHistoryRecord(item)) : []),
+    [normalizeHistoryRecord]
+  );
 
   const applyRecordSnapshot = useCallback((record, routeState = {}) => {
     const snap = record?.stateSnapshot || {};
@@ -2034,25 +2063,27 @@ export default function LegacyCompetitorAnalysisApp() {
   const loadHistory = useCallback(async () => {
     try {
       const items = await listHistory();
-      setHistoryItems(items);
-      return items;
+      const normalizedItems = normalizeHistoryItems(items);
+      setHistoryItems(normalizedItems);
+      return normalizedItems;
     } catch (error) {
       setHistoryItems([]);
       setApiError((prev) => prev || `后端历史记录服务不可用：${error.message || error}`);
       return [];
     }
-  }, []);
+  }, [normalizeHistoryItems]);
 
   const restoreHistory = useCallback(
     (record, options = {}) => {
       const { syncUrl = true, routeState = {} } = options;
-      applyRecordSnapshot(record, routeState);
-      setApiError(Array.isArray(record?.warnings) && record.warnings.length ? record.warnings.join("；") : "");
-      if (syncUrl && record?.id) {
-        pushResultRoute(record.id, getRecordRouteOptions(record, routeState));
+      const normalizedRecord = normalizeHistoryRecord(record);
+      applyRecordSnapshot(normalizedRecord, routeState);
+      setApiError(Array.isArray(normalizedRecord?.warnings) && normalizedRecord.warnings.length ? normalizedRecord.warnings.join("；") : "");
+      if (syncUrl && normalizedRecord?.id) {
+        pushResultRoute(normalizedRecord.id, getRecordRouteOptions(normalizedRecord, routeState));
       }
     },
-    [applyRecordSnapshot]
+    [applyRecordSnapshot, normalizeHistoryRecord]
   );
 
   const openHistoryRecord = useCallback(
@@ -2512,9 +2543,11 @@ export default function LegacyCompetitorAnalysisApp() {
           return;
         }
         finishedRecord = record;
-        setRunningResultId("");
+        rememberSettledHistoryRecord(record);
+        clearStoredRunningAnalysis();
+        setRunningResultId((current) => (current === record.id ? "" : current));
         restoreHistory(record, { syncUrl: true });
-        setHistoryItems((prev) => [record, ...prev.filter((item) => item.id !== record.id)].slice(0, 200));
+        setHistoryItems((prev) => normalizeHistoryItems([record, ...prev.filter((item) => item.id !== record.id)]).slice(0, 200));
         setApiError(Array.isArray(record.warnings) && record.warnings.length ? record.warnings.join("；") : "");
         setAnalysisMessage("分析完成");
         setFinalizing(false);
