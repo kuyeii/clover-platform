@@ -25,7 +25,7 @@ class RagKnowledgeError(Exception):
 def _dify_headers() -> dict[str, str]:
     key = get_dataset_api_key().strip()
     if not key:
-        raise RagKnowledgeError("Server misconfiguration: DIFY_DATASET_API_KEY is not set.", status_code=503)
+        raise RagKnowledgeError("知识库服务配置错误：未设置 DIFY_DATASET_API_KEY。", status_code=503)
     return {
         "Authorization": f"Bearer {key}",
         "Accept": "application/json",
@@ -35,7 +35,7 @@ def _dify_headers() -> dict[str, str]:
 def _dataset_id() -> str:
     dataset_id = get_default_dataset_id().strip()
     if not dataset_id:
-        raise RagKnowledgeError("Server misconfiguration: DIFY_DEFAULT_DATASET_ID is not set.", status_code=503)
+        raise RagKnowledgeError("知识库服务配置错误：未设置 DIFY_DEFAULT_DATASET_ID。", status_code=503)
     return dataset_id
 
 

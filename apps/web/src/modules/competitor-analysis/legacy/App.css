@@ -95,15 +95,9 @@
 
 .competitor-analysis-legacy-viewport .sidebar {
   width: 288px;
-<<<<<<< HEAD
   height: var(--competitor-module-height);
-  min-height: var(--competitor-module-height);
-  padding: 17px 16px 20px;
-=======
-  height: 100vh;
-  min-height: 100vh;
+  min-height: 0;
   padding: 18px 14px 16px;
->>>>>>> 6050990 (前端样式初步整合)
   border: 0;
   border-right: 1px solid var(--color-border);
   border-radius: 0;
@@ -1140,7 +1134,6 @@
 }
 
 .competitor-analysis-legacy-viewport .main-canvas {
-  min-height: calc(100vh - var(--shell-pad-top) - var(--shell-pad-bottom));
   min-height: var(--competitor-module-height);
 }
 
@@ -1409,7 +1402,7 @@
 }
 
 .competitor-analysis-legacy-viewport .app-shell--home {
-  background: #f8fafc;
+  background: var(--color-page-bg);
 }
 
 .competitor-analysis-legacy-viewport .app-shell--home .sidebar {
@@ -1527,54 +1520,54 @@
 
 .competitor-analysis-legacy-viewport .main-canvas--home {
   min-width: 0;
-  min-height: 100vh;
+  min-height: var(--competitor-module-height);
   padding: 0;
   gap: 0;
   overflow: hidden;
   align-items: stretch;
   justify-content: flex-start;
-  background: #f8fafc;
+  background: var(--color-page-bg);
 }
 
 .competitor-analysis-legacy-viewport .home-page-shell {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 100vh;
+  min-height: var(--competitor-module-height);
   display: flex;
   flex-direction: column;
-  background: #f8fafc;
+  background: var(--color-page-bg);
 }
 
 .competitor-analysis-legacy-viewport .home-center-panel {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: clamp(34px, 5.4vh, 72px) clamp(28px, 5.5vw, 72px);
+  padding: 48px clamp(24px, 5.6vw, 88px) 28px;
   overflow-y: auto;
 }
 
 .competitor-analysis-legacy-viewport .home-content-wrap {
-  width: min(920px, 100%);
+  width: min(880px, 100%);
   margin: 0 auto;
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .hero-head {
   width: 100%;
   max-width: none;
-  margin: 0 0 38px;
+  margin: 0 0 28px;
   padding: 0;
   text-align: center;
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .hero-copy h1 {
-  margin: 0 0 16px;
-  color: #0f172a;
-  font-size: clamp(34px, 3.3vw, 44px);
-  line-height: 1.15;
-  letter-spacing: -0.04em;
-  font-weight: 950;
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 26px;
+  line-height: 1.25;
+  letter-spacing: 0;
+  font-weight: 800;
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .hero-copy p {
@@ -1587,16 +1580,16 @@
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .match-switch {
-  width: min(420px, 100%);
-  height: 44px;
-  margin: 0 auto 48px;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
+  width: min(360px, 100%);
+  height: 40px;
+  margin: 0 auto 32px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   padding: 4px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: none;
   overflow: hidden;
   isolation: isolate;
@@ -1607,9 +1600,9 @@
   bottom: 4px;
   left: 4px;
   width: calc((100% - 8px) / 2);
-  border-radius: 999px;
-  background: #f1f5f9;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.10);
+  border-radius: 6px;
+  background: var(--color-brand-soft);
+  box-shadow: none;
   transform: translate3d(0, 0, 0);
   transition: transform 420ms cubic-bezier(0.2, 0.85, 0.2, 1), background 260ms ease, box-shadow 260ms ease;
 }
@@ -1623,7 +1616,7 @@
   padding: 0 16px;
   border: 0;
   background: transparent;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 14px;
   line-height: 1;
   font-weight: 900;
@@ -1634,7 +1627,7 @@
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .match-switch-btn:hover, .competitor-analysis-legacy-viewport .main-canvas--home .match-switch-btn--active {
-  color: #0f172a;
+  color: var(--color-brand);
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .match-switch-btn--active {
@@ -1650,15 +1643,15 @@
 .competitor-analysis-legacy-viewport .home-form-grid {
   --home-label-row-height: 32px;
   --home-field-gap: 12px;
-  --home-control-height: 64px;
-  --home-vs-width: 78px;
-  --home-vs-height: 44px;
+  --home-control-height: 52px;
+  --home-vs-width: 64px;
+  --home-vs-height: 36px;
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: clamp(58px, 7vw, 96px);
+  gap: 48px;
   align-items: start;
-  min-height: 220px;
+  min-height: 184px;
 }
 
 .competitor-analysis-legacy-viewport .home-form-column {
@@ -1673,7 +1666,7 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: #e2e8f0;
+  background: var(--color-border);
   transform: translateX(-50%);
   display: flex;
   align-items: flex-start;
@@ -1684,15 +1677,15 @@
 .competitor-analysis-legacy-viewport .home-vs-divider span {
   width: var(--home-vs-width);
   height: var(--home-vs-height);
-  border-radius: 999px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  color: #94a3b8;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-page-bg);
+  color: var(--color-text-muted);
   display: grid;
   place-items: center;
   font-size: 13px;
   font-weight: 950;
-  box-shadow: 0 0 0 10px #f8fafc;
+  box-shadow: 0 0 0 8px var(--color-page-bg);
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .field-group, .competitor-analysis-legacy-viewport .main-canvas--home .home-field {
@@ -1712,7 +1705,7 @@
   height: var(--home-label-row-height);
   min-height: var(--home-label-row-height);
   margin: 0;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 12px;
   line-height: 1.25;
   font-weight: 950;
@@ -1727,13 +1720,13 @@
 .competitor-analysis-legacy-viewport .main-canvas--home input, .competitor-analysis-legacy-viewport .main-canvas--home select {
   width: 100%;
   height: var(--home-control-height);
-  border: 2px solid #dbeafe;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background-color: #fff;
-  padding: 0 18px;
-  color: #1e293b;
-  font-size: 18px;
-  font-weight: 700;
+  background-color: var(--color-surface);
+  padding: 0 16px;
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 650;
   outline: none;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   transition: border-color 220ms ease, box-shadow 220ms ease, transform 220ms ease;
@@ -2124,35 +2117,35 @@
 .competitor-analysis-legacy-viewport .home-action-row {
   display: flex;
   justify-content: center;
-  margin-top: clamp(46px, 7vh, 80px);
+  margin-top: 32px;
   padding-bottom: 6px;
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .primary-action {
   width: auto;
-  min-width: 238px;
-  height: 58px;
+  min-width: 208px;
+  height: 48px;
   margin: 0;
   border: 0;
-  border-radius: 999px;
-  padding: 0 44px;
+  border-radius: 8px;
+  padding: 0 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: #111827;
-  color: #fff;
-  font-size: 17px;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  font-size: 16px;
   font-weight: 950;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   box-shadow: none;
   transition: background 220ms ease, transform 220ms ease, box-shadow 220ms ease;
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .primary-action:hover:not(:disabled) {
-  background: var(--blue);
-  transform: translateY(-2px);
+  background: var(--color-brand-hover);
+  transform: translateY(-1px);
   box-shadow: none;
 }
 
@@ -2215,11 +2208,11 @@
   }
 
   .competitor-analysis-legacy-viewport .home-page-shell {
-    min-height: calc(100vh - 69px);
+    min-height: var(--competitor-module-height);
   }
 
   .competitor-analysis-legacy-viewport .home-center-panel {
-    padding: 34px 22px;
+    padding: 32px 22px;
   }
 
   .competitor-analysis-legacy-viewport .home-form-grid {
@@ -2241,7 +2234,7 @@
   }
 
   .competitor-analysis-legacy-viewport .home-vs-divider span {
-    box-shadow: 0 0 0 8px #f8fafc;
+    box-shadow: 0 0 0 8px var(--color-page-bg);
   }
 
   .competitor-analysis-legacy-viewport .main-canvas--home .match-switch {
@@ -2308,7 +2301,7 @@
   margin-top: 0;
 }
 
-/* Fixes: stable home form height, fixed competitor card width, and dropdown-safe input layout. */
+/* Keep homepage inputs compact while allowing validation dropdowns to escape the form grid. */
 .competitor-analysis-legacy-viewport .app-shell--home .history-entry::before {
   background: var(--blue);
   box-shadow: 0 0 0 5px var(--color-focus-ring);
@@ -2326,9 +2319,7 @@
 .competitor-analysis-legacy-viewport .app-shell--home .home-form-grid {
   --home-field-gap: 10px;
   --home-control-height: 56px;
-  --home-compare-panel-height: 386px;
-  height: var(--home-compare-panel-height);
-  min-height: var(--home-compare-panel-height);
+  min-height: 0;
   align-items: start;
   overflow: visible;
 }
@@ -2343,7 +2334,6 @@
 }
 
 .competitor-analysis-legacy-viewport .app-shell--home .competitor-field-card {
-  max-height: var(--home-compare-panel-height);
   overflow: visible;
 }
 
@@ -2396,9 +2386,7 @@
   }
 
   .competitor-analysis-legacy-viewport .app-shell--home .home-form-grid {
-    --home-compare-panel-height: 510px;
-    height: var(--home-compare-panel-height);
-    min-height: var(--home-compare-panel-height);
+    min-height: 0;
   }
 
   .competitor-analysis-legacy-viewport .app-shell--home .competitor-input-list {
@@ -2418,7 +2406,7 @@
 
 @media (max-width: 520px) {
   .competitor-analysis-legacy-viewport .app-shell--home .home-form-grid {
-    --home-compare-panel-height: 540px;
+    min-height: 0;
   }
 
   .competitor-analysis-legacy-viewport .app-shell--home .competitor-input-row {
@@ -2431,16 +2419,11 @@
   .competitor-analysis-legacy-viewport .app-shell--home .sidebar, .competitor-analysis-legacy-viewport .app-shell--results .sidebar {
     flex: 0 0 288px;
     width: 288px;
-<<<<<<< HEAD
     height: var(--competitor-module-height);
-    min-height: var(--competitor-module-height);
-=======
-    height: 100%;
     min-height: 0;
->>>>>>> 6050990 (前端样式初步整合)
     padding: 17px 16px 20px;
-    border-right: 1px solid #e6eaf0;
-    background: #fff;
+    border-right: 1px solid var(--color-border);
+    background: var(--color-sidebar-bg);
     box-shadow: none;
     position: sticky;
     top: 0;
@@ -2626,6 +2609,6 @@
 .competitor-analysis-legacy-viewport .sidebar,
 .competitor-analysis-legacy-viewport .app-shell--home .sidebar,
 .competitor-analysis-legacy-viewport .app-shell--results .sidebar {
-  height: 100%;
+  height: var(--competitor-module-height);
   min-height: 0;
 }

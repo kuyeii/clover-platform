@@ -11,6 +11,14 @@ import type {
 
 const RAG_API_PREFIX = "/rag/api/v1";
 
+// 兼容旧后端返回的英文配置错误，避免技术细节直接暴露到知识库 UI。
+const KNOWLEDGE_ERROR_MESSAGES: Record<string, string> = {
+  "Server misconfiguration: DIFY_DATASET_API_KEY is not set.":
+    "知识库服务配置错误：未设置 DIFY_DATASET_API_KEY。",
+  "Server misconfiguration: DIFY_DEFAULT_DATASET_ID is not set.":
+    "知识库服务配置错误：未设置 DIFY_DEFAULT_DATASET_ID。",
+};
+
 type StreamHandlers = {
   onSession?: (sessionId: string) => void;
   onDelta: (chunk: string) => void;
@@ -136,40 +144,71 @@ export async function streamChatCompletion(
 }
 
 export function fetchKnowledgeDocuments(): Promise<KnowledgeDocumentsResponse> {
-  return apiClient.get<KnowledgeDocumentsResponse>(`${RAG_API_PREFIX}/knowledge/documents`, {
-    unwrapEnvelope: false,
-  });
+  return withKnowledgeErrorMessage(
+    apiClient.get<KnowledgeDocumentsResponse>(`${RAG_API_PREFIX}/knowledge/documents`, {
+      unwrapEnvelope: false,
+    }),
+  );
 }
 
 export function fetchKnowledgeDocumentDetail(documentId: string): Promise<KnowledgeDocumentDetailResponse> {
-  return apiClient.get<KnowledgeDocumentDetailResponse>(
-    `${RAG_API_PREFIX}/knowledge/documents/${encodeURIComponent(documentId)}/detail`,
-    { unwrapEnvelope: false },
+  return withKnowledgeErrorMessage(
+    apiClient.get<KnowledgeDocumentDetailResponse>(
+      `${RAG_API_PREFIX}/knowledge/documents/${encodeURIComponent(documentId)}/detail`,
+      { unwrapEnvelope: false },
+    ),
   );
 }
 
 export function createTextDocument(name: string, text: string): Promise<CreateKnowledgeDocumentResult> {
-  return apiClient.post<CreateKnowledgeDocumentResult>(
-    `${RAG_API_PREFIX}/knowledge/documents/create-by-text`,
-    { name, text },
-    { unwrapEnvelope: false },
+  return withKnowledgeErrorMessage(
+    apiClient.post<CreateKnowledgeDocumentResult>(
+      `${RAG_API_PREFIX}/knowledge/documents/create-by-text`,
+      { name, text },
+      { unwrapEnvelope: false },
+    ),
   );
 }
 
 export function createFileDocument(file: File): Promise<CreateKnowledgeDocumentResult> {
   const form = new FormData();
   form.append("file", file);
-  return apiClient.post<CreateKnowledgeDocumentResult>(
-    `${RAG_API_PREFIX}/knowledge/documents/create-by-file`,
-    form,
-    { unwrapEnvelope: false },
+  return withKnowledgeErrorMessage(
+    apiClient.post<CreateKnowledgeDocumentResult>(
+      `${RAG_API_PREFIX}/knowledge/documents/create-by-file`,
+      form,
+      { unwrapEnvelope: false },
+    ),
   );
 }
 
 export async function deleteKnowledgeDocument(documentId: string): Promise<void> {
-  await apiClient.delete<void>(`${RAG_API_PREFIX}/knowledge/documents/${encodeURIComponent(documentId)}`, {
-    unwrapEnvelope: false,
-  });
+  await withKnowledgeErrorMessage(
+    apiClient.delete<void>(`${RAG_API_PREFIX}/knowledge/documents/${encodeURIComponent(documentId)}`, {
+      unwrapEnvelope: false,
+    }),
+  );
+}
+
+async function withKnowledgeErrorMessage<T>(request: Promise<T>): Promise<T> {
+  try {
+    return await request;
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      const translated = KNOWLEDGE_ERROR_MESSAGES[error.message];
+      if (translated) {
+        throw new ApiRequestError({
+          status: error.status,
+          code: error.code,
+          message: translated,
+          details: error.details,
+          requestId: error.requestId,
+          response: error.response,
+        });
+      }
+    }
+    throw error;
+  }
 }
 
 async function buildStreamResponseError(response: Response): Promise<ApiRequestError> {
