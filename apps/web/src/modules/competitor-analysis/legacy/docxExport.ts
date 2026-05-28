@@ -11,6 +11,7 @@ const HYPERLINK_REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/200
 const PAGE_CONTENT_WIDTH_DXA = 9072;
 const DEFAULT_FONT = "Microsoft YaHei";
 const ASCII_FONT = "Arial";
+const PAGE_BREAK_MARKER_PATTERN = /^<!--\s*page-break\s*-->$/i;
 
 function escapeXml(value) {
   return String(value ?? "")
@@ -108,6 +109,12 @@ export function parseMarkdownBlocks(markdownText) {
     const trimmed = line.trim();
 
     if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    if (PAGE_BREAK_MARKER_PATTERN.test(trimmed)) {
+      blocks.push({ type: "pageBreak" });
       index += 1;
       continue;
     }
@@ -297,6 +304,10 @@ function horizontalRuleXml() {
   return '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="E5EDF9"/></w:pBdr><w:spacing w:before="80" w:after="80"/></w:pPr></w:p>';
 }
 
+function pageBreakXml() {
+  return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+}
+
 function tableCellXml(cellText, context, options = {}) {
   const width = Math.max(900, Math.floor(PAGE_CONTENT_WIDTH_DXA / Math.max(1, options.columnCount || 1)));
   const shading = options.header ? '<w:shd w:fill="EDF4FF"/>' : "";
@@ -344,6 +355,7 @@ function blocksToDocumentBody(blocks, context) {
     if (block.type === "h2") return paragraphXml(block.text, context, { style: "Heading2", size: 28, bold: true, before: 220, after: 100, line: 360 });
     if (block.type === "h3") return paragraphXml(block.text, context, { style: "Heading3", size: 24, bold: true, before: 180, after: 80, line: 340 });
     if (block.type === "hr") return horizontalRuleXml();
+    if (block.type === "pageBreak") return pageBreakXml();
     if (block.type === "table") return tableXml(block, context);
     if (block.type === "ul") {
       return block.items.map((item) => paragraphXml(`• ${item}`, context, { indent: 420, hanging: 260, before: 40, after: 40, line: 330 })).join("");

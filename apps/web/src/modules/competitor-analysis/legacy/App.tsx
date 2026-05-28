@@ -38,6 +38,7 @@ const RESULT_TABS = [
 const DEFAULT_RESULT_TAB = RESULT_TABS[0].label;
 const RESULT_TAB_BY_KEY = new Map(RESULT_TABS.map((tab) => [tab.routeKey, tab.label]));
 const RESULT_TAB_KEY_BY_LABEL = new Map(RESULT_TABS.map((tab) => [tab.label, tab.routeKey]));
+const DOCX_PAGE_BREAK_MARKER = "<!-- page-break -->";
 
 const PROVINCES = [
   "全国",
@@ -2569,7 +2570,8 @@ export default function LegacyCompetitorAnalysisApp() {
       }),
       "",
       "## 对比分析报告",
-      ...competitors.flatMap((item) => [
+      ...competitors.flatMap((item, index) => [
+        ...(index > 0 ? [DOCX_PAGE_BREAK_MARKER] : []),
         `### ${item.name}`,
         compareReports[item.id]?.text || compareReports[item.id]?.error || "暂无报告",
         ""
