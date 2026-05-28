@@ -3,6 +3,8 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_RETRIES=10 \
+    PIP_DEFAULT_TIMEOUT=120 \
     PYTHONPATH=/app:/app/apps/api:/app/legacy/contract_review \
     PIPT_ROOT=/app/legacy/bid-generator/pipt-flask \
     PRO_ENGINE_ROOT=/app/legacy/bid-generator \
@@ -13,14 +15,17 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       curl \
+      build-essential \
       fontconfig \
       fonts-noto-cjk \
       libgl1 \
       libglib2.0-0 \
+      libcairo2-dev \
       libmagic1 \
       libreoffice \
       libreoffice-writer \
       libreoffice-l10n-zh-cn \
+      pkg-config \
       poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -29,13 +34,13 @@ COPY apps/api/requirements.txt ./apps/api/requirements.txt
 COPY legacy/contract_review/requirements.txt ./legacy/contract_review/requirements.txt
 COPY legacy/bid-generator/pipt-flask/requirements-lite.txt ./legacy/bid-generator/pipt-flask/requirements-lite.txt
 
-RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements-dev.txt \
-    && python -m pip install -r apps/api/requirements.txt \
-    && python -m pip install -r legacy/contract_review/requirements.txt \
-    && python -m pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu \
-    && python -m pip install -r legacy/bid-generator/pipt-flask/requirements-lite.txt \
-    && python -m pip install \
+RUN python -m pip install --upgrade pip
+RUN python -m pip install -r requirements-dev.txt
+RUN python -m pip install -r apps/api/requirements.txt
+RUN python -m pip install -r legacy/contract_review/requirements.txt
+RUN python -m pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+RUN python -m pip install -r legacy/bid-generator/pipt-flask/requirements-lite.txt
+RUN python -m pip install \
       "docx2pdf>=0.1.8" \
       "exrex>=0.12.0" \
       "markdown>=3.6" \
