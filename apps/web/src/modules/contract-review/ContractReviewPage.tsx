@@ -6,7 +6,7 @@ import "./legacy/legacy-review.css";
 
 export function ContractReviewPage() {
   return (
-    <div className="contract-review-legacy-viewport">
+    <div className="legacy-app-viewport contract-review-legacy-viewport">
       <HashRouter>
         <LegacyContractReviewApp />
       </HashRouter>

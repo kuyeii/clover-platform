@@ -115,21 +115,21 @@ export function StageTopBar({
                                         !unlocked
                                             ? 'text-gray-300 cursor-not-allowed'
                                             : isActive
-                                                ? 'bg-sky-50 text-sky-600 shadow-sm ring-1 ring-inset ring-sky-200'
+                                                ? 'bg-brand-50 text-brand-600 shadow-none ring-1 ring-inset ring-brand-200'
                                                 : done
                                                     ? 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
                                                     : current
-                                                        ? 'text-sky-500 hover:bg-sky-50'
+                                                        ? 'text-brand-500 hover:bg-brand-50'
                                                         : 'text-gray-300 cursor-not-allowed'
                                     )}
                                 >
                                     {done ? (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0" />
                                     ) : (
                                         <span className={clsx(
                                             'w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold shrink-0',
-                                            isActive ? 'bg-sky-500 text-white' :
-                                                current && !isActive ? 'bg-sky-100 text-sky-500 animate-pulse' :
+                                            isActive ? 'bg-brand-500 text-white' :
+                                                current && !isActive ? 'bg-brand-50 text-brand-500 animate-pulse' :
                                                     unlocked ? 'bg-gray-100 text-gray-400' :
                                                         'bg-gray-50 text-gray-300'
                                         )}>
@@ -139,11 +139,11 @@ export function StageTopBar({
                                     <span>{stage.label}</span>
                                     {isStagePast && (
                                         <span title="该阶段已完成不可修改" className="shrink-0">
-                                            <Lock className="w-3 h-3 text-sky-400/70 ml-0.5" />
+                                            <Lock className="w-3 h-3 text-brand-500/70 ml-0.5" />
                                         </span>
                                     )}
                                     {current && generating && (
-                                        <span className="w-1 h-1 bg-sky-400 rounded-full animate-pulse shrink-0" />
+                                        <span className="w-1 h-1 bg-brand-500 rounded-full animate-pulse shrink-0" />
                                     )}
                                 </button>
 
@@ -151,7 +151,7 @@ export function StageTopBar({
                                 {idx < STAGES.length - 1 && (
                                     <div className={clsx(
                                         'w-5 h-px mx-0.5 shrink-0 transition-colors',
-                                        done ? 'bg-emerald-200' : 'bg-gray-150'
+                                        done ? 'bg-[var(--color-success-bg)]' : 'bg-gray-150'
                                     )} style={!done ? { backgroundColor: '#e8eaed' } : {}} />
                                 )}
                             </div>
@@ -172,7 +172,7 @@ export function StageTopBar({
                                     generating
                                         ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
                                         // 活跃 tabs 用 sky-50+ring，下一步用实心 sky-500 区分
-                                        : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sm'
+                                        : 'bg-brand-500 hover:bg-brand-600 text-white shadow-none'
                                 )}
                             >
                                 {generating ? (

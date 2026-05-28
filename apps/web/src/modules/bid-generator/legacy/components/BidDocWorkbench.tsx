@@ -138,9 +138,9 @@ function SortableModuleRow({
             }}
             className={clsx(
                 'px-3 py-2 transition',
-                active ? 'bg-sky-50' : 'bg-white',
+                active ? 'bg-brand-50' : 'bg-white',
                 !module.enabled && 'opacity-60',
-                isDragging && 'shadow-sm ring-1 ring-sky-200',
+                isDragging && 'shadow-none ring-1 ring-brand-200',
             )}
         >
             <div className="flex items-start gap-2">
@@ -164,8 +164,8 @@ function SortableModuleRow({
                     className={clsx(
                         'mt-0.5 p-0.5 rounded transition-colors',
                         module.enabled
-                            ? 'text-gray-500 hover:text-orange-500 hover:bg-orange-50'
-                            : 'text-gray-300 hover:text-emerald-500 hover:bg-emerald-50',
+                            ? 'text-gray-500 hover:text-warning hover:bg-[var(--color-warning-bg)]'
+                            : 'text-gray-300 hover:text-success hover:bg-[var(--color-success-bg)]',
                         locked && 'opacity-50 cursor-not-allowed',
                     )}
                     title={module.enabled ? '点击隐藏（导出时不包含）' : '点击显示（导出时包含）'}
@@ -181,7 +181,7 @@ function SortableModuleRow({
                         {module.name}
                     </p>
                     {extracting ? (
-                        <p className="mt-1 inline-flex items-center gap-1 text-xs text-sky-600">
+                        <p className="mt-1 inline-flex items-center gap-1 text-xs text-brand-600">
                             <Loader2 className="h-3 w-3 animate-spin" /> 正在拉取原文切片
                         </p>
                     ) : null}
@@ -770,8 +770,8 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
             <div className="flex w-[22rem] flex-col border-r border-gray-200 bg-white">
                 <div className="space-y-3 border-b border-gray-100 px-4 py-4">
                     <div className="flex min-w-0 items-center gap-2.5">
-                        <div className="rounded-lg bg-indigo-50 p-1.5">
-                            <FileStack className="h-4 w-4 text-indigo-600" />
+                        <div className="rounded-lg bg-brand-50 p-1.5">
+                            <FileStack className="h-4 w-4 text-brand-600" />
                         </div>
                         <div className="min-w-0">
                             <h2 className="text-base font-bold text-gray-900">投标文件编排</h2>
@@ -784,7 +784,7 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
 
                 <div className="flex-1 space-y-2 overflow-y-auto p-3">
                     {modules.length === 0 ? (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-700">
+                        <div className="rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-3 text-xs text-warning">
                             当前项目还没有生成可编排的招标书结构。请先完成解析报告中的“招标书结构”解析。
                         </div>
                     ) : null}
@@ -833,7 +833,7 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                     {onNextStep ? (
                         <button
                             onClick={onNextStep}
-                            className="w-full rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700"
+                            className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600"
                         >
                             下一步：导出
                         </button>
@@ -862,23 +862,23 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                         <div className={clsx('flex-1 min-h-0 bg-gray-50/60 p-4', !isAttachmentActive && 'hidden')}>
                             <div className="flex h-full flex-col gap-3">
                                 {snapshotOnly && docBlocks.length > 0 ? (
-                                    <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                                    <div className="rounded border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-[11px] text-warning">
                                         当前为块索引快照降级模式，可继续调整锚点，但表格、图片和部分样式可能不完整。
                                     </div>
                                 ) : null}
 
                                 <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(220px,3fr)_minmax(0,7fr)]">
-                                    <div className="flex min-h-0 flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+                                    <div className="flex min-h-0 flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-none">
                                         <div className="mb-3 flex items-center justify-between px-1">
                                             <div>
                                                 <p className="text-base font-bold text-gray-900">附件内容编辑</p>
                                             </div>
                                             {persistingLocator ? (
-                                                <div className="inline-flex items-center gap-1.5 text-xs text-sky-600">
+                                                <div className="inline-flex items-center gap-1.5 text-xs text-brand-600">
                                                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> 自动保存中
                                                 </div>
                                             ) : previewing ? (
-                                                <div className="inline-flex items-center gap-1.5 text-xs text-sky-600">
+                                                <div className="inline-flex items-center gap-1.5 text-xs text-brand-600">
                                                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> 预览待刷新
                                                 </div>
                                             ) : null}
@@ -899,13 +899,13 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                                         />
                                     </div>
 
-                                    <div className="flex min-h-0 flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+                                    <div className="flex min-h-0 flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-none">
                                         <div className="mb-3 flex items-center justify-between px-1">
                                             <div>
                                                 <p className="text-base font-bold text-gray-900">实时样式预览</p>
                                             </div>
                                             {previewSnapshotOnly ? (
-                                                <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+                                                <span className="rounded-full bg-[var(--color-warning-bg)] px-2 py-1 text-[11px] font-medium text-warning">
                                                     快照降级
                                                 </span>
                                             ) : null}
@@ -962,7 +962,7 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                                                         </h4>
                                                         <span className={clsx(
                                                             'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
-                                                            item?.done ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500',
+                                                            item?.done ? 'bg-[var(--color-success-bg)] text-success' : 'bg-gray-100 text-gray-500',
                                                         )}>
                                                             {item?.done ? '已生成' : '未生成'}
                                                         </span>

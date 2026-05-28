@@ -82,7 +82,7 @@ export function UserMessageTurn({
 
   const streamingBubble = (
     <div className="flex w-full justify-start">
-      <div className="min-w-0 max-w-[85%] rounded-2xl border border-brand-100 bg-white px-4 py-3 text-ink shadow-sm shadow-slate-900/5">
+      <div className="min-w-0 max-w-[85%] rounded-2xl border border-brand-100 bg-white px-4 py-3 text-ink shadow-none ">
         <MarkdownBubble
           content={streamingText}
           variant="assistant"
@@ -112,7 +112,7 @@ export function UserMessageTurn({
       <div className="flex w-full justify-end">
         <div className="group/msg flex min-w-0 max-w-[85%] flex-col items-end gap-1">
           {isEditing ? (
-            <div className="w-full min-w-[min(100%,280px)] rounded-2xl border border-brand-100 bg-white px-3 py-3 text-ink shadow-sm shadow-slate-900/5">
+            <div className="w-full min-w-[min(100%,280px)] rounded-2xl border border-brand-100 bg-white px-3 py-3 text-ink shadow-none ">
               <textarea
                 value={editDraft}
                 onChange={(e) => onEditDraftChange(e.target.value)}
@@ -142,10 +142,10 @@ export function UserMessageTurn({
             <div
               id={`chat-message-${user.id}`}
               className={[
-                "min-w-0 max-w-full rounded-2xl px-4 py-3 shadow-sm shadow-slate-950/10",
+                "min-w-0 max-w-full rounded-2xl px-4 py-3 shadow-none ",
                 "bg-ink text-white",
                 highlightTargetId === user.id
-                  ? "ring-2 ring-amber-400/90 ring-offset-2 ring-offset-mist"
+                  ? "ring-2 ring-[var(--color-warning-border)] ring-offset-2 ring-offset-mist"
                   : "",
               ].join(" ")}
             >
@@ -173,7 +173,7 @@ export function UserMessageTurn({
                 </button>
                 <span
                   role="tooltip"
-                  className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-md transition-opacity duration-150 group-hover/copy:opacity-100"
+                  className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-none transition-opacity duration-150 group-hover/copy:opacity-100"
                 >
                   复制消息
                 </span>
@@ -190,7 +190,7 @@ export function UserMessageTurn({
                 </button>
                 <span
                   role="tooltip"
-                  className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-md transition-opacity duration-150 group-hover/edit:opacity-100"
+                  className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-none transition-opacity duration-150 group-hover/edit:opacity-100"
                 >
                   编辑消息
                 </span>
@@ -241,9 +241,9 @@ export function UserMessageTurn({
             <div
               id={`chat-message-${branchAssistant.id}`}
               className={[
-                "min-w-0 max-w-full rounded-2xl border border-brand-100 bg-white px-4 py-3 text-ink shadow-sm shadow-slate-900/5",
+                "min-w-0 max-w-full rounded-2xl border border-brand-100 bg-white px-4 py-3 text-ink shadow-none ",
                 highlightTargetId === branchAssistant.id
-                  ? "ring-2 ring-amber-400/90 ring-offset-2 ring-offset-mist"
+                  ? "ring-2 ring-[var(--color-warning-border)] ring-offset-2 ring-offset-mist"
                   : "",
               ].join(" ")}
             >
@@ -292,9 +292,9 @@ export function UserMessageTurn({
             <div
               id={`chat-message-${linearAssistant.id}`}
               className={[
-                "min-w-0 max-w-full rounded-2xl border border-brand-100 bg-white px-4 py-3 text-ink shadow-sm shadow-slate-900/5",
+                "min-w-0 max-w-full rounded-2xl border border-brand-100 bg-white px-4 py-3 text-ink shadow-none ",
                 highlightTargetId === linearAssistant.id
-                  ? "ring-2 ring-amber-400/90 ring-offset-2 ring-offset-mist"
+                  ? "ring-2 ring-[var(--color-warning-border)] ring-offset-2 ring-offset-mist"
                   : "",
               ].join(" ")}
             >

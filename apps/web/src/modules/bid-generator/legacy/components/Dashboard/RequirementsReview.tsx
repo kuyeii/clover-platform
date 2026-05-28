@@ -45,7 +45,7 @@ function TreeNode({ node, depth, activeId, onAnchorClick, extractingIds, selecte
                 className={clsx(
                     'w-full flex items-center gap-1.5 py-1.5 pr-2 text-left transition-all rounded-md',
                     isActive
-                        ? 'bg-sky-50 text-sky-700'
+                        ? 'bg-brand-50 text-brand-600'
                         : 'hover:bg-gray-50 text-gray-700',
                     isExtracting && 'opacity-70',
                 )}
@@ -77,9 +77,9 @@ function TreeNode({ node, depth, activeId, onAnchorClick, extractingIds, selecte
                 {!showLeafCheckbox && !isLockedByParent && <div className="w-3 h-3 shrink-0" />}
                 {/* 状态图标（独立于 checkbox 右侧） */}
                 {isExtracting ? (
-                    <Loader2 className="w-3 h-3 shrink-0 text-sky-500 animate-spin" />
+                    <Loader2 className="w-3 h-3 shrink-0 text-brand-500 animate-spin" />
                 ) : hasContent ? (
-                    <CheckCircle2 className="w-2.5 h-2.5 shrink-0 text-emerald-500" />
+                    <CheckCircle2 className="w-2.5 h-2.5 shrink-0 text-success" />
                 ) : (
                     <div className="w-2 h-2 shrink-0 rounded-full bg-gray-200" />
                 )}
@@ -777,7 +777,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
         <div className="divide-y divide-gray-100">
             {fields.map((f, idx) => (
                 <div key={idx} className="py-2 first:pt-0 last:pb-0">
-                    <div className="text-[11px] text-sky-600 tracking-wide mb-0.5">{f.label}</div>
+                    <div className="text-[11px] text-brand-600 tracking-wide mb-0.5">{f.label}</div>
                     <div className="text-[13px] text-gray-700 leading-relaxed">{f.value}</div>
                 </div>
             ))}
@@ -847,7 +847,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                         <tr key={idx} className="border-b border-gray-100 align-top hover:bg-gray-50 transition-colors">
                                             <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{item.name}</td>
                                             <td className="px-3 py-2 text-gray-600 leading-relaxed whitespace-pre-wrap">{item.criteria}</td>
-                                            <td className="px-3 py-2 text-right font-semibold text-sky-600 whitespace-nowrap">{item.max_score}分</td>
+                                            <td className="px-3 py-2 text-right font-semibold text-brand-600 whitespace-nowrap">{item.max_score}分</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -855,7 +855,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                     <tfoot>
                                         <tr className="bg-gray-50 border-t border-gray-200">
                                             <td colSpan={2} className="px-3 py-2 font-semibold text-gray-700 text-right">合计</td>
-                                            <td className="px-3 py-2 text-right font-bold text-sky-700">
+                                            <td className="px-3 py-2 text-right font-bold text-brand-600">
                                                 {items.reduce((sum: number, it: { max_score: number }) => sum + (it.max_score || 0), 0)}分
                                             </td>
                                         </tr>
@@ -895,7 +895,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                     {items.map((item, idx) => (
                         <div key={idx} className={clsx(
                             'flex gap-2.5 text-[13px] leading-relaxed text-gray-700',
-                            item.mandatory && 'pl-2 border-l-2 border-rose-300'
+                            item.mandatory && 'pl-2 border-l-2 border-[var(--color-danger-border)]'
                         )}>
                             <span className="shrink-0 text-gray-400 font-mono text-xs pt-0.5 min-w-[18px]">
                                 {idx + 1}.
@@ -940,7 +940,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                 <button
                                     onClick={() => handleReAnalyzeNode(node)}
                                     title="重新提取此节点"
-                                    className="ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-sky-600 px-1.5 py-0.5 rounded hover:bg-sky-50 transition-colors"
+                                    className="ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-brand-600 px-1.5 py-0.5 rounded hover:bg-brand-50 transition-colors"
                                 >
                                     <RotateCcw className="w-3 h-3" />
                                     重新提取
@@ -957,12 +957,12 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                         <div key={`d0-content-${node.id}`} className="mb-6 group">
                             <div className={clsx(
                                 'rounded-lg border p-4 min-h-[60px] transition-all',
-                                isExtracting ? 'border-amber-200 bg-amber-50/30'
-                                    : isPending ? 'border-emerald-300 border-dashed bg-emerald-50/30'
+                                isExtracting ? 'border-[var(--color-warning-border)] bg-[var(--color-warning-bg)]'
+                                    : isPending ? 'border-[var(--color-success-border)] border-dashed bg-[var(--color-success-bg)]'
                                         : 'border-gray-100 bg-white'
                             )}>
                                 {isExtracting ? (
-                                    <div className="flex items-center gap-2 text-amber-600 text-sm">
+                                    <div className="flex items-center gap-2 text-warning text-sm">
                                         <Loader2 className="w-4 h-4 animate-spin" />
                                         <span>正在从招标文件中提取...</span>
                                     </div>
@@ -972,10 +972,10 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                             </div>
                             {isPending && (
                                 <div className="flex items-center gap-3 mt-2 px-1">
-                                    <span className="text-xs text-emerald-600 font-medium">✨ 新版本已生成</span>
+                                    <span className="text-xs text-success font-medium">✨ 新版本已生成</span>
                                     <div className="flex-1" />
                                     <button onClick={() => acceptDraft(node.id)}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors">
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-500 transition-colors">
                                         <CheckCircle2 className="w-3.5 h-3.5" />采纳此版本
                                     </button>
                                     <button onClick={() => rejectDraft(node.id)}
@@ -995,7 +995,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                         <div className="flex items-center gap-2 mb-2">
                             <h3 className={clsx(
                                 'text-sm font-semibold',
-                                isLeaf ? 'text-sky-700' : 'text-gray-700'
+                                isLeaf ? 'text-brand-600' : 'text-gray-700'
                             )}>
                                 {node.label}
                             </h3>
@@ -1004,7 +1004,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                 <button
                                     onClick={() => handleReAnalyzeNode(node)}
                                     title="重新提取此节点"
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-sky-600 px-1.5 py-0.5 rounded hover:bg-sky-50"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-brand-600 px-1.5 py-0.5 rounded hover:bg-brand-50"
                                 >
                                     <RotateCcw className="w-3 h-3" />
                                     重新提取
@@ -1018,12 +1018,12 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                 <>
                                     <div className={clsx(
                                         'rounded-lg border p-4 min-h-[60px] transition-all',
-                                        isExtracting ? 'border-amber-200 bg-amber-50/30'
-                                            : isPending ? 'border-emerald-300 border-dashed bg-emerald-50/30'
+                                        isExtracting ? 'border-[var(--color-warning-border)] bg-[var(--color-warning-bg)]'
+                                            : isPending ? 'border-[var(--color-success-border)] border-dashed bg-[var(--color-success-bg)]'
                                                 : 'border-gray-100 bg-white'
                                     )}>
                                         {isExtracting ? (
-                                            <div className="flex items-center gap-2 text-amber-600 text-sm">
+                                            <div className="flex items-center gap-2 text-warning text-sm">
                                                 <Loader2 className="w-4 h-4 animate-spin" />
                                                 <span>正在从招标文件中提取...</span>
                                             </div>
@@ -1033,10 +1033,10 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                     </div>
                                     {isPending && (
                                         <div className="flex items-center gap-3 mt-2 px-1">
-                                            <span className="text-xs text-emerald-600 font-medium">✨ 新版本已生成</span>
+                                            <span className="text-xs text-success font-medium">✨ 新版本已生成</span>
                                             <div className="flex-1" />
                                             <button onClick={() => acceptDraft(node.id)}
-                                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors">
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-500 transition-colors">
                                                 <CheckCircle2 className="w-3.5 h-3.5" />采纳此版本
                                             </button>
                                             <button onClick={() => rejectDraft(node.id)}
@@ -1061,7 +1061,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
     };
 
     return (
-        <div className="flex flex-col h-full bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+        <div className="flex flex-col h-full bg-white rounded-xl overflow-hidden border border-gray-200 shadow-none">
             {/* ── 重新提取确认弹窗 ── */}
             {regenConfirmNode && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -1069,9 +1069,9 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                     <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]"
                         onClick={() => setRegenConfirmNode(null)} />
                     {/* 弹窗卡片 */}
-                    <div className="relative bg-white rounded-xl shadow-lg border border-gray-200 w-[360px] mx-4 overflow-hidden">
+                    <div className="relative bg-white rounded-xl shadow-none border border-gray-200 w-[360px] mx-4 overflow-hidden">
                         {/* 顶部边条 */}
-                        <div className="h-1 bg-sky-600 w-full" />
+                        <div className="h-1 bg-brand-500 w-full" />
                         <div className="px-5 py-5">
                             <p className="text-base font-semibold text-gray-800 mb-1.5">
                                 重新提取「{regenConfirmNode.label}」
@@ -1093,7 +1093,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                     setRegenConfirmNode(null);
                                     doReAnalyzeNode(node);
                                 }}
-                                className="px-4 py-1.5 text-sm font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 transition-colors"
+                                className="px-4 py-1.5 text-sm font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-600 transition-colors"
                             >
                                 重新生成
                             </button>
@@ -1104,8 +1104,8 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
             {/* ── 顶栏 ── */}
             <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
-                    <div className="p-1.5 bg-sky-50 rounded-lg">
-                        <FileText className="w-4 h-4 text-sky-600" />
+                    <div className="p-1.5 bg-brand-50 rounded-lg">
+                        <FileText className="w-4 h-4 text-brand-600" />
                     </div>
                     <div>
                         <h2 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
@@ -1124,7 +1124,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                     {/* 解析中状态指示 */}
                     {isAnalyzing && (
                         <>
-                            <span className="px-2.5 py-1.5 text-xs font-medium bg-sky-50 text-sky-500 rounded-lg flex items-center gap-1.5 whitespace-nowrap">
+                            <span className="px-2.5 py-1.5 text-xs font-medium bg-brand-50 text-brand-500 rounded-lg flex items-center gap-1.5 whitespace-nowrap">
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />解析中...
                             </span>
                             <button
@@ -1154,7 +1154,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                             className={clsx(
                                 'px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed',
                                 selectedNodeIds.size > 0
-                                    ? 'bg-sky-500 text-white hover:bg-sky-600'
+                                    ? 'bg-brand-500 text-white hover:bg-brand-500'
                                     : 'text-gray-600 bg-gray-100 border border-gray-200 hover:bg-gray-200'
                             )}
                         >
@@ -1189,7 +1189,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                     collect(analysisNodes);
                                     setSelectedNodeIds(leafIds);
                                 }}
-                                className="px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-sky-600 hover:bg-sky-50 rounded transition-colors"
+                                className="px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
                             >全选</button>
                             <button
                                 onClick={() => setSelectedNodeIds(new Set())}
@@ -1248,15 +1248,15 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                         {/* 左边：常驻纵排按钮条 */}
                         <button
                             onClick={() => setShowPdf(!showPdf)}
-                            className="w-8 shrink-0 bg-gray-50 hover:bg-sky-50 border-r border-gray-200 flex flex-col items-center justify-center gap-2 transition-colors group"
+                            className="w-8 shrink-0 bg-gray-50 hover:bg-brand-50 border-r border-gray-200 flex flex-col items-center justify-center gap-2 transition-colors group"
                             title={showPdf ? '收起原文' : '展开查看原始招标文件'}
                         >
                             {showPdf
-                                ? <PanelRightClose className="w-3.5 h-3.5 text-gray-400 group-hover:text-sky-600" />
-                                : <PanelRightOpen className="w-3.5 h-3.5 text-gray-400 group-hover:text-sky-600" />
+                                ? <PanelRightClose className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
+                                : <PanelRightOpen className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
                             }
                             <span
-                                className="text-xs text-gray-400 group-hover:text-sky-600"
+                                className="text-xs text-gray-400 group-hover:text-brand-600"
                                 style={{ writingMode: 'vertical-rl', letterSpacing: '0.05em' }}
                             >
                                 招标文件原文
@@ -1282,11 +1282,11 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
             {/* ── 重新提取确认弹窗 ── */}
             {showReExtractConfirm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+                    <div className="bg-white rounded-2xl shadow-panel w-full max-w-sm mx-4 overflow-hidden">
                         <div className="px-6 pt-6 pb-4">
                             <div className="flex items-center gap-3 mb-3">
-                                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                                    <RefreshCw className="w-5 h-5 text-amber-600" />
+                                <div className="w-10 h-10 rounded-xl bg-[var(--color-warning-bg)] flex items-center justify-center shrink-0">
+                                    <RefreshCw className="w-5 h-5 text-warning" />
                                 </div>
                                 <h3 className="text-base font-bold text-gray-900">
                                     {selectedNodeIds.size > 0
@@ -1316,7 +1316,7 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
                                         handleAnalyze();
                                     }
                                 }}
-                                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-sky-500 hover:bg-sky-600 transition-all shadow-sm"
+                                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand-500 hover:bg-brand-500 transition-all shadow-none"
                             >确认提取</button>
                         </div>
                     </div>

@@ -604,7 +604,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen overflow-x-hidden bg-white text-ink">
+    <div className="flex min-h-screen overflow-x-hidden bg-mist text-ink">
       <Toast message={toastMessage} onDismiss={dismissToast} />
 
       <UploadTextKnowledgeModal
@@ -633,11 +633,11 @@ export default function App() {
         onDeleteConversation={handleDeleteConversation}
       />
 
-      <div className="relative flex min-w-0 flex-1 flex-col bg-white md:ml-[298px]">
+      <div className="relative flex min-w-0 flex-1 flex-col bg-mist md:ml-72">
         <Header />
 
         {persistError ? (
-          <div className="shrink-0 border-b border-amber-200 bg-amber-50/90 px-4 py-2 text-center text-xs text-amber-900">
+          <div className="shrink-0 border-b border-[var(--color-warning-border)] bg-[var(--color-warning-bg)]/90 px-4 py-2 text-center text-xs text-warning">
             {persistError}（仅本页有效，刷新可重试）
           </div>
         ) : null}
@@ -653,10 +653,10 @@ export default function App() {
           </button>
         </div>
 
-        <main className="flex flex-1 flex-col bg-white">
+        <main className="flex flex-1 flex-col bg-mist">
           {!hasConversation ? (
             <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12 pt-10 text-center">
-              <div className="inline-flex rounded-full border border-brand-100 bg-white px-4 py-1.5 text-xs font-semibold text-brand-600 shadow-sm shadow-brand-500/10">
+              <div className="inline-flex rounded-full border border-brand-100 bg-white px-4 py-1.5 text-xs font-semibold text-brand-600 shadow-none ">
                 RAG 知识库 · 联网检索 · 流式回答
               </div>
               <h1 className="mt-6 text-center text-4xl font-bold tracking-tight text-ink md:text-5xl">
@@ -696,14 +696,14 @@ export default function App() {
 
                 {error ? (
                   <div className="px-4 pb-2">
-                    <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 shadow-sm">
+                    <div className="mx-auto max-w-3xl rounded-2xl border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-3 py-2 text-sm text-danger shadow-none">
                       {error}
                     </div>
                   </div>
                 ) : null}
               </div>
 
-              <div className="fixed bottom-0 left-0 right-0 z-20 bg-white md:left-[298px]">
+              <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-border bg-surface md:left-72">
                 <ChatInput
                   disabled={sending}
                   isReceiving={sending}

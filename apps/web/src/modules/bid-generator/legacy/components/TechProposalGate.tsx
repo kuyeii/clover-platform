@@ -24,7 +24,7 @@ function ModeTab({ auto, onChange, disabled }: { auto: boolean; onChange: (auto:
                 onClick={() => onChange(false)}
                 className={clsx(
                     'px-3 py-1 font-medium transition-colors',
-                    !auto ? 'bg-sky-600 text-white' : 'text-gray-500 hover:bg-gray-50',
+                    !auto ? 'bg-brand-500 text-white' : 'text-gray-500 hover:bg-gray-50',
                     disabled && 'opacity-40 cursor-not-allowed hover:bg-transparent'
                 )}
             >
@@ -35,7 +35,7 @@ function ModeTab({ auto, onChange, disabled }: { auto: boolean; onChange: (auto:
                 onClick={() => onChange(true)}
                 className={clsx(
                     'px-3 py-1 font-medium transition-colors',
-                    auto ? 'bg-sky-600 text-white' : 'text-gray-500 hover:bg-gray-50',
+                    auto ? 'bg-brand-500 text-white' : 'text-gray-500 hover:bg-gray-50',
                     disabled && 'opacity-40 cursor-not-allowed hover:bg-transparent'
                 )}
             >
@@ -88,9 +88,9 @@ export function TechProposalGate({ visible, onCancel, onConfirm, initialConfig, 
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="w-[480px] bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="w-[480px] bg-white rounded-2xl shadow-panel overflow-hidden">
                 {/* 标题栏 */}
-                <div className="bg-gradient-to-r from-sky-500 to-blue-500 px-6 py-5 flex items-center justify-between">
+                <div className="bg-brand-500 px-6 py-5 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
                             <FileText className="w-5 h-5 text-white" />
@@ -132,18 +132,18 @@ export function TechProposalGate({ visible, onCancel, onConfirm, initialConfig, 
                                     autoWords
                                         ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
                                         : wordError
-                                            ? 'border-red-300 focus:border-red-400 focus:ring-1 focus:ring-red-400'
-                                            : 'border-gray-300 focus:border-sky-400 focus:ring-1 focus:ring-sky-400'
+                                            ? 'border-[var(--color-danger-border)] focus:border-[var(--color-danger-border)] focus:ring-1 focus:ring-brand-200'
+                                            : 'border-gray-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-200'
                                 )}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
                                 {autoWords ? '自动' : '字'}
                             </span>
                         </div>
-                        {wordError && <p className="mt-2 text-xs text-red-500">{wordError}</p>}
+                        {wordError && <p className="mt-2 text-xs text-danger">{wordError}</p>}
                     </div>
 
-                    <div className="bg-sky-50 border border-sky-100 rounded-xl px-4 py-3 text-xs text-sky-700">
+                    <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 text-xs text-brand-600">
                         <strong className="font-semibold">自动权重分配说明：</strong>按评分权重与章节复杂度自动分配篇幅。
                     </div>
                 </div>
@@ -163,7 +163,7 @@ export function TechProposalGate({ visible, onCancel, onConfirm, initialConfig, 
                         className={clsx(
                             'flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors',
                             canConfirm && !disabled
-                                ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                                ? 'bg-brand-500 hover:bg-brand-600 text-white'
                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         )}
                     >

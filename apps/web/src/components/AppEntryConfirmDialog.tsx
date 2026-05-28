@@ -22,11 +22,11 @@ export function AppEntryConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-entry-confirm-title"
-        className="w-full max-w-md overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-white shadow-panel"
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-warning">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div>
@@ -66,7 +66,7 @@ export function AppEntryConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+            className="rounded-full bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-none transition-colors hover:bg-brand-600"
           >
             进入
           </button>

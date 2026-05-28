@@ -15,9 +15,9 @@ interface Props {
 }
 
 const RESPONSE_CONFIG = {
-    full: { label: '响应', color: 'bg-green-100 text-green-700 border-green-200' },
-    partial: { label: '部分响应', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-    none: { label: '不响应', color: 'bg-red-100 text-red-500 border-red-200' },
+    full: { label: '响应', color: 'bg-[var(--color-success-bg)] text-success border-[var(--color-success-border)]' },
+    partial: { label: '部分响应', color: 'bg-[var(--color-warning-bg)] text-warning border-[var(--color-warning-border)]' },
+    none: { label: '不响应', color: 'bg-[var(--color-danger-bg)] text-danger border-[var(--color-danger-border)]' },
     '': { label: '未填写', color: 'bg-gray-100 text-gray-400 border-gray-200' },
 };
 
@@ -141,11 +141,11 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
     const filledCount = rows.filter(r => r.selfResponse !== '').length;
 
     return (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-6">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-none overflow-hidden mt-6">
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                <div className="p-2 bg-emerald-100 rounded-lg">
-                    <BarChart3 className="w-5 h-5 text-emerald-600" />
+                <div className="p-2 bg-[var(--color-success-bg)] rounded-lg">
+                    <BarChart3 className="w-5 h-5 text-success" />
                 </div>
                 <div className="flex-1">
                     <h2 className="text-base font-bold text-gray-900">自评评分表</h2>
@@ -158,11 +158,11 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
                         <>
                             <button onClick={fillAll} disabled={fillingAll || rows.length === 0}
                                 className={clsx('flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors',
-                                    fillingAll ? 'bg-purple-100 text-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm')}>
+                                    fillingAll ? 'bg-brand-50 text-brand-300 cursor-not-allowed' : 'bg-brand-500 hover:bg-brand-600 text-white shadow-none')}>
                                 {fillingAll ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />AI 填写中…</> : <><Sparkles className="w-3.5 h-3.5" />AI 全表填写</>}
                             </button>
                             <button onClick={handleExport} disabled={exporting}
-                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors disabled:opacity-50">
+                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white shadow-none transition-colors disabled:opacity-50">
                                 {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                                 导出 Excel
                             </button>
@@ -173,7 +173,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
 
             {/* 错误提示 */}
             {(errors._init || errors._export) && (
-                <div className="mx-6 my-3 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-100 px-4 py-2.5 rounded-lg">
+                <div className="mx-6 my-3 flex items-center gap-2 text-sm text-danger bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-2.5 rounded-lg">
                     <AlertCircle className="w-4 h-4 shrink-0" />{errors._init || errors._export}
                 </div>
             )}
@@ -184,11 +184,11 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
                     <BarChart3 className="w-12 h-12 text-gray-200" />
                     <p className="text-sm text-gray-500">基于招标文件中的评分项自动构建表格</p>
                     <button onClick={handleInitialize} disabled={initializing}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-50">
+                        className="flex items-center gap-2 px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors shadow-none disabled:opacity-50">
                         {initializing ? <><Loader2 className="w-4 h-4 animate-spin" />初始化中…</> : '构建评分表'}
                     </button>
                     {(project.requirements ?? []).filter(r => r.type === 'score').length === 0 && (
-                        <p className="text-xs text-amber-600">⚠ 当前项目尚无 score 类型需求，请先完成需求提取</p>
+                        <p className="text-xs text-warning">⚠ 当前项目尚无 score 类型需求，请先完成需求提取</p>
                     )}
                 </div>
             ) : (
@@ -238,7 +238,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
                                             <textarea value={row.selfComment}
                                                 onChange={e => patchRow(row.id, { selfComment: e.target.value })}
                                                 placeholder="自评情况说明…"
-                                                className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 resize-none leading-relaxed"
+                                                className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-200 resize-none leading-relaxed"
                                                 rows={3} />
                                         </td>
                                         {/* 证明材料（文件路径占位符）*/}
@@ -246,7 +246,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
                                             {row.evidenceRefs.length > 0 ? (
                                                 <ul className="space-y-1">
                                                     {row.evidenceRefs.map((ref, i) => (
-                                                        <li key={i} className="text-xs text-blue-600 font-mono bg-blue-50 px-2 py-1 rounded break-all">
+                                                        <li key={i} className="text-xs text-brand-600 font-mono bg-brand-50 px-2 py-1 rounded break-all">
                                                             {ref}
                                                         </li>
                                                     ))}
@@ -259,9 +259,9 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
                                         <td className="px-4 py-3 align-top">
                                             <button onClick={() => fillRow(row)} disabled={loading || fillingAll}
                                                 className={clsx('flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap',
-                                                    loading ? 'bg-purple-50 text-purple-300 cursor-not-allowed'
-                                                        : row.selfComment ? 'border border-purple-200 text-purple-600 hover:bg-purple-50'
-                                                            : 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm')}>
+                                                    loading ? 'bg-brand-50 text-brand-200 cursor-not-allowed'
+                                                        : row.selfComment ? 'border border-brand-200 text-brand-600 hover:bg-brand-50'
+                                                            : 'bg-brand-500 hover:bg-brand-600 text-white shadow-none')}>
                                                 {loading
                                                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                     : row.selfComment
@@ -271,7 +271,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
                                                 {loading ? '' : row.selfComment ? '重填' : 'AI'}
                                             </button>
                                             {errors[row.id] && (
-                                                <p className="text-xs text-red-500 mt-1 max-w-[80px] break-words">{errors[row.id]}</p>
+                                                <p className="text-xs text-danger mt-1 max-w-[80px] break-words">{errors[row.id]}</p>
                                             )}
                                         </td>
                                     </tr>
@@ -285,8 +285,8 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
                                 <td className="px-4 py-3 font-bold text-gray-700 text-center">{totalMax} 分</td>
                                 <td className="px-4 py-3 text-xs text-gray-500" colSpan={4}>
                                     {filledCount === rows.length && rows.length > 0
-                                        ? <span className="flex items-center gap-1 text-green-600"><CheckCircle2 className="w-4 h-4" />全部已填写，可导出</span>
-                                        : <span className="flex items-center gap-1 text-amber-500"><MinusCircle className="w-4 h-4" />已填 {filledCount}/{rows.length} 项</span>
+                                        ? <span className="flex items-center gap-1 text-success"><CheckCircle2 className="w-4 h-4" />全部已填写，可导出</span>
+                                        : <span className="flex items-center gap-1 text-warning"><MinusCircle className="w-4 h-4" />已填 {filledCount}/{rows.length} 项</span>
                                     }
                                 </td>
                             </tr>
@@ -296,7 +296,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
             )}
 
             {/* TODO 提醒 */}
-            <div className="px-6 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700">
+            <div className="px-6 py-3 bg-[var(--color-warning-bg)] border-t border-[var(--color-warning-border)] text-xs text-warning">
                 📌 <b>TODO</b>：知识库证明材料引用为文件路径占位符，gateway-forge 阶段将替换为实际文件附件。
                 导出 Excel 为临时格式，后续整合为 Word 中的表格形式。
             </div>

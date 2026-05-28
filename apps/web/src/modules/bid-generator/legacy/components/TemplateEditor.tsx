@@ -1348,12 +1348,12 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
 
     if (loading) return (
         <div className="flex justify-center flex-col items-center h-[600px] text-gray-400">
-            <RefreshCw className="w-8 h-8 animate-spin mb-4 text-sky-500" />
+            <RefreshCw className="w-8 h-8 animate-spin mb-4 text-brand-500" />
             <p>正在加载架构大纲...</p>
         </div>
     );
     if (error || !template) return (
-        <div className="bg-red-50 text-red-600 p-6 rounded-lg flex items-start m-8">
+        <div className="bg-[var(--color-danger-bg)] text-danger p-6 rounded-lg flex items-start m-8">
             <AlertCircle className="w-6 h-6 mr-3 shrink-0 mt-0.5" />
             <div><h3 className="font-semibold text-lg">架构读取失败</h3><p className="mt-2">{error}</p></div>
         </div>
@@ -1373,12 +1373,12 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     const totalActualWords = contentBlocks.reduce((s, b) => s + (contentStates[b.id]?.wordCount || 0), 0);
 
     return (
-        <div className="bg-gray-50/30 flex flex-col h-full border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-gray-50/30 flex flex-col h-full border border-gray-200 rounded-xl overflow-hidden shadow-none">
 
             {/* ── Top Toolbar (紧凑版) ── */}
             <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
-                    <div className="p-1.5 bg-sky-50 text-sky-600 rounded-lg"><FolderTree className="w-4 h-4" /></div>
+                    <div className="p-1.5 bg-brand-50 text-brand-600 rounded-lg"><FolderTree className="w-4 h-4" /></div>
                     <div>
                         <h2 className="text-sm font-bold text-gray-900 leading-tight">技术方案</h2>
                         <div className="text-sm text-gray-400 flex items-center gap-1">
@@ -1388,7 +1388,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                 {availableTemplates.map(name => <option key={name} value={name}>{name}</option>)}
                             </select>
                             <span className="text-gray-300">·</span>
-                            <span className="font-medium text-sky-600">{doneBlocks}/{totalBlocks}</span>
+                            <span className="font-medium text-brand-600">{doneBlocks}/{totalBlocks}</span>
                             {hasStructuredOutline && (
                                 <>
                                     <span className="text-gray-300">·</span>
@@ -1427,7 +1427,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             className={clsx(
                                 'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
                                 contentBlocks.length > 0 && (hasSelectableBlocks || checkedSelectableCount > 0)
-                                    ? 'bg-sky-500 text-white hover:bg-sky-600'
+                                    ? 'bg-brand-500 text-white hover:bg-brand-500'
                                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                             )}>
                             <Sparkles className="w-3 h-3" />
@@ -1441,7 +1441,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
                         </button>
                         {showMoreMenu && (
-                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 w-40" onClick={() => setShowMoreMenu(false)}>
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-none z-20 py-1 w-40" onClick={() => setShowMoreMenu(false)}>
                                 <button onClick={handleExport} className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                                     <Download className="w-3 h-3" />导出大纲配置
                                 </button>
@@ -1473,7 +1473,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                 </button>
                             )}
                             {!hasStructuredOutline && (
-                                <button onClick={handleAddBlock} className="p-0.5 hover:bg-white text-gray-400 hover:text-sky-600 rounded transition-colors" title="新增"><Plus className="w-3.5 h-3.5" /></button>
+                                <button onClick={handleAddBlock} className="p-0.5 hover:bg-white text-gray-400 hover:text-brand-600 rounded transition-colors" title="新增"><Plus className="w-3.5 h-3.5" /></button>
                             )}
                         </div>
                     </div>
@@ -1498,7 +1498,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                         id={group.id}
                                                         containerClassName={clsx(
                                                             '!mb-0 border-gray-200 bg-gray-50 shadow-none',
-                                                            isActiveGroup && 'border-sky-300 bg-sky-50 shadow-sm',
+                                                            isActiveGroup && 'border-brand-200 bg-brand-50 shadow-none',
                                                         )}
                                                         handleClassName="border-gray-200 bg-gray-100 hover:bg-gray-200"
                                                     >
@@ -1522,12 +1522,12 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                                         if (!groupLocked) toggleGroupCheck(group.id);
                                                                     }}
                                                                     className={clsx(
-                                                                        'w-3.5 h-3.5 rounded border-gray-300 text-sky-500 focus:ring-0 shrink-0 cursor-pointer accent-sky-500',
+                                                                        'w-3.5 h-3.5 rounded border-gray-300 text-brand-500 focus:ring-0 shrink-0 cursor-pointer accent-sky-500',
                                                                         groupLocked && 'opacity-40 cursor-not-allowed',
                                                                     )}
                                                                 />
-                                                                <FolderTree className={clsx('w-4 h-4 shrink-0', isActiveGroup ? 'text-sky-600' : 'text-gray-400')} />
-                                                                <span className={clsx('flex-1 truncate text-sm font-semibold', isActiveGroup ? 'text-sky-800' : 'text-gray-800')}>
+                                                                <FolderTree className={clsx('w-4 h-4 shrink-0', isActiveGroup ? 'text-brand-600' : 'text-gray-400')} />
+                                                                <span className={clsx('flex-1 truncate text-sm font-semibold', isActiveGroup ? 'text-brand-900' : 'text-gray-800')}>
                                                                     {group.title}
                                                                 </span>
                                                             </div>
@@ -1557,7 +1557,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                                         id={block.id}
                                                                         containerClassName={clsx(
                                                                             '!mb-0 shadow-none',
-                                                                            isActive ? 'border-sky-200 bg-sky-50' : 'border-gray-100 bg-white',
+                                                                            isActive ? 'border-brand-200 bg-brand-50' : 'border-gray-100 bg-white',
                                                                         )}
                                                                         contentClassName="py-1.5"
                                                                     >
@@ -1580,24 +1580,24 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                                                         if (!rowLocked) toggleCheck(block.id);
                                                                                     }}
                                                                                     className={clsx(
-                                                                                        'w-3 h-3 rounded border-gray-300 text-sky-500 focus:ring-0 shrink-0 cursor-pointer accent-sky-500',
+                                                                                        'w-3 h-3 rounded border-gray-300 text-brand-500 focus:ring-0 shrink-0 cursor-pointer accent-sky-500',
                                                                                         rowLocked && 'opacity-40 cursor-not-allowed',
                                                                                     )}
                                                                                 />
-                                                                                {cs?.status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-green-500" />
+                                                                                {cs?.status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-success" />
                                                                                     : cs?.status === 'cancelled' ? <XCircle className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                                                                                            : <FileText className={clsx('w-3.5 h-3.5 shrink-0', isActive ? 'text-sky-500' : 'text-gray-400')} />}
-                                                                                <span className={clsx('flex-1 truncate text-sm', isActive ? 'text-sky-800 font-medium' : 'text-gray-700', block.is_chapter_intro && 'font-semibold')}>
+                                                                                            : <FileText className={clsx('w-3.5 h-3.5 shrink-0', isActive ? 'text-brand-500' : 'text-gray-400')} />}
+                                                                                <span className={clsx('flex-1 truncate text-sm', isActive ? 'text-brand-900 font-medium' : 'text-gray-700', block.is_chapter_intro && 'font-semibold')}>
                                                                                     {isRewriteGenerating && displayNumber ? `【${displayNumber}】重生成中` : block.title}
                                                                                 </span>
                                                                                 {(cs?.status === 'queued' || cs?.status === 'generating' || isQueued) && (
-                                                                                    <Loader2 className={clsx('w-3.5 h-3.5 shrink-0 animate-spin', cs?.status === 'generating' ? 'text-sky-400' : 'text-gray-300')} />
+                                                                                    <Loader2 className={clsx('w-3.5 h-3.5 shrink-0 animate-spin', cs?.status === 'generating' ? 'text-brand-500' : 'text-gray-300')} />
                                                                                 )}
                                                                                 {/* 目录树中隐藏单节点评分标记（按需可恢复）
                                                                                 {cs?.qualityScore !== undefined && cs.status === 'done' && (
                                                                                     <div className={clsx(
                                                                                         'w-5 h-4 flex items-center justify-center rounded text-xs font-bold',
-                                                                                        cs.qualityScore >= 8 ? 'bg-green-100 text-green-700' : cs.qualityScore >= 6 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700',
+                                                                                        cs.qualityScore >= 8 ? 'bg-[var(--color-success-bg)] text-success' : cs.qualityScore >= 6 ? 'bg-[var(--color-warning-bg)] text-warning' : 'bg-[var(--color-danger-bg)] text-danger',
                                                                                     )}>
                                                                                         {cs.qualityScore}
                                                                                     </div>
@@ -1609,7 +1609,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                                                     <div className="flex items-center gap-1.5">
                                                                                         <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
                                                                                             <div
-                                                                                                className={clsx('h-full rounded-full transition-all', pct >= 80 ? 'bg-green-400' : pct >= 50 ? 'bg-amber-400' : 'bg-red-300')}
+                                                                                                className={clsx('h-full rounded-full transition-all', pct >= 80 ? 'bg-[var(--color-success-icon)]' : pct >= 50 ? 'bg-[var(--color-warning-text)]' : 'bg-[var(--color-danger-icon)]')}
                                                                                                 style={{ width: `${pct}%` }}
                                                                                             />
                                                                                         </div>
@@ -1618,7 +1618,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                                                 ) : cs?.status === 'cancelled' ? (
                                                                                     <span className="text-xs text-gray-400">【已取消】</span>
                                                                                 ) : cs?.status === 'queued' ? (
-                                                                                    <span className="text-xs text-sky-500">任务排队中</span>
+                                                                                    <span className="text-xs text-brand-500">任务排队中</span>
                                                                                 ) : target > 0 ? (
                                                                                     <span className="text-xs text-gray-300 font-mono">— / {target.toLocaleString()}字</span>
                                                                                 ) : null}
@@ -1656,7 +1656,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                 id={block.id}
                                                 containerClassName={isParentLike ? clsx(
                                                     '!mb-0 border-gray-200 bg-gray-50 shadow-none',
-                                                    isActive && 'border-sky-300 bg-sky-50 shadow-sm',
+                                                    isActive && 'border-brand-200 bg-brand-50 shadow-none',
                                                 ) : undefined}
                                                 handleClassName={isParentLike ? 'border-gray-200 bg-gray-100 hover:bg-gray-200' : undefined}
                                             >
@@ -1672,7 +1672,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                             ? undefined
                                                             : clsx(
                                                                 'px-2 py-1.5 rounded-lg transition-all border',
-                                                                isActive ? 'bg-sky-50 border-sky-200 shadow-sm' : 'bg-white border-transparent hover:bg-gray-50',
+                                                                isActive ? 'bg-brand-50 border-brand-200 shadow-none' : 'bg-white border-transparent hover:bg-gray-50',
                                                             ),
                                                     )}
                                                 >
@@ -1688,36 +1688,36 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                             }}
                                                             className={clsx(
                                                                 isParentLike ? 'w-3.5 h-3.5' : 'w-3 h-3',
-                                                                'rounded border-gray-300 text-sky-500 focus:ring-0 shrink-0 cursor-pointer accent-sky-500',
+                                                                'rounded border-gray-300 text-brand-500 focus:ring-0 shrink-0 cursor-pointer accent-sky-500',
                                                                 rowLocked && 'opacity-40 cursor-not-allowed')}
                                                         />
-                                                        {cs?.status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-green-500" />
+                                                        {cs?.status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-success" />
                                                             : cs?.status === 'cancelled' ? <XCircle className="w-3.5 h-3.5 shrink-0 text-gray-400" />
                                                                     : isParentLike
-                                                                        ? <FolderTree className={clsx('w-4 h-4 shrink-0', isActive ? 'text-sky-600' : 'text-gray-400')} />
-                                                                        : <FileText className={clsx('w-3.5 h-3.5 shrink-0', isActive ? 'text-sky-500' : 'text-gray-400')} />}
+                                                                        ? <FolderTree className={clsx('w-4 h-4 shrink-0', isActive ? 'text-brand-600' : 'text-gray-400')} />
+                                                                        : <FileText className={clsx('w-3.5 h-3.5 shrink-0', isActive ? 'text-brand-500' : 'text-gray-400')} />}
                                                         <span className={clsx(
                                                             'flex-1 truncate',
                                                             isParentLike
-                                                                ? (isActive ? 'text-sky-800 text-sm font-semibold' : 'text-gray-800 text-sm font-semibold')
-                                                                : (isActive ? 'text-sky-800 font-medium' : 'text-gray-700'),
+                                                                ? (isActive ? 'text-brand-900 text-sm font-semibold' : 'text-gray-800 text-sm font-semibold')
+                                                                : (isActive ? 'text-brand-900 font-medium' : 'text-gray-700'),
                                                             block.is_chapter_intro && 'font-semibold',
                                                         )}>
                                                             {isRewriteGenerating && displayNumber ? `【${displayNumber}】重生成中` : block.title}
                                                         </span>
                                                         {(cs?.status === 'queued' || cs?.status === 'generating' || isQueued) && (
-                                                            <Loader2 className={clsx('w-3.5 h-3.5 shrink-0 animate-spin', cs?.status === 'generating' ? 'text-sky-400' : 'text-gray-300')} />
+                                                            <Loader2 className={clsx('w-3.5 h-3.5 shrink-0 animate-spin', cs?.status === 'generating' ? 'text-brand-500' : 'text-gray-300')} />
                                                         )}
                                                         {!hasStructuredOutline && (
                                                             <button onClick={e => { e.stopPropagation(); handleDeleteBlock(block.id); }}
-                                                                className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-300 hover:text-red-500 rounded transition-all shrink-0"><Trash2 className="w-3 h-3" /></button>
+                                                                className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-300 hover:text-danger rounded transition-all shrink-0"><Trash2 className="w-3 h-3" /></button>
                                                         )}
                                                     </div>
                                                     <div className={clsx('text-xs text-gray-500', isParentLike ? 'mt-1' : 'mt-0.5 pl-[22px]')}>
                                                         {cs?.status === 'done' ? (
                                                             <div className="flex items-center gap-1.5">
                                                                 <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-                                                                    <div className={clsx('h-full rounded-full transition-all', pct >= 80 ? 'bg-green-400' : pct >= 50 ? 'bg-amber-400' : 'bg-red-300')}
+                                                                    <div className={clsx('h-full rounded-full transition-all', pct >= 80 ? 'bg-[var(--color-success-icon)]' : pct >= 50 ? 'bg-[var(--color-warning-text)]' : 'bg-[var(--color-danger-icon)]')}
                                                                         style={{ width: `${pct}%` }} />
                                                                 </div>
                                                                 <span className="text-xs text-gray-500 font-mono whitespace-nowrap">{actual.toLocaleString()}/{target.toLocaleString()}</span>
@@ -1742,7 +1742,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             <span>目标 {totalExpectedWords.toLocaleString()} 字</span>
                         </div>
                         <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-sky-500 rounded-full transition-all"
+                            <div className="h-full bg-brand-500 rounded-full transition-all"
                                 style={{ width: `${totalExpectedWords > 0 ? Math.min(100, Math.round(totalActualWords / totalExpectedWords * 100)) : 0}%` }} />
                         </div>
                     </div>
@@ -1757,7 +1757,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                     <div className="flex items-center gap-2.5 flex-1 min-w-0">
                                         <h3 className="text-base font-bold text-gray-900 truncate">{activeBlock.title}</h3>
                                         {activeContent?.status === 'done' && (
-                                            <span className="text-sm text-green-600 bg-green-50 px-2 py-0.5 rounded-full font-medium shrink-0">{activeContent.wordCount.toLocaleString()} 字</span>
+                                            <span className="text-sm text-success bg-[var(--color-success-bg)] px-2 py-0.5 rounded-full font-medium shrink-0">{activeContent.wordCount.toLocaleString()} 字</span>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
@@ -1817,11 +1817,11 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                         className={clsx('flex items-center gap-1 transition-colors',
                                                             activeContent?.content?.trim()
                                                                 ? showConfigBeforeGenerate
-                                                                    ? 'text-xs text-sky-600 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-lg'
-                                                                    : 'text-xs text-gray-400 hover:text-sky-600 px-1.5 py-0.5 rounded hover:bg-sky-50'
+                                                                    ? 'text-xs text-brand-600 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-lg'
+                                                                    : 'text-xs text-gray-400 hover:text-brand-600 px-1.5 py-0.5 rounded hover:bg-brand-50'
                                                                 : activeContent?.status === 'error'
-                                                                    ? 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-amber-200 text-amber-600 hover:bg-amber-50'
-                                                                : 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-sky-200 text-sky-700 hover:bg-sky-50')}
+                                                                    ? 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-[var(--color-warning-border)] text-warning hover:bg-[var(--color-warning-bg)]'
+                                                                : 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-brand-200 text-brand-600 hover:bg-brand-50')}
                                                         disabled={isLocked || isContentGenerationBusy}
                                                     >
                                                         {activeContent?.content?.trim() ? <><RotateCcw className="w-3 h-3" />{showConfigBeforeGenerate ? '收起配置' : '重新生成'}</>
@@ -1837,9 +1837,9 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
 
                             {/* ── 重新生成配置面板（折叠展开）── */}
                             {showConfigBeforeGenerate && regenConfig && activeBlock && isContentBlock(activeBlock) && (
-                                <div className="bg-gradient-to-b from-sky-50 to-white border-b border-sky-100 px-5 py-4 shrink-0 space-y-3">
+                                <div className="bg-brand-50 border-b border-brand-200 px-5 py-4 shrink-0 space-y-3">
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-semibold text-sky-700 flex items-center gap-1.5">
+                                        <span className="text-xs font-semibold text-brand-600 flex items-center gap-1.5">
                                             <Sparkles className="w-3.5 h-3.5" />本次重生成提示词配置
                                         </span>
                                         <span className="text-xs text-gray-400">仅对本次重新生成有效</span>
@@ -1853,7 +1853,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                             onChange={e => setRegenConfig(prev => prev ? { ...prev, instruction: e.target.value } : prev)}
                                             rows={3}
                                             placeholder="描述这次希望调整的方向，例如强化技术细节、压缩空话、突出某项优势..."
-                                            className="w-full text-sm text-gray-800 bg-white border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-300 focus:border-sky-300 transition-shadow placeholder-gray-300"
+                                            className="w-full text-sm text-gray-800 bg-white border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-200 transition-shadow placeholder-gray-300"
                                         />
                                     </div>
 
@@ -1868,7 +1868,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                 step={100}
                                                 value={regenConfig.wordCount}
                                                 onChange={e => setRegenConfig(prev => prev ? { ...prev, wordCount: Number(e.target.value) } : prev)}
-                                                className="w-24 text-sm text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-center focus:outline-none focus:ring-2 focus:ring-sky-300 focus:border-sky-300 transition-shadow"
+                                                className="w-24 text-sm text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-center focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-200 transition-shadow"
                                             />
                                             <span className="text-xs text-gray-400">字</span>
                                         </div>
@@ -1891,7 +1891,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                 }
                                                 setRegenConfig(null);
                                             }}
-                                            className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg shadow-sm transition-colors"
+                                            className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white rounded-lg shadow-none transition-colors"
                                             disabled={isLocked || isContentGenerationBusy}
                                         >
                                             <Sparkles className="w-3.5 h-3.5" />确认重新生成
@@ -1932,11 +1932,11 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                                         ? '已取消'
                                                                         : '待生成';
                                                         const statusClass = state?.status === 'done'
-                                                            ? 'bg-emerald-50 text-emerald-600'
+                                                            ? 'bg-[var(--color-success-bg)] text-success'
                                                             : state?.status === 'queued'
                                                                 ? 'bg-gray-100 text-gray-500'
                                                             : state?.status === 'generating'
-                                                                ? 'bg-sky-50 text-sky-600'
+                                                                ? 'bg-brand-50 text-brand-600'
                                                                 : state?.status === 'cancelled'
                                                                         ? 'bg-gray-100 text-gray-500'
                                                                         : 'bg-gray-100 text-gray-500';
@@ -1944,7 +1944,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                             <button
                                                                 key={block.id}
                                                                 onClick={() => setSelectedBlockId(block.id)}
-                                                                className="w-full px-5 py-4 text-left hover:bg-sky-50/60 transition-colors"
+                                                                className="w-full px-5 py-4 text-left hover:bg-brand-50 transition-colors"
                                                             >
                                                                 <div className="flex items-center gap-3">
                                                                     <div className="w-7 h-7 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center text-xs font-semibold shrink-0">
@@ -2042,15 +2042,15 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                     <div className={`flex shrink-0 border-l border-gray-200 transition-all duration-200 ${showPdf ? 'w-[46%] min-w-[360px] max-w-[620px]' : 'w-8'}`}>
                         <button
                             onClick={() => setShowPdf(!showPdf)}
-                            className="w-8 shrink-0 bg-gray-50 hover:bg-sky-50 border-r border-gray-200 flex flex-col items-center justify-center gap-2 transition-colors group"
+                            className="w-8 shrink-0 bg-gray-50 hover:bg-brand-50 border-r border-gray-200 flex flex-col items-center justify-center gap-2 transition-colors group"
                             title={showPdf ? '收起原文' : '展开查看原始招标文件'}
                         >
                             {showPdf
-                                ? <PanelRightClose className="w-3.5 h-3.5 text-gray-400 group-hover:text-sky-600" />
-                                : <PanelRightOpen className="w-3.5 h-3.5 text-gray-400 group-hover:text-sky-600" />
+                                ? <PanelRightClose className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
+                                : <PanelRightOpen className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
                             }
                             <span
-                                className="text-xs text-gray-400 group-hover:text-sky-600"
+                                className="text-xs text-gray-400 group-hover:text-brand-600"
                                 style={{ writingMode: 'vertical-rl', letterSpacing: '0.05em' }}
                             >
                                 招标文件原文
@@ -2078,10 +2078,10 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                 const bidderOk = !!(proj?.bidderInfo?.orgName);
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+                        <div className="bg-white rounded-2xl shadow-panel w-full max-w-md mx-4 overflow-hidden">
                             <div className="px-6 pt-6 pb-4 border-b border-gray-100">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-sky-600 flex items-center justify-center shrink-0">
+                                    <div className="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center shrink-0">
                                         <Sparkles className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
@@ -2096,7 +2096,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                     <span className="font-semibold text-gray-900">{contentBlocks.length} 个章节</span>
                                 </div>
                                 <div className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg text-sm',
-                                    bidderOk ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700')}>
+                                    bidderOk ? 'bg-[var(--color-success-bg)] text-success' : 'bg-[var(--color-warning-bg)] text-warning')}>
                                     {bidderOk
                                         ? <><CheckCircle2 className="w-3.5 h-3.5 shrink-0" />投标人信息已配置</>
                                         : <><AlertCircle className="w-3.5 h-3.5 shrink-0" />投标人信息未配置</>}
@@ -2107,7 +2107,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                 <button onClick={() => setShowGenerateAllConfirm(false)}
                                     className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">取消</button>
                                 <button onClick={handleGenerateAll}
-                                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-sky-600 hover:bg-sky-700 transition-all shadow-sm hover:shadow-md">开始生成</button>
+                                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand-500 hover:bg-brand-600 transition-all shadow-none ">开始生成</button>
                             </div>
                         </div>
                     </div>

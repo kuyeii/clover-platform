@@ -5,7 +5,7 @@ import "./legacy/index.css";
 
 export function BidGeneratorPage() {
   return (
-    <div className="bid-generator-legacy-viewport">
+    <div className="legacy-app-viewport bid-generator-legacy-viewport">
       <HashRouter>
         <LegacyBidGeneratorApp />
       </HashRouter>

@@ -1,21 +1,19 @@
 .competitor-analysis-legacy-viewport {
-  --competitor-portal-offset-top: 0px;
-  --competitor-module-height: max(720px, calc(100vh - var(--competitor-portal-offset-top)));
-  --bg: #ffffff;
-  --panel: rgba(255, 255, 255, 0.92);
-  --panel-solid: #ffffff;
-  --line: #e4ebfb;
-  --line-strong: #d4e1fb;
-  --text: #132044;
-  --muted: #7081a3;
-  --muted-2: #9aa9c4;
-  --blue: #1266ff;
-  --blue-2: #2f80ff;
-  --blue-soft: #edf4ff;
-  --blue-deep: #0d45d7;
-  --work-bg: #f5f6f8;
-  --shadow: 0 18px 48px rgba(34, 79, 160, 0.11);
-  --shadow-soft: 0 10px 28px rgba(34, 79, 160, 0.08);
+  --bg: var(--color-surface);
+  --panel: var(--color-surface);
+  --panel-solid: var(--color-surface);
+  --line: var(--color-border);
+  --line-strong: var(--color-border-strong);
+  --text: var(--color-text-primary);
+  --muted: var(--color-text-secondary);
+  --muted-2: var(--color-text-muted);
+  --blue: var(--color-brand);
+  --blue-2: var(--color-brand-hover);
+  --blue-soft: var(--color-brand-soft);
+  --blue-deep: var(--color-brand-active);
+  --work-bg: var(--color-page-bg);
+  --shadow: none;
+  --shadow-soft: none;
   --scrollbar-thumb-idle: rgba(78, 105, 154, 0.16);
   --scrollbar-thumb: rgba(78, 105, 154, 0.34);
   --scrollbar-thumb-hover: rgba(50, 82, 138, 0.52);
@@ -97,13 +95,19 @@
 
 .competitor-analysis-legacy-viewport .sidebar {
   width: 288px;
+<<<<<<< HEAD
   height: var(--competitor-module-height);
   min-height: var(--competitor-module-height);
   padding: 17px 16px 20px;
+=======
+  height: 100vh;
+  min-height: 100vh;
+  padding: 18px 14px 16px;
+>>>>>>> 6050990 (前端样式初步整合)
   border: 0;
-  border-right: 1px solid #e6eaf0;
+  border-right: 1px solid var(--color-border);
   border-radius: 0;
-  background: #fff;
+  background: var(--color-sidebar-bg);
   backdrop-filter: none;
   box-shadow: none;
   display: flex;
@@ -115,15 +119,15 @@
 .competitor-analysis-legacy-viewport .new-compare-btn {
   width: 100%;
   height: 40px;
-  border: 0;
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   padding: 0;
   display: grid;
   grid-template-columns: 16px auto;
   align-items: center;
   justify-content: center;
   gap: 9px;
-  background: #0b8fd3;
+  background: var(--color-brand);
   color: #fff;
   font-size: 14px;
   font-weight: 900;
@@ -131,7 +135,7 @@
   text-align: center;
   box-shadow: none;
 }
-.competitor-analysis-legacy-viewport .new-compare-btn:hover { background: #087fbd; }
+.competitor-analysis-legacy-viewport .new-compare-btn:hover { background: var(--color-brand-hover); }
 .competitor-analysis-legacy-viewport .new-compare-icon {
   width: 16px;
   height: 16px;
@@ -166,7 +170,7 @@
 .competitor-analysis-legacy-viewport .history-box {
   flex: 1;
   min-height: 0;
-  margin-top: 22px;
+  margin-top: 18px;
   display: flex;
   flex-direction: column;
 }
@@ -174,14 +178,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
-  margin-bottom: 18px;
+  padding: 0 10px;
+  margin-bottom: 10px;
 }
 .competitor-analysis-legacy-viewport .history-title-row h3 {
   margin: 0;
   font-size: 13px;
-  font-weight: 500;
-  color: #98a2b3;
+  font-weight: 700;
+  color: var(--color-text-muted);
 }
 .competitor-analysis-legacy-viewport .history-title-row span {
   min-width: 24px;
@@ -189,7 +193,7 @@
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: #eef5ff;
+  background: var(--color-brand-soft);
   color: var(--blue);
   font-size: 12px;
   font-weight: 900;
@@ -202,19 +206,20 @@
   overflow-y: auto;
   display: grid;
   align-content: start;
-  gap: 18px;
-  padding: 4px 4px 2px 0;
+  gap: 6px;
+  padding: 4px 2px 2px 0;
 }
 .competitor-analysis-legacy-viewport .history-entry {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   border: 0;
+  border: 1px solid transparent;
   background: transparent;
   text-align: left;
   border-radius: 8px;
-  padding: 5px 8px 6px 24px;
-  color: #111827;
+  padding: 10px 10px 10px 28px;
+  color: var(--color-text-primary);
   position: relative;
   min-height: 56px;
   display: block;
@@ -224,14 +229,18 @@
 .competitor-analysis-legacy-viewport .history-entry::before {
   content: "";
   position: absolute;
-  left: 4px;
-  top: 14px;
+  left: 10px;
+  top: 18px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #149bd7;
+  background: var(--color-brand);
 }
-.competitor-analysis-legacy-viewport .history-entry:hover, .competitor-analysis-legacy-viewport .history-entry--active { background: #f5f9ff; }
+.competitor-analysis-legacy-viewport .history-entry:hover,
+.competitor-analysis-legacy-viewport .history-entry--active {
+  border-color: var(--color-brand-border);
+  background: var(--color-brand-soft);
+}
 .competitor-analysis-legacy-viewport .history-entry strong {
   display: block;
   max-width: 100%;
@@ -240,12 +249,12 @@
   white-space: nowrap;
   font-size: 14px;
   line-height: 1.35;
-  font-weight: 500;
+  font-weight: 650;
 }
 .competitor-analysis-legacy-viewport .history-entry span {
   display: block;
   margin-top: 4px;
-  color: #0b8fd3;
+  color: var(--color-brand);
   font-size: 13px;
   line-height: 1.35;
   overflow: hidden;
@@ -319,11 +328,11 @@
   width: 86px;
   height: 86px;
   border-radius: 24px;
-  background: linear-gradient(145deg, #eaf3ff, #ffffff);
-  box-shadow: 0 18px 38px rgba(46, 105, 205, 0.14);
+  background: var(--color-surface-soft);
+  box-shadow: none;
   transform: rotate(-12deg);
 }
-.competitor-analysis-legacy-viewport .bar { position: absolute; bottom: 18px; width: 14px; border-radius: 8px 8px 3px 3px; background: linear-gradient(180deg, #9fc8ff, #1266ff); }
+.competitor-analysis-legacy-viewport .bar { position: absolute; bottom: 18px; width: 14px; border-radius: 8px 8px 3px 3px; background: var(--color-brand); }
 .competitor-analysis-legacy-viewport .bar-1 { left: 18px; height: 32px; opacity: 0.68; }
 .competitor-analysis-legacy-viewport .bar-2 { left: 38px; height: 52px; }
 .competitor-analysis-legacy-viewport .bar-3 { left: 58px; height: 42px; opacity: 0.85; }
@@ -342,12 +351,12 @@
   position: absolute;
   width: 12px;
   height: 38px;
-  background: #1266ff;
+  background: var(--color-brand);
   border-radius: 12px;
   right: -18px;
   bottom: -28px;
 }
-.competitor-analysis-legacy-viewport .bubble { position: absolute; border-radius: 999px; background: rgba(18, 102, 255, 0.12); }
+.competitor-analysis-legacy-viewport .bubble { position: absolute; border-radius: 999px; background: var(--color-focus-ring); }
 .competitor-analysis-legacy-viewport .bubble-1 { width: 36px; height: 36px; right: 22px; top: 2px; }
 .competitor-analysis-legacy-viewport .bubble-2 { width: 22px; height: 22px; left: 6px; bottom: 20px; }
 
@@ -383,7 +392,7 @@
   transition: 0.2s ease;
 }
 .competitor-analysis-legacy-viewport select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #8da2c7 50%), linear-gradient(135deg, #8da2c7 50%, transparent 50%); background-position: calc(100% - 18px) 21px, calc(100% - 13px) 21px; background-size: 5px 5px; background-repeat: no-repeat; }
-.competitor-analysis-legacy-viewport input:focus, .competitor-analysis-legacy-viewport select:focus { border-color: #7cafef; box-shadow: 0 0 0 4px rgba(18, 102, 255, 0.09); }
+.competitor-analysis-legacy-viewport input:focus, .competitor-analysis-legacy-viewport select:focus { border-color: var(--color-brand); box-shadow: 0 0 0 4px var(--color-focus-ring); }
 .competitor-analysis-legacy-viewport .match-switch {
   width: 100%;
   height: 42px;
@@ -407,8 +416,8 @@
   left: 3px;
   width: calc((100% - 10px) / 2);
   border-radius: 999px;
-  background: linear-gradient(180deg, #f7fbff 0%, #e8f1ff 100%);
-  box-shadow: inset 0 0 0 1px #9dbdff, 0 7px 18px rgba(18, 102, 255, 0.12);
+  background: var(--color-brand-soft);
+  box-shadow: inset 0 0 0 1px var(--color-brand-border);
   transform: translateX(0);
   transition: transform 360ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 360ms ease, background 360ms ease;
   will-change: transform;
@@ -431,7 +440,7 @@
   transition: color 220ms ease, transform 220ms ease;
 }
 .competitor-analysis-legacy-viewport .match-switch-btn--active {
-  color: #1266ff;
+  color: var(--color-brand);
   transform: translateY(-0.5px);
 }
 .competitor-analysis-legacy-viewport .match-mode-content {
@@ -484,7 +493,7 @@
 }
 .competitor-analysis-legacy-viewport .primary-action:not(:disabled) {
   color: #fff;
-  background: #0b8fd3;
+  background: var(--color-brand);
 }
 .competitor-analysis-legacy-viewport .primary-action span { margin-left: 10px; }
 .competitor-analysis-legacy-viewport .api-error {
@@ -641,8 +650,8 @@
   transition: 0.2s ease;
   overflow: hidden;
 }
-.competitor-analysis-legacy-viewport .competitor-card:hover { transform: translateY(-2px); border-color: #9dc3ff; }
-.competitor-analysis-legacy-viewport .competitor-card--active { border: 2px solid var(--blue); box-shadow: 0 18px 40px rgba(18, 102, 255, 0.14); }
+.competitor-analysis-legacy-viewport .competitor-card:hover { transform: translateY(-2px); border-color: var(--color-brand-border); }
+.competitor-analysis-legacy-viewport .competitor-card--active { border: 2px solid var(--blue); box-shadow: none; }
 .competitor-analysis-legacy-viewport .competitor-card-head {
   display: flex;
   gap: 10px;
@@ -683,10 +692,10 @@
   place-items: center;
   background:
     radial-gradient(circle at center, #fff 55%, transparent 57%),
-    conic-gradient(#1266ff 0 var(--score-percent, 0%), #dce9ff var(--score-percent, 0%) 100%);
-  color: #1266ff;
+    conic-gradient(var(--color-brand) 0 var(--score-percent, 0%), var(--color-brand-soft) var(--score-percent, 0%) 100%);
+  color: var(--color-brand);
   font-weight: 900;
-  box-shadow: inset 0 0 0 1px rgba(18,102,255,0.05);
+  box-shadow: inset 0 0 0 1px var(--color-focus-ring);
 }
 .competitor-analysis-legacy-viewport .score-ring--large { width: 60px; height: 60px; font-size: 18px; }
 
@@ -726,8 +735,8 @@
   padding: 7px;
   border: 1px solid #dfe8f8;
   border-radius: 15px;
-  background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px rgba(34, 79, 160, 0.08);
+  background: var(--color-surface-soft);
+  box-shadow: none;
 }
 .competitor-analysis-legacy-viewport .tab-btn {
   position: relative;
@@ -746,7 +755,7 @@
 .competitor-analysis-legacy-viewport .tab-btn--active {
   color: var(--blue);
   background: #fff;
-  box-shadow: 0 10px 22px rgba(34, 79, 160, 0.14);
+  box-shadow: none;
 }
 .competitor-analysis-legacy-viewport .detail-info-grid { display: grid; grid-template-columns: 1fr 360px; gap: 42px; }
 .competitor-analysis-legacy-viewport .detail-summary-grid { display: grid; gap: 18px; }
@@ -958,8 +967,8 @@
   padding: 18px;
   border: 1px solid #dbe7f8;
   border-radius: 16px;
-  background: linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 10px 24px rgba(34, 79, 160, 0.06);
+  background: var(--color-surface-soft);
+  box-shadow: none;
 }
 .competitor-analysis-legacy-viewport .analysis-loading-head {
   display: flex;
@@ -1238,7 +1247,7 @@
   font-size: 18px;
   line-height: 1;
   text-align: center;
-  box-shadow: 0 8px 18px rgba(18, 102, 255, 0.12);
+  box-shadow: none;
 }
 
 .competitor-analysis-legacy-viewport .mini-add:disabled {
@@ -1421,14 +1430,14 @@
   color: #fff;
   font-size: 14px;
   font-weight: 900;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  box-shadow: none;
   transition: background 220ms ease, transform 220ms ease, box-shadow 220ms ease;
 }
 
 .competitor-analysis-legacy-viewport .app-shell--home .new-compare-btn:hover {
   background: var(--blue);
   transform: translateY(-1px);
-  box-shadow: 0 16px 32px rgba(18, 102, 255, 0.18);
+  box-shadow: none;
 }
 
 .competitor-analysis-legacy-viewport .app-shell--home .history-box {
@@ -1588,7 +1597,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
   background: #fff;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  box-shadow: none;
   overflow: hidden;
   isolation: isolate;
 }
@@ -1747,7 +1756,7 @@
 
 .competitor-analysis-legacy-viewport .main-canvas--home input:focus, .competitor-analysis-legacy-viewport .main-canvas--home select:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 5px rgba(18, 102, 255, 0.10), 0 12px 30px rgba(18, 102, 255, 0.08);
+  box-shadow: 0 0 0 5px var(--color-focus-ring);
   transform: translateY(-1px);
 }
 
@@ -1790,7 +1799,7 @@
 }
 
 .competitor-analysis-legacy-viewport .validation-status--pending {
-  color: #f59e0b;
+  color: var(--color-warning-text);
   font-size: 12px;
 }
 
@@ -1807,7 +1816,7 @@
   height: 16px;
   flex: 0 0 auto;
   border-radius: 999px;
-  border: 2px solid rgba(18, 102, 255, 0.18);
+  border: 2px solid var(--color-focus-ring);
   border-top-color: var(--blue);
   animation: validationSpin 760ms linear infinite;
 }
@@ -1823,7 +1832,7 @@
   height: 21px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: rgba(18, 102, 255, 0.09);
+  background: var(--color-focus-ring);
   padding: 2px;
 }
 
@@ -1836,7 +1845,7 @@
   background: #fff;
   border: 1px solid #dbe4f0;
   border-radius: 12px;
-  box-shadow: 0 24px 58px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--shadow-float);
   overflow: hidden;
   animation: validationDropdownIn 180ms ease both;
 }
@@ -2052,8 +2061,8 @@
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--error input {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.10);
+  border-color: var(--color-danger-icon);
+  box-shadow: 0 0 0 5px var(--color-danger-bg);
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .competitor-input-row--error {
@@ -2094,7 +2103,7 @@
 
 .competitor-analysis-legacy-viewport .main-canvas--home .competitor-input-row > button:hover:not(:disabled) {
   background: #fef2f2;
-  color: #ef4444;
+  color: var(--color-danger-icon);
   transform: translateY(-50%) scale(1.04);
 }
 
@@ -2137,14 +2146,14 @@
   font-weight: 950;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  box-shadow: 0 22px 44px rgba(18, 102, 255, 0.17);
+  box-shadow: none;
   transition: background 220ms ease, transform 220ms ease, box-shadow 220ms ease;
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .primary-action:hover:not(:disabled) {
   background: var(--blue);
   transform: translateY(-2px);
-  box-shadow: 0 26px 52px rgba(18, 102, 255, 0.24);
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2281,12 +2290,12 @@
 
 /* Keep in-flight analyses reachable from the sidebar and align timeline labels with titles. */
 .competitor-analysis-legacy-viewport .history-entry--running::before {
-  background: #f59e0b;
-  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.14);
+  background: var(--color-warning-text);
+  box-shadow: 0 0 0 5px var(--color-warning-bg);
 }
 
 .competitor-analysis-legacy-viewport .history-entry--running span {
-  color: #d97706;
+  color: var(--color-warning-text);
   font-weight: 800;
 }
 
@@ -2302,12 +2311,12 @@
 /* Fixes: stable home form height, fixed competitor card width, and dropdown-safe input layout. */
 .competitor-analysis-legacy-viewport .app-shell--home .history-entry::before {
   background: var(--blue);
-  box-shadow: 0 0 0 5px rgba(18, 102, 255, 0.10);
+  box-shadow: 0 0 0 5px var(--color-focus-ring);
 }
 
 .competitor-analysis-legacy-viewport .app-shell--home .history-entry--running::before {
-  background: #f59e0b;
-  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.14);
+  background: var(--color-warning-text);
+  box-shadow: 0 0 0 5px var(--color-warning-bg);
 }
 
 .competitor-analysis-legacy-viewport .app-shell--home .home-content-wrap {
@@ -2422,8 +2431,13 @@
   .competitor-analysis-legacy-viewport .app-shell--home .sidebar, .competitor-analysis-legacy-viewport .app-shell--results .sidebar {
     flex: 0 0 288px;
     width: 288px;
+<<<<<<< HEAD
     height: var(--competitor-module-height);
     min-height: var(--competitor-module-height);
+=======
+    height: 100%;
+    min-height: 0;
+>>>>>>> 6050990 (前端样式初步整合)
     padding: 17px 16px 20px;
     border-right: 1px solid #e6eaf0;
     background: #fff;
@@ -2445,7 +2459,7 @@
     align-items: center;
     justify-content: center;
     gap: 9px;
-    background: #0b8fd3;
+    background: var(--color-brand);
     color: #fff;
     font-size: 14px;
     font-weight: 900;
@@ -2456,7 +2470,7 @@
   }
 
   .competitor-analysis-legacy-viewport .app-shell--home .new-compare-btn:hover, .competitor-analysis-legacy-viewport .app-shell--results .new-compare-btn:hover {
-    background: #087fbd;
+    background: var(--color-brand-hover);
     transform: none;
     box-shadow: none;
   }
@@ -2548,8 +2562,8 @@
   }
 
   .competitor-analysis-legacy-viewport .app-shell--home .history-entry--running::before, .competitor-analysis-legacy-viewport .app-shell--results .history-entry--running::before {
-    background: #f59e0b;
-    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.14);
+    background: var(--color-warning-text);
+    box-shadow: 0 0 0 5px var(--color-warning-bg);
   }
 
   .competitor-analysis-legacy-viewport .app-shell--home .history-entry strong, .competitor-analysis-legacy-viewport .app-shell--results .history-entry strong {
@@ -2567,7 +2581,7 @@
   .competitor-analysis-legacy-viewport .app-shell--home .history-entry span, .competitor-analysis-legacy-viewport .app-shell--results .history-entry span {
     display: block;
     margin-top: 4px;
-    color: #0b8fd3;
+    color: var(--color-brand);
     font-size: 13px;
     line-height: 1.35;
     overflow: hidden;
@@ -2586,4 +2600,32 @@
   .competitor-analysis-legacy-viewport .app-shell--home .sidebar-user, .competitor-analysis-legacy-viewport .app-shell--results .sidebar-user {
     display: none;
   }
+}
+
+/* Portal embedding: the host layout already subtracts the topbar height. */
+.competitor-analysis-legacy-viewport {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.competitor-analysis-legacy-viewport .app-shell,
+.competitor-analysis-legacy-viewport .app-shell--home,
+.competitor-analysis-legacy-viewport .app-shell--results {
+  height: 100%;
+  min-height: 0;
+}
+
+.competitor-analysis-legacy-viewport .home-page-shell,
+.competitor-analysis-legacy-viewport .main-canvas,
+.competitor-analysis-legacy-viewport .main-canvas--home,
+.competitor-analysis-legacy-viewport .main-canvas--results {
+  min-height: 0;
+}
+
+.competitor-analysis-legacy-viewport .sidebar,
+.competitor-analysis-legacy-viewport .app-shell--home .sidebar,
+.competitor-analysis-legacy-viewport .app-shell--results .sidebar {
+  height: 100%;
+  min-height: 0;
 }

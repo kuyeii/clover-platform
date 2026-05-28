@@ -133,11 +133,11 @@ function buildDefaultSections(project: Project): AssemblySection[] {
 
 // ── 类型图标/颜色配置 ──────────────────
 const TYPE_META: Record<AssemblySection['type'], { color: string; icon: React.ReactNode }> = {
-    cover:      { color: 'bg-indigo-50 text-indigo-600 border-indigo-100', icon: <FileText className="w-4 h-4" /> },
+    cover:      { color: 'bg-brand-50 text-brand-600 border-brand-200', icon: <FileText className="w-4 h-4" /> },
     toc:        { color: 'bg-gray-50 text-gray-500 border-gray-100', icon: <Layout className="w-4 h-4" /> },
-    tech:       { color: 'bg-sky-50 text-sky-600 border-sky-100', icon: <FileText className="w-4 h-4" /> },
-    attachment: { color: 'bg-teal-50 text-teal-600 border-teal-100', icon: <Paperclip className="w-4 h-4" /> },
-    custom:     { color: 'bg-purple-50 text-purple-600 border-purple-100', icon: <FileText className="w-4 h-4" /> },
+    tech:       { color: 'bg-brand-50 text-brand-600 border-brand-200', icon: <FileText className="w-4 h-4" /> },
+    attachment: { color: 'bg-[var(--color-success-bg)] text-success border-[var(--color-success-border)]', icon: <Paperclip className="w-4 h-4" /> },
+    custom:     { color: 'bg-brand-50 text-brand-600 border-brand-200', icon: <FileText className="w-4 h-4" /> },
 };
 
 // ── 可拖拽的行组件 ──────────────────
@@ -167,9 +167,9 @@ function SortableRow({ sec, idx, project, expandedId, onToggleExpand, onToggleEn
             ref={setNodeRef}
             style={style}
             className={clsx(
-                'bg-white rounded-xl border transition-all shadow-sm',
+                'bg-white rounded-xl border transition-all shadow-none',
                 sec.enabled ? 'border-gray-200' : 'border-gray-100 opacity-50',
-                isDragging && 'shadow-xl ring-2 ring-indigo-200'
+                isDragging && 'shadow-panel ring-2 ring-brand-200'
             )}
         >
             <div className="flex items-center px-4 py-3 gap-3">
@@ -210,8 +210,8 @@ function SortableRow({ sec, idx, project, expandedId, onToggleExpand, onToggleEn
                         className={clsx(
                             'p-1.5 rounded-lg transition-colors',
                             sec.enabled
-                                ? 'text-gray-500 hover:text-orange-500 hover:bg-orange-50'
-                                : 'text-gray-300 hover:text-green-500 hover:bg-green-50'
+                                ? 'text-gray-500 hover:text-warning hover:bg-[var(--color-warning-bg)]'
+                                : 'text-gray-300 hover:text-success hover:bg-[var(--color-success-bg)]'
                         )}
                         title={sec.enabled ? '点击隐藏此模块' : '点击启用此模块'}
                     >
@@ -363,8 +363,8 @@ export function BidDocAssembler({ project, onAssembled }: BidDocAssemblerProps) 
             <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center border border-indigo-100">
-                            <Layout className="w-5 h-5 text-indigo-500" />
+                        <div className="w-9 h-9 bg-brand-50 rounded-xl flex items-center justify-center border border-brand-200">
+                            <Layout className="w-5 h-5 text-brand-500" />
                         </div>
                         <div>
                             <h2 className="font-bold text-gray-900 text-base">投标文件编排</h2>
@@ -380,7 +380,7 @@ export function BidDocAssembler({ project, onAssembled }: BidDocAssemblerProps) 
                             'flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all',
                             forging || enabledCount === 0
                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm hover:shadow-md'
+                                : 'bg-brand-500 hover:bg-brand-600 text-white shadow-none hover:shadow-none'
                         )}
                     >
                         {forging ? (

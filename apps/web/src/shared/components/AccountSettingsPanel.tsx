@@ -77,12 +77,12 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
 
   return (
     <section className="min-w-0">
-      <div className="mb-4 grid w-full grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1">
+      <div className="mb-4 grid w-full grid-cols-2 overflow-hidden rounded-xl border border-border bg-mist p-1">
         <button
           type="button"
           className={[
             "h-10 min-w-0 rounded-lg px-3 text-sm font-semibold transition-colors",
-            activeTab === "profile" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800",
+            activeTab === "profile" ? "bg-white text-brand-600 shadow-none" : "text-slate-500 hover:text-slate-800",
           ].join(" ")}
           onClick={() => setActiveTab("profile")}
         >
@@ -92,7 +92,7 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
           type="button"
           className={[
             "h-10 min-w-0 rounded-lg px-3 text-sm font-semibold transition-colors",
-            activeTab === "password" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800",
+            activeTab === "password" ? "bg-white text-brand-600 shadow-none" : "text-slate-500 hover:text-slate-800",
           ].join(" ")}
           onClick={() => setActiveTab("password")}
         >
@@ -105,7 +105,7 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
           <label className="block">
             <span className="text-xs font-semibold text-slate-600">姓名</span>
             <input
-              className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="mt-1 h-10 w-full rounded-xl border border-border px-3 text-sm outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
               value={profileName}
               onChange={(event) => setProfileName(event.target.value)}
             />
@@ -113,17 +113,17 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
           <label className="block">
             <span className="text-xs font-semibold text-slate-600">账号</span>
             <input
-              className="mt-1 h-10 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
+              className="mt-1 h-10 w-full cursor-not-allowed rounded-xl border border-border bg-mist px-3 text-sm text-slate-500 outline-none"
               value={profileAccount}
               disabled
             />
           </label>
-          {profileError ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{profileError}</p> : null}
-          {profileMessage ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{profileMessage}</p> : null}
+          {profileError ? <p className="rounded-xl border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-3 py-2 text-sm text-danger">{profileError}</p> : null}
+          {profileMessage ? <p className="rounded-xl border border-[var(--color-success-border)] bg-[var(--color-success-bg)] px-3 py-2 text-sm text-success">{profileMessage}</p> : null}
           <button
             type="submit"
             disabled={isSavingProfile}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             <Icon name="save" strokeWidth={1.7} />
             {isSavingProfile ? "保存中..." : "保存账号信息"}
@@ -134,7 +134,7 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
           <label className="block">
             <span className="text-xs font-semibold text-slate-600">当前密码</span>
             <input
-              className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="mt-1 h-10 w-full rounded-xl border border-border px-3 text-sm outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
               type="password"
               value={currentPassword}
               onChange={(event) => setCurrentPassword(event.target.value)}
@@ -143,7 +143,7 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
           <label className="block">
             <span className="text-xs font-semibold text-slate-600">新密码</span>
             <input
-              className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="mt-1 h-10 w-full rounded-xl border border-border px-3 text-sm outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
               type="password"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
@@ -152,18 +152,18 @@ export function AccountSettingsPanel({ currentUser, onDone }: { currentUser: Por
           <label className="block">
             <span className="text-xs font-semibold text-slate-600">确认新密码</span>
             <input
-              className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="mt-1 h-10 w-full rounded-xl border border-border px-3 text-sm outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
               type="password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
             />
           </label>
-          {passwordError ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{passwordError}</p> : null}
-          {passwordMessage ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{passwordMessage}</p> : null}
+          {passwordError ? <p className="rounded-xl border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-3 py-2 text-sm text-danger">{passwordError}</p> : null}
+          {passwordMessage ? <p className="rounded-xl border border-[var(--color-success-border)] bg-[var(--color-success-bg)] px-3 py-2 text-sm text-success">{passwordMessage}</p> : null}
           <button
             type="submit"
             disabled={isChangingPassword}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             <Icon name="lock" strokeWidth={1.7} />
             {isChangingPassword ? "修改中..." : "修改密码"}

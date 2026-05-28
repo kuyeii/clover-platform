@@ -65,7 +65,7 @@ export function AssistantBubbleToolbar({
         </button>
         <span
           role="tooltip"
-          className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-md transition-opacity duration-150 group-hover/acopy:opacity-100"
+          className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-none transition-opacity duration-150 group-hover/acopy:opacity-100"
         >
           复制回复
         </span>
@@ -83,7 +83,7 @@ export function AssistantBubbleToolbar({
         </button>
         <span
           role="tooltip"
-          className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-md transition-opacity duration-150 group-hover/aregen:opacity-100"
+          className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-none transition-opacity duration-150 group-hover/aregen:opacity-100"
         >
           重新回答
         </span>

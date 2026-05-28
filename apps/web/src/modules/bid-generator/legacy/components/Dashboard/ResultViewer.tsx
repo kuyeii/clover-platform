@@ -6,7 +6,7 @@ import { FileText } from 'lucide-react';
  */
 export function ResultViewer() {
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 w-full mt-6 h-[850px] flex flex-col items-center justify-center">
+        <div className="bg-white rounded-xl shadow-none border border-gray-100 p-6 w-full mt-6 h-[850px] flex flex-col items-center justify-center">
             <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
                 <FileText className="w-8 h-8 text-gray-400" />
             </div>

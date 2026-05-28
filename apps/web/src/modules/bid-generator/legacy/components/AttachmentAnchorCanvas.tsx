@@ -431,7 +431,7 @@ export function AttachmentAnchorCanvas({
     return (
         <div
             ref={scrollRef}
-            className="h-full min-h-0 overflow-y-auto rounded-xl border border-gray-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]"
+            className="h-full min-h-0 overflow-y-auto rounded-xl border border-gray-200 bg-surface-soft"
         >
             {blocksLoading ? (
                 <div className="px-4 py-4 text-sm text-gray-500">正在加载文档切片…</div>
@@ -487,7 +487,7 @@ export function AttachmentAnchorCanvas({
                                     className={clsx(
                                         'pointer-events-auto absolute inset-0 rounded-lg border text-left transition-colors',
                                         range.active
-                                            ? 'border-sky-300 bg-sky-200/35 shadow-[0_0_0_1px_rgba(56,189,248,0.16)]'
+                                            ? 'border-brand-200 bg-brand-50 shadow-[0_0_0_1px_rgba(56,189,248,0.16)]'
                                             : 'border-gray-300/80 bg-gray-300/25 hover:bg-gray-300/45',
                                     )}
                                     aria-label={`选中 ${range.label}`}
@@ -496,7 +496,7 @@ export function AttachmentAnchorCanvas({
                                     <span
                                         className={clsx(
                                             'truncate rounded-md px-2 py-1 text-xs text-white shadow-[0_2px_8px_rgba(15,23,42,0.18)]',
-                                            range.active ? 'bg-sky-600/95' : 'bg-gray-400/85',
+                                            range.active ? 'bg-brand-500/95' : 'bg-gray-400/85',
                                         )}
                                         title={range.label}
                                     >
@@ -509,23 +509,23 @@ export function AttachmentAnchorCanvas({
                                             type="button"
                                             onPointerDown={(event) => handleDragPointerDown('start', event)}
                                             className={clsx(
-                                                'pointer-events-auto absolute left-1/2 top-0 flex h-4 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-sky-300/80 bg-white text-sky-700 shadow-[0_2px_6px_rgba(2,132,199,0.22)]',
+                                                'pointer-events-auto absolute left-1/2 top-0 flex h-4 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-brand-200/80 bg-white text-brand-600 shadow-[0_2px_6px_rgba(2,132,199,0.22)]',
                                                 isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-row-resize',
                                             )}
                                             aria-label="调整起点"
                                         >
-                                            <span className="h-0.5 w-7 rounded-full bg-sky-500" />
+                                            <span className="h-0.5 w-7 rounded-full bg-brand-500" />
                                         </button>
                                         <button
                                             type="button"
                                             onPointerDown={(event) => handleDragPointerDown('end', event)}
                                             className={clsx(
-                                                'pointer-events-auto absolute bottom-0 left-1/2 flex h-4 w-14 -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-md border border-sky-300/80 bg-white text-sky-700 shadow-[0_2px_6px_rgba(2,132,199,0.22)]',
+                                                'pointer-events-auto absolute bottom-0 left-1/2 flex h-4 w-14 -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-md border border-brand-200/80 bg-white text-brand-600 shadow-[0_2px_6px_rgba(2,132,199,0.22)]',
                                                 isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-row-resize',
                                             )}
                                             aria-label="调整终点"
                                         >
-                                            <span className="h-0.5 w-7 rounded-full bg-sky-500" />
+                                            <span className="h-0.5 w-7 rounded-full bg-brand-500" />
                                         </button>
                                     </>
                                 ) : null}
@@ -535,7 +535,7 @@ export function AttachmentAnchorCanvas({
 
                     {draggingEdge ? (
                         <div className="pointer-events-none sticky bottom-3 mt-3 flex justify-center">
-                            <div className="rounded-full bg-sky-900/88 px-3 py-1 text-xs font-medium text-white shadow-lg">
+                            <div className="rounded-full bg-[var(--color-text-primary)] px-3 py-1 text-xs font-medium text-white shadow-none">
                                 正在调整{draggingEdge === 'start' ? '起点' : '终点'}，松手后刷新右侧样式预览
                             </div>
                         </div>

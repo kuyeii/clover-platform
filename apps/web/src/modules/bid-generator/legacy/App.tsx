@@ -294,7 +294,7 @@ function ProjectView({
           <button
             onClick={handleExportBidDocument}
             disabled={exportingBidDoc || activeBusyMeta.busy}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white disabled:opacity-50"
           >
             {exportingBidDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
             导出投标文件
@@ -475,7 +475,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen min-h-screen bg-gray-50 flex overflow-hidden">
+    <div className="h-full min-h-0 bg-gray-50 flex overflow-hidden">
       {/* 左侧项目导航栏 */}
       <Sidebar
         projects={projects}
@@ -521,11 +521,11 @@ export default function App() {
 
       {switchWarn.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-panel w-full max-w-md mx-4 overflow-hidden">
             <div className="px-6 pt-6 pb-4">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                <div className="w-10 h-10 rounded-xl bg-[var(--color-warning-bg)] flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-warning" />
                 </div>
                 <h3 className="text-base font-bold text-gray-900">检测到生成任务进行中</h3>
               </div>

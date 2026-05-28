@@ -24,7 +24,7 @@ export function Toast({
   return createPortal(
     <div
       role="status"
-      className="pointer-events-none fixed left-1/2 top-4 z-[200] max-w-[min(calc(100vw-2rem),28rem)] -translate-x-1/2 rounded-full bg-ink px-4 py-2.5 text-center text-sm font-medium text-white shadow-2xl shadow-slate-950/20"
+      className="pointer-events-none fixed left-1/2 top-4 z-[200] max-w-[min(calc(100vw-2rem),28rem)] -translate-x-1/2 rounded-full bg-ink px-4 py-2.5 text-center text-sm font-medium text-white shadow-panel "
     >
       {message}
     </div>,

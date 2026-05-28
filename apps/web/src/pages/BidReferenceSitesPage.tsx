@@ -101,13 +101,13 @@ export function BidReferenceSitesPage() {
   return (
     <div className="legacy-portal-ui flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50">
       <section className="flex min-h-0 flex-1 flex-col gap-4 p-4 md:flex-row md:p-5">
-        <aside className="flex min-h-[360px] shrink-0 flex-col rounded-3xl border border-white/80 bg-white shadow-lg md:w-[20rem]">
+        <aside className="flex min-h-[360px] shrink-0 flex-col rounded-xl border border-border bg-white shadow-none md:w-[20rem]">
           <div className="border-b border-slate-100 p-4">
             <h1 className="text-lg font-semibold text-slate-950">收藏列表</h1>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               收藏常用入口或添加自定义网站，刷新后仍会保留。
             </p>
-            <label className="mt-4 flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm shadow-sm focus-within:border-blue-200 focus-within:ring-2 focus-within:ring-blue-100">
+            <label className="mt-4 flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm shadow-none focus-within:border-brand-200 focus-within:ring-2 focus-within:ring-brand-200">
               <input
                 value={favoriteKeyword}
                 onChange={(event) => setFavoriteKeyword(event.target.value)}
@@ -126,11 +126,11 @@ export function BidReferenceSitesPage() {
                   <button
                     key={site.id}
                     type="button"
-                    className="group w-full min-w-0 rounded-2xl px-3 py-3 text-left transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="group w-full min-w-0 rounded-2xl px-3 py-3 text-left transition-colors hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                     onClick={() => openSite(site.url)}
                     title={site.url}
                   >
-                    <span className="block truncate text-sm font-bold text-slate-900 group-hover:text-blue-800">
+                    <span className="block truncate text-sm font-bold text-slate-900 group-hover:text-brand-700">
                       {site.name}
                     </span>
                     <span className="mt-1 block truncate text-xs text-slate-500">{site.url}</span>
@@ -140,7 +140,7 @@ export function BidReferenceSitesPage() {
             ) : (
               <div className="grid h-full min-h-48 place-items-center text-center text-sm text-slate-500">
                 <div>
-                  <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-blue-50 text-blue-200">
+                  <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand-200">
                     <Icon name="book" className="h-8 w-8" strokeWidth={1.5} />
                   </div>
                   <p>暂无收藏</p>
@@ -152,7 +152,7 @@ export function BidReferenceSitesPage() {
           <div className="border-t border-slate-100 p-4">
             <button
               type="button"
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-colors hover:bg-blue-700"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 px-4 text-sm font-semibold text-white shadow-none  transition-colors hover:bg-brand-600"
               onClick={() => {
                 setForm(emptyForm);
                 setFormError("");
@@ -165,11 +165,11 @@ export function BidReferenceSitesPage() {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto rounded-3xl border border-white/80 bg-white px-5 py-5 shadow-lg">
+        <main className="min-w-0 flex-1 overflow-y-auto rounded-xl border border-border bg-white px-5 py-5 shadow-none">
           <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="h-3 w-1 rounded-full bg-blue-600" />
+                <span className="h-3 w-1 rounded-full bg-brand-500" />
                 <h2 className="truncate text-base font-semibold text-slate-950 md:text-lg">常用网站</h2>
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -184,7 +184,7 @@ export function BidReferenceSitesPage() {
               return (
                 <article
                   key={site.id}
-                  className="group flex min-h-14 min-w-0 items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-2 shadow-sm transition hover:border-blue-100 hover:shadow-md"
+                  className="group flex min-h-14 min-w-0 items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-2 shadow-none transition hover:border-brand-200 hover:shadow-none"
                 >
                   <button
                     type="button"
@@ -192,7 +192,7 @@ export function BidReferenceSitesPage() {
                     onClick={() => openSite(site.url)}
                     title={site.url}
                   >
-                    <span className="block truncate text-sm font-bold text-slate-900 group-hover:text-blue-800">
+                    <span className="block truncate text-sm font-bold text-slate-900 group-hover:text-brand-700">
                       {site.name}
                     </span>
                     <span className="mt-0.5 block truncate text-xs text-slate-500">{site.description}</span>
@@ -201,7 +201,7 @@ export function BidReferenceSitesPage() {
                     type="button"
                     className={[
                       "ml-3 inline-grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors",
-                      isFavorite ? "bg-blue-50 text-blue-600" : "text-slate-300 hover:bg-blue-50 hover:text-blue-600",
+                      isFavorite ? "bg-brand-50 text-brand-600" : "text-slate-300 hover:bg-brand-50 hover:text-brand-600",
                     ].join(" ")}
                     onClick={() => toggleFavorite(site.id)}
                     aria-label={isFavorite ? "取消收藏" : "加入收藏"}
@@ -220,7 +220,7 @@ export function BidReferenceSitesPage() {
 
       {dialogOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <section className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-label="新建网站">
+          <section className="w-full max-w-md rounded-2xl bg-white p-5 shadow-panel" role="dialog" aria-modal="true" aria-label="新建网站">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-950">新建网站</h2>
               <button
@@ -239,7 +239,7 @@ export function BidReferenceSitesPage() {
                 <input
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  className="h-9 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  className="h-9 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-brand-200 focus:ring-2 focus:ring-brand-200"
                   placeholder="请输入网站名称"
                 />
               </label>
@@ -248,12 +248,12 @@ export function BidReferenceSitesPage() {
                 <input
                   value={form.url}
                   onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))}
-                  className="h-9 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  className="h-9 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-brand-200 focus:ring-2 focus:ring-brand-200"
                   placeholder="请输入网站链接"
                 />
               </label>
 
-              {formError ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{formError}</p> : null}
+              {formError ? <p className="rounded-xl bg-[var(--color-danger-bg)] px-3 py-2 text-sm text-danger">{formError}</p> : null}
 
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
                 <button
@@ -263,7 +263,7 @@ export function BidReferenceSitesPage() {
                 >
                   取消
                 </button>
-                <button type="submit" className="h-9 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700">
+                <button type="submit" className="h-9 rounded-xl bg-brand-500 px-4 text-sm font-semibold text-white transition hover:bg-brand-600">
                   确定
                 </button>
               </div>

@@ -1020,9 +1020,9 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
       <div className="flex gap-2 items-center mt-1">
         <input type={field === 'wordCount' ? 'number' : 'text'} value={editValue} onChange={e => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown} autoFocus
-          className={clsx('text-sm border border-sky-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-400',
+          className={clsx('text-sm border border-brand-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-200',
             field === 'wordCount' ? 'w-28 font-mono' : 'flex-1')} />
-        <button onClick={commitEdit} className="p-1.5 bg-sky-100 text-sky-600 rounded-lg hover:bg-sky-200 shrink-0">
+        <button onClick={commitEdit} className="p-1.5 bg-brand-50 text-brand-600 rounded-lg hover:bg-brand-100 shrink-0">
           <Check className="w-4 h-4" />
         </button>
       </div>
@@ -1030,12 +1030,12 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+    <div className="flex flex-col h-full bg-white rounded-xl overflow-hidden border border-gray-200 shadow-none">
       {/* ── 顶栏 ── */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="p-1.5 bg-sky-50 rounded-lg">
-            <Sparkles className="w-4 h-4 text-sky-600" />
+          <div className="p-1.5 bg-brand-50 rounded-lg">
+            <Sparkles className="w-4 h-4 text-brand-600" />
           </div>
           <div>
             <h2 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
@@ -1116,9 +1116,9 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
         </div>
       )}
       {error && !isCancelled && (
-        <div className="mx-6 mt-3 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-lg">
+        <div className="mx-6 mt-3 flex items-center gap-2 text-sm text-warning bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-4 py-2.5 rounded-lg">
           <AlertCircle className="w-4 h-4 shrink-0" /><span>运行异常，请稍后重试</span>
-          {!isLocked && <button onClick={() => { setError(null); generate(); }} className="ml-auto underline text-xs font-medium hover:text-amber-800">重试</button>}
+          {!isLocked && <button onClick={() => { setError(null); generate(); }} className="ml-auto underline text-xs font-medium hover:text-warning">重试</button>}
           <button
             onClick={() => {
               const payload = {
@@ -1133,7 +1133,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
               };
               navigator.clipboard?.writeText(`[Outline Error] ${new Date().toISOString()}\n${JSON.stringify(payload, null, 2)}`).catch(() => {});
             }}
-            className="underline text-xs font-medium hover:text-amber-800">复制错误信息</button>
+            className="underline text-xs font-medium hover:text-warning">复制错误信息</button>
           <button className="underline text-xs font-medium text-gray-400 cursor-default">报告问题</button>
         </div>
       )}
@@ -1148,23 +1148,23 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
       {/* ── 重新生成警告弹窗 ── */}
       {showRegenWarn && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-panel w-full max-w-sm mx-4 overflow-hidden">
             <div className="px-6 pt-6 pb-4">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                <div className="w-10 h-10 rounded-xl bg-[var(--color-warning-bg)] flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-5 h-5 text-warning" />
                 </div>
                 <h3 className="text-base font-bold text-gray-900">下游内容将失效</h3>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                当前项目已生成 <span className="font-semibold text-amber-700">{getExistingContentCount()}</span> 章技术方案正文。重新生成大纲后，已有的正文内容将与新大纲不匹配，需要重新生成。
+                当前项目已生成 <span className="font-semibold text-warning">{getExistingContentCount()}</span> 章技术方案正文。重新生成大纲后，已有的正文内容将与新大纲不匹配，需要重新生成。
               </p>
             </div>
             <div className="px-6 pb-6 flex gap-3">
               <button onClick={() => setShowRegenWarn(false)}
                 className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">取消</button>
               <button onClick={() => { setShowRegenWarn(false); generate(); }}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-all shadow-sm">确认重新生成</button>
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand-500 hover:bg-brand-600 transition-all shadow-none">确认重新生成</button>
             </div>
           </div>
         </div>
@@ -1180,7 +1180,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
           <div className="flex-1 overflow-y-auto">
             {/* {isActuallyGenerating && sections.length > 0 && pendingSectionCount > 0 && (
               <div className="px-3 pt-3">
-                <div className="flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-600">
+                <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-600">
                   <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                   <span>{pendingSectionCount} 个章节生成中</span>
                 </div>
@@ -1189,7 +1189,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
             {/* 空状态 */}
             {sections.length === 0 && isDone && (
               <div className="py-16 flex flex-col items-center text-gray-400 gap-2">
-                <AlertCircle className="w-7 h-7 text-amber-400" />
+                <AlertCircle className="w-7 h-7 text-warning" />
                 <p className="text-xs font-medium text-gray-500">未收到数据</p>
               </div>
             )}
@@ -1206,7 +1206,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                       <SortableRow id={section.id} isLocked={isLocked}
                         className={clsx(
                           'flex items-center gap-1.5 px-2 py-2.5 border-l-3 transition-all hover:bg-gray-50',
-                          isSelected ? 'border-l-sky-500 bg-sky-50' : 'border-l-transparent'
+                          isSelected ? 'border-l-brand-500 bg-brand-50' : 'border-l-transparent'
                         )}>
                         <button onClick={() => toggleExpand(section.id)} className="p-0.5 rounded hover:bg-gray-100 shrink-0">
                           <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', !isExpanded && '-rotate-90')} />
@@ -1215,13 +1215,13 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                         <p onClick={() => setSelectedSectionId(section.id)}
                           className="flex-1 text-base font-semibold text-gray-800 truncate cursor-pointer">{section.title}</p>
                         {sectionPending && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-500 shrink-0">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-500 shrink-0">
                             <Loader2 className="w-3 h-3 animate-spin" />
                             生成中
                           </span>
                         )}
                         {section.needDiagram && (
-                          <span title="本章节规划了配图" className="shrink-0 text-sky-500"><BarChart3 className="w-3.5 h-3.5" /></span>
+                          <span title="本章节规划了配图" className="shrink-0 text-brand-500"><BarChart3 className="w-3.5 h-3.5" /></span>
                         )}
                         <span className="text-xs text-gray-400 font-mono shrink-0">
                           {hasWordBudget ? sectionBudgetTotal(section).toLocaleString() : '--'}
@@ -1239,16 +1239,16 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                                 <SortableRow key={child.id} id={child.id} isLocked={isLocked}
                                   className={clsx(
                                     'flex items-center gap-1.5 pl-10 pr-2 py-2 border-l-3 transition-colors hover:bg-gray-50',
-                                    isChildSelected ? 'border-l-sky-400 bg-sky-50/70' : 'border-l-transparent'
+                                    isChildSelected ? 'border-l-brand-500 bg-brand-50' : 'border-l-transparent'
                                   )}>
                                   <span className="text-xs text-gray-400 font-mono shrink-0 w-10">{subSectionIndexLabel(si, ci)}</span>
                                   <p onClick={() => setSelectedSectionId(child.id)}
                                     className="flex-1 text-sm text-gray-700 truncate cursor-pointer">{child.title}</p>
                                   {childPending && (
-                                    <Loader2 className="w-3 h-3 shrink-0 text-sky-500 animate-spin" />
+                                    <Loader2 className="w-3 h-3 shrink-0 text-brand-500 animate-spin" />
                                   )}
                                   {child.needDiagram && (
-                                    <span title="本子节规划了配图" className="shrink-0 text-sky-500"><BarChart3 className="w-3 h-3" /></span>
+                                    <span title="本子节规划了配图" className="shrink-0 text-brand-500"><BarChart3 className="w-3 h-3" /></span>
                                   )}
                                   <span className="text-xs text-gray-400 font-mono shrink-0">
                                     {hasWordBudget ? subSectionBudgetWords(child).toLocaleString() : '--'}
@@ -1290,7 +1290,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                           'px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
                           isActuallyGenerating
                             ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
-                            : 'text-sky-600 bg-sky-50 hover:bg-sky-100',
+                            : 'text-brand-600 bg-brand-50 hover:bg-brand-50',
                         )}>
                         编辑标题
                       </button>
@@ -1304,7 +1304,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                   <div className="flex items-center gap-2 mt-2">
                     <p className="text-sm text-gray-500">
                       预计字数：
-                      <span className="font-mono text-sky-600 font-semibold">
+                      <span className="font-mono text-brand-600 font-semibold">
                         {hasWordBudget ? selectedSection.wordCount.toLocaleString() : '等待回传'}
                       </span>
                       {hasWordBudget ? ' 字' : ''}
@@ -1316,7 +1316,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                           'px-2 py-0.5 rounded text-xs transition-colors',
                           isActuallyGenerating
                             ? 'text-gray-300 cursor-not-allowed'
-                            : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50',
+                            : 'text-gray-400 hover:text-brand-600 hover:bg-brand-50',
                         )}>
                         修改
                       </button>
@@ -1329,9 +1329,9 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
               </div>
 
               {/* 写作意图 */}
-              <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-6">
+              <div className="bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] rounded-xl p-6">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-lg font-semibold text-amber-800">✍ 文本提示词 - 用于引导生成技术方案正文</span>
+                  <span className="text-lg font-semibold text-warning">✍ 文本提示词 - 用于引导生成技术方案正文</span>
                   {(editingField?.id !== selectedSectionId || editingField?.field !== 'writingHint') && !isLocked ? (
                     <button onClick={() => startEdit(selectedSectionId!, 'writingHint')}
                       disabled={isActuallyGenerating}
@@ -1339,7 +1339,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                         'px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
                         isActuallyGenerating
                           ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
-                          : 'text-amber-600 bg-amber-100 hover:bg-amber-200',
+                          : 'text-warning bg-[var(--color-warning-bg)] hover:bg-[var(--color-warning-bg)]',
                       )}>编辑</button>
                   ) : null}
                 </div>
@@ -1347,10 +1347,10 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                   <div className="space-y-4">
                     <div className="rounded-xl  p-4">
                       {/* <div className="mb-2 flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold text-amber-900">写作意图</span>
-                        <span className="text-xs text-amber-700/80">仅编辑业务意图</span>
+                        <span className="text-sm font-semibold text-warning">写作意图</span>
+                        <span className="text-xs text-warning">仅编辑业务意图</span>
                       </div> */}
-                      {/* <p className="mb-3 text-xs leading-relaxed text-amber-700/80">
+                      {/* <p className="mb-3 text-xs leading-relaxed text-warning">
                         {WRITING_INTENT_AUTO_RULE_NOTE}
                       </p> */}
                       <textarea
@@ -1365,7 +1365,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                         }}
                         autoFocus
                         rows={8}
-                        className="min-h-[220px] w-full resize-y rounded-xl border border-amber-200 bg-white px-4 py-3 text-base leading-relaxed text-amber-950 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                        className="min-h-[220px] w-full resize-y rounded-xl border border-[var(--color-warning-border)] bg-white px-4 py-3 text-base leading-relaxed text-warning outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                         placeholder="填写本节需要重点回应的问题、技术方案重点、边界和禁止事项。"
                       />
                     </div>
@@ -1380,7 +1380,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                       <button
                         type="button"
                         onClick={commitEdit}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600"
                       >
                         <Check className="h-4 w-4" />
                         保存写作意图
@@ -1389,10 +1389,10 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-base text-amber-900 leading-relaxed whitespace-pre-line">
+                    <p className="text-base text-warning leading-relaxed whitespace-pre-line">
                       {selectedSection.writingHint || '暂无写作意图，点击右上方「编辑」添加'}
                     </p>
-                    {/* <p className="text-xs leading-relaxed text-amber-700/80">
+                    {/* <p className="text-xs leading-relaxed text-warning">
                       {WRITING_INTENT_AUTO_RULE_NOTE}
                     </p> */}
                   </div>
@@ -1406,7 +1406,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                   {!isLocked && (
                     editingKeywordsFor !== selectedSectionId ? (
                       <button onClick={() => setEditingKeywordsFor(selectedSectionId)}
-                        className="px-2.5 py-1 rounded-lg text-xs font-medium text-sky-600 bg-sky-50 hover:bg-sky-100 transition-colors">编辑</button>
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium text-brand-600 bg-brand-50 hover:bg-brand-50 transition-colors">编辑</button>
                     ) : (
                       <button onClick={() => { setEditingKeywordsFor(null); setNewKeywordInput(''); }}
                         className="px-2.5 py-1 rounded-lg text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">完成</button>
@@ -1418,10 +1418,10 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                     <span className="text-xs text-gray-400">暂无关键词</span>
                   )}
                   {(selectedSection.keywords || []).map((kw, ki) => (
-                    <span key={ki} className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2.5 py-1 text-xs text-sky-700 border border-sky-100">
+                    <span key={ki} className="inline-flex items-center gap-1 rounded-lg bg-brand-50 px-2.5 py-1 text-xs text-brand-600 border border-brand-200">
                       {kw}
                       {editingKeywordsFor === selectedSectionId && (
-                        <button onClick={() => handleRemoveKeyword(selectedSectionId!, kw)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
+                        <button onClick={() => handleRemoveKeyword(selectedSectionId!, kw)} className="hover:text-danger"><X className="w-3 h-3" /></button>
                       )}
                     </span>
                   ))}
@@ -1430,9 +1430,9 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                       <input type="text" value={newKeywordInput} onChange={e => setNewKeywordInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddKeyword(selectedSectionId!))}
                         placeholder="输入后回车" autoFocus
-                        className="text-xs border border-sky-200 rounded-lg px-2.5 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-sky-400" />
+                        className="text-xs border border-brand-200 rounded-lg px-2.5 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-brand-200" />
                       <button onClick={() => handleAddKeyword(selectedSectionId!)}
-                        className="p-1 rounded-lg bg-sky-100 text-sky-600 hover:bg-sky-200">
+                        className="p-1 rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100">
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -1454,7 +1454,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                       <span className={clsx(
                         'text-xs font-medium px-2.5 py-1 rounded-lg border',
                         selectedSection.needDiagram
-                          ? 'text-sky-700 bg-sky-50 border-sky-100'
+                          ? 'text-brand-600 bg-brand-50 border-brand-200'
                           : 'text-gray-500 bg-gray-50 border-gray-100',
                       )}>
                         {selectedSection.needDiagram ? '需要配图' : '不需要配图'}
@@ -1513,7 +1513,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                       'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
                       isActuallyGenerating
                         ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
-                        : 'text-red-500 bg-red-50 hover:bg-red-100',
+                        : 'text-danger bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)]',
                     )}>
                     <Trash2 className="w-4 h-4" />删除此章节
                   </button>

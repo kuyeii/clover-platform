@@ -16,7 +16,7 @@ export function PendingReplyStrip({ variant = "footer" }: Props) {
       aria-live="polite"
       aria-label="正在分析问题与检索资料"
     >
-      <div className="inline-flex max-w-[85%] items-center gap-2 rounded-full border border-brand-100 bg-white px-3 py-1.5 text-xs font-medium leading-snug text-slate-500 shadow-sm shadow-slate-900/5">
+      <div className="inline-flex max-w-[85%] items-center gap-2 rounded-full border border-brand-100 bg-white px-3 py-1.5 text-xs font-medium leading-snug text-slate-500 shadow-none ">
         <span
           className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-solid border-brand-100 border-t-brand-500"
           aria-hidden

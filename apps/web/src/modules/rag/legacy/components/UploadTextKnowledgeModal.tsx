@@ -57,7 +57,7 @@ export function UploadTextKnowledgeModal({
         onClick={() => !submitting && onClose()}
       />
       <div
-        className="fixed left-1/2 top-1/2 z-[110] flex max-h-[min(90vh,640px)] w-[min(calc(100vw-2rem),440px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/15"
+        className="fixed left-1/2 top-1/2 z-[110] flex max-h-[min(90vh,640px)] w-[min(calc(100vw-2rem),440px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-slate-200 bg-white shadow-panel "
         role="dialog"
         aria-modal="true"
         aria-labelledby="upload-text-kb-title"
@@ -121,7 +121,7 @@ export function UploadTextKnowledgeModal({
           </div>
 
           {error ? (
-            <p className="text-xs text-red-600">{error}</p>
+            <p className="text-xs text-danger">{error}</p>
           ) : null}
 
           <div className="flex shrink-0 flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-end sm:justify-between">

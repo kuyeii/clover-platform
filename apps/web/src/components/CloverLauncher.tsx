@@ -31,11 +31,11 @@ const cardVariants = {
 
 export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-white px-5 pb-8 pt-4 md:overflow-hidden md:px-8 md:pb-16 md:pt-4 lg:px-12 lg:pb-12 lg:pt-6">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-slate-100/50 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-sky-50/50 to-transparent" />
+    <section className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-mist px-5 pb-10 pt-6 md:overflow-hidden md:px-8 md:pb-14 md:pt-7 lg:px-12 lg:pb-16 lg:pt-8">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-surface-soft to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-brand-50/44 to-transparent" />
 
-      <div className="relative grid w-full flex-1 grid-cols-1 gap-3 md:grid-cols-2 md:grid-rows-2 md:gap-4">
+      <div className="relative grid w-full flex-1 grid-cols-1 gap-5 md:grid-cols-2 md:grid-rows-2 md:gap-6 lg:gap-8">
         {apps.map((app, index) => (
           <motion.div
             key={app.id}

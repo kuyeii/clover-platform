@@ -116,7 +116,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => onStop?.()}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-ink shadow-sm transition hover:border-brand-100 hover:bg-brand-50"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-ink shadow-none transition hover:border-brand-100 hover:bg-brand-50"
                 aria-label="停止生成"
                 title="停止生成"
               >
@@ -127,7 +127,7 @@ export function ChatInput({
                 type="button"
                 onClick={submit}
                 disabled={disabled || !value.trim()}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-ink text-white shadow-sm shadow-slate-950/20 transition enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-ink text-white shadow-none  transition enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="发送"
               >
                 <SendHorizontal className="h-4 w-4" />
@@ -145,7 +145,7 @@ export function ChatInput({
             "inline-flex min-w-[112px] items-center justify-center gap-2 rounded-full border px-4 py-2 text-[15px] font-bold tracking-wide transition",
             webSearchEnabled
               ? "border-[#A8BCFF] bg-[#F3F6FF] text-[#356BFF] shadow-[0_10px_28px_rgba(53,107,255,0.14)] hover:bg-[#EEF3FF]"
-              : "border-brand-100 bg-white text-slate-600 shadow-sm hover:bg-brand-50 hover:text-brand-600",
+              : "border-brand-100 bg-white text-slate-600 shadow-none hover:bg-brand-50 hover:text-brand-600",
           ].join(" ")}
           aria-pressed={webSearchEnabled}
           title='打开时 upstream 传入 allow_search="1"，关闭时为 "0"'

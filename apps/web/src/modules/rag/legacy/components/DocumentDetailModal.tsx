@@ -82,7 +82,7 @@ export function DocumentDetailModal({
         onClick={onClose}
       />
       <div
-        className="fixed left-1/2 top-1/2 z-[130] flex max-h-[min(92vh,880px)] w-[min(calc(100vw-1rem),1024px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/15"
+        className="fixed left-1/2 top-1/2 z-[130] flex max-h-[min(92vh,880px)] w-[min(calc(100vw-1rem),1024px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-slate-200 bg-white shadow-panel "
         role="dialog"
         aria-modal="true"
         aria-labelledby="doc-detail-title"
@@ -115,7 +115,7 @@ export function DocumentDetailModal({
                 加载详情…
               </div>
             ) : error ? (
-              <p className="text-red-600">{error}</p>
+              <p className="text-danger">{error}</p>
             ) : doc ? (
               <dl className="space-y-2 text-slate-700">
                 <div className="flex justify-between gap-2">
@@ -192,7 +192,7 @@ export function DocumentDetailModal({
                   <dd className="text-right">{formatUnix(doc.updated_at)}</dd>
                 </div>
                 {doc.error ? (
-                  <div className="rounded bg-red-50 p-2 text-red-800">
+                  <div className="rounded bg-[var(--color-danger-bg)] p-2 text-danger">
                     <span className="font-medium">错误：</span>
                     {doc.error}
                   </div>
@@ -237,7 +237,7 @@ export function DocumentDetailModal({
                   {segments.map((seg, idx) => (
                     <li
                       key={seg.id ?? `seg-${seg.position}-${idx}`}
-                      className="rounded-lg border border-slate-100 bg-white px-3 py-2 shadow-sm"
+                      className="rounded-lg border border-slate-100 bg-white px-3 py-2 shadow-none"
                     >
                       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-500">
                         <span className="font-medium text-slate-700">
@@ -256,7 +256,7 @@ export function DocumentDetailModal({
                             className={[
                               "rounded px-1.5 py-0.5",
                               seg.status === "completed"
-                                ? "bg-emerald-50 text-emerald-800"
+                                ? "bg-[var(--color-success-bg)] text-success"
                                 : "bg-slate-100 text-slate-600",
                             ].join(" ")}
                           >

@@ -38,7 +38,7 @@ export function SortableBlock({
         <div
             ref={setNodeRef}
             style={style}
-            className={`relative group flex bg-white border border-gray-100 rounded-lg mb-1 shadow-sm hover:border-gray-300 transition-colors overflow-hidden ${isDragging ? 'ring-2 ring-sky-500 border-transparent shadow-lg' : ''
+            className={`relative group flex bg-white border border-gray-100 rounded-lg mb-1 shadow-none hover:border-gray-300 transition-colors overflow-hidden ${isDragging ? 'ring-2 ring-brand-200 border-transparent shadow-none' : ''
                 } ${containerClassName || ''}`}
         >
             {/* 拖拽把手区 */}

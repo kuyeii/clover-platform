@@ -81,7 +81,7 @@ export function KnowledgeOverviewInline({ expanded }: Props) {
               onClick={() => !deleting && setPendingDelete(null)}
             />
             <div
-              className="fixed left-1/2 top-1/2 z-[110] w-[min(calc(100vw-2rem),360px)] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+              className="fixed left-1/2 top-1/2 z-[110] w-[min(calc(100vw-2rem),360px)] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-4 shadow-panel"
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="del-confirm-title"
@@ -108,7 +108,7 @@ export function KnowledgeOverviewInline({ expanded }: Props) {
                   type="button"
                   disabled={deleting}
                   onClick={() => void handleDeleteConfirm()}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  className="rounded-lg bg-[var(--color-danger-icon)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-danger-text)] disabled:opacity-50"
                 >
                   {deleting ? "删除中…" : "删除"}
                 </button>
@@ -122,21 +122,21 @@ export function KnowledgeOverviewInline({ expanded }: Props) {
   return (
     <>
       {expanded ? (
-        <div className="border-l border-slate-200 pl-2.5">
+        <div className="border-l border-border pl-2.5">
           {loading ? (
             <div
               className="flex justify-center py-4"
               aria-busy="true"
               aria-label="加载中"
             >
-              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              <Loader2 className="h-4 w-4 animate-spin text-muted" />
             </div>
           ) : error ? (
-            <p className="py-2 text-[11px] leading-snug text-red-600">{error}</p>
+            <p className="py-2 text-[11px] leading-snug text-danger">{error}</p>
           ) : items.length === 0 ? (
-            <p className="py-2 text-[11px] text-slate-400">暂无文档</p>
+            <p className="py-2 text-[11px] text-muted">暂无文档</p>
           ) : (
-            <ul className="flex max-h-[min(40vh,320px)] flex-col gap-2 overflow-y-auto py-1 pr-1">
+            <ul className="flex max-h-[min(40vh,320px)] flex-col gap-1 overflow-y-auto py-1 pr-1">
               {items.map((doc) => {
                 const desc = doc.description?.trim() ?? "";
                 const hasDesc = desc.length > 0;
@@ -152,7 +152,7 @@ export function KnowledgeOverviewInline({ expanded }: Props) {
                 return (
                   <li
                     key={doc.id}
-                    className="rounded-md border border-slate-100 bg-white/90 shadow-sm"
+                    className="rounded-lg border border-transparent transition-colors hover:bg-surface-soft"
                   >
                     <div className="flex items-start gap-1.5 px-2 py-1.5">
                       <div
@@ -167,13 +167,13 @@ export function KnowledgeOverviewInline({ expanded }: Props) {
                             setDetailDoc({ id: doc.id, name: doc.name });
                           }
                         }}
-                        className="min-w-0 flex-1 cursor-pointer rounded-md px-0.5 text-left transition hover:bg-slate-100/80"
+                        className="min-w-0 flex-1 cursor-pointer rounded-md px-0.5 text-left"
                       >
                         <div className="text-[12px] font-medium leading-snug text-ink">
                           {doc.name}
                         </div>
                         {hasDesc && displayed !== null ? (
-                          <div className="mt-0.5 text-[10px] leading-relaxed text-slate-600">
+                          <div className="mt-0.5 text-[10px] leading-relaxed text-muted">
                             <span className="break-words">{displayed}</span>
                             {showExpand ? (
                               <button
@@ -185,7 +185,7 @@ export function KnowledgeOverviewInline({ expanded }: Props) {
                                     [doc.id]: !expandedRow,
                                   }));
                                 }}
-                                className="ml-1 inline font-medium text-slate-700 underline decoration-brand-500/50 underline-offset-2 hover:text-ink"
+                                className="ml-1 inline font-medium text-brand-600 underline decoration-brand-500/50 underline-offset-2 hover:text-brand-700"
                               >
                                 {expandedRow ? "收起" : "展开描述"}
                               </button>
@@ -199,7 +199,7 @@ export function KnowledgeOverviewInline({ expanded }: Props) {
                           e.stopPropagation();
                           setPendingDelete({ id: doc.id, name: doc.name });
                         }}
-                        className="shrink-0 rounded p-1 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                        className="shrink-0 rounded-md p-1 text-slate-400 transition-colors hover:bg-[var(--color-danger-bg)] hover:text-danger"
                         aria-label={`删除 ${doc.name}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />

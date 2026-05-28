@@ -18,7 +18,7 @@ export function BlockItem({ block, onChange }: BlockItemProps) {
                     type="text"
                     value={block.title}
                     onChange={(e) => handleChange('title', e.target.value)}
-                    className="font-semibold text-gray-800 text-lg bg-transparent border-b border-transparent hover:border-gray-200 focus:border-sky-500 focus:outline-none transition-colors w-1/2"
+                    className="font-semibold text-gray-800 text-lg bg-transparent border-b border-transparent hover:border-gray-200 focus:border-brand-500 focus:outline-none transition-colors w-1/2"
                     placeholder="章节标题"
                 />
                 <div className="flex items-center space-x-2">
@@ -27,7 +27,7 @@ export function BlockItem({ block, onChange }: BlockItemProps) {
                         type="text"
                         value={block.id}
                         onChange={(e) => handleChange('id', e.target.value)}
-                        className="text-sm font-mono text-gray-500 bg-gray-50 border border-gray-200 px-2 py-1 rounded w-40 focus:border-sky-500 focus:bg-white focus:outline-none transition-colors"
+                        className="text-sm font-mono text-gray-500 bg-gray-50 border border-gray-200 px-2 py-1 rounded w-40 focus:border-brand-500 focus:bg-white focus:outline-none transition-colors"
                         placeholder="block_id"
                         title="用于匹配后端映射的标识符，如需修改请同步调整代码逻辑"
                     />
@@ -43,7 +43,7 @@ export function BlockItem({ block, onChange }: BlockItemProps) {
                     value={block.instruction}
                     onChange={(e) => handleChange('instruction', e.target.value)}
                     rows={5}
-                    className="w-full text-sm text-gray-700 bg-gray-50 border border-transparent rounded-md p-3 hover:border-gray-200 focus:border-sky-500 focus:bg-white focus:outline-none transition-all resize-y"
+                    className="w-full text-sm text-gray-700 bg-gray-50 border border-transparent rounded-md p-3 hover:border-gray-200 focus:border-brand-500 focus:bg-white focus:outline-none transition-all resize-y"
                     placeholder="输入给大模型的具体要求..."
                 />
             </div>
@@ -62,7 +62,7 @@ export function BlockItem({ block, onChange }: BlockItemProps) {
                             handleChange('expected_word_count', isNaN(val) ? undefined : val);
                         }}
                         placeholder="例如: 1500"
-                        className="w-full text-sm border-gray-200 rounded-md p-2 pr-8 bg-gray-50 hover:border-gray-300 focus:border-sky-500 focus:bg-white focus:outline-none transition-colors"
+                        className="w-full text-sm border-gray-200 rounded-md p-2 pr-8 bg-gray-50 hover:border-gray-300 focus:border-brand-500 focus:bg-white focus:outline-none transition-colors"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                         <span className="text-gray-400 text-sm">字</span>
@@ -77,7 +77,7 @@ export function BlockItem({ block, onChange }: BlockItemProps) {
                         type="checkbox"
                         checked={block.requires_blueprint}
                         onChange={(e) => handleChange('requires_blueprint', e.target.checked)}
-                        className="w-4 h-4 text-sky-600 rounded border-gray-300 focus:ring-sky-500 cursor-pointer"
+                        className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-200 cursor-pointer"
                     />
                     <span className="text-sm text-gray-600 group-hover:text-gray-900 transition-colors">
                         强制依赖全局蓝图 (Blueprint)
@@ -89,7 +89,7 @@ export function BlockItem({ block, onChange }: BlockItemProps) {
                         type="checkbox"
                         checked={block.requires_search}
                         onChange={(e) => handleChange('requires_search', e.target.checked)}
-                        className="w-4 h-4 text-sky-600 rounded border-gray-300 focus:ring-sky-500 cursor-pointer"
+                        className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-200 cursor-pointer"
                     />
                     <span className="text-sm text-gray-600 group-hover:text-gray-900 transition-colors">
                         允许大模型搜索补充 (Search)

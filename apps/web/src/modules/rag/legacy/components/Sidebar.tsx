@@ -100,18 +100,18 @@ export function Sidebar({
     <>
       <aside
         className={[
-          "sidebar-shell fixed inset-y-0 left-0 z-40 flex h-screen max-h-screen min-h-0 w-[298px] flex-col border-r border-slate-200/90 bg-white shadow-[8px_0_28px_rgba(15,23,42,0.04)] transition-transform duration-200 md:translate-x-0 md:shadow-none",
+          "sidebar-shell fixed inset-y-0 left-0 z-40 flex h-screen max-h-screen min-h-0 w-72 flex-col border-r border-border bg-sidebar shadow-none transition-transform duration-200 md:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         ].join(" ")}
       >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4">
           <button
             type="button"
             onClick={() => {
               setOverviewExpanded(false);
               onNewChat();
             }}
-            className="flex h-[42px] items-center justify-center gap-2 rounded-lg bg-brand-500 px-3 text-sm font-semibold text-white shadow-glow transition hover:bg-brand-600 active:translate-y-px"
+            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-none transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-surface-soft disabled:text-muted"
           >
             <MessageSquarePlus className="h-4 w-4" />
             新聊天
@@ -121,10 +121,10 @@ export function Sidebar({
             type="button"
             onClick={() => setSearchOpen((v) => !v)}
             className={[
-              "mt-3 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
+              "mt-3 flex h-10 items-center gap-2 rounded-lg px-3 text-left text-sm font-medium transition-colors",
               searchOpen
-                ? "bg-brand-50 text-brand-700 shadow-sm shadow-brand-500/5"
-                : "text-slate-600 hover:bg-white hover:text-ink hover:shadow-sm",
+                ? "bg-brand-50 text-brand-700"
+                : "text-muted hover:bg-surface-soft hover:text-ink",
             ].join(" ")}
           >
             <Search className="h-4 w-4 shrink-0 text-brand-500" />
@@ -132,7 +132,7 @@ export function Sidebar({
           </button>
 
           {searchOpen ? (
-            <div className="mt-2 flex items-center gap-1 rounded-xl border border-brand-100 bg-white px-2 py-1 shadow-sm shadow-slate-900/5">
+            <div className="mt-2 flex items-center gap-1 rounded-lg border border-brand-100 bg-surface px-2 py-1 shadow-none">
               <input
                 type="search"
                 value={searchQuery}
@@ -153,8 +153,8 @@ export function Sidebar({
             </div>
           ) : null}
 
-          <div className="mt-5 border-t border-slate-200/70 pt-4">
-            <div className="px-1 text-xs font-semibold text-slate-400">
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="px-2 py-2 text-xs font-medium text-muted">
               知识库管理
             </div>
             <nav
@@ -166,10 +166,10 @@ export function Sidebar({
                 onClick={toggleOverview}
                 aria-expanded={overviewExpanded}
                 className={[
-                  "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
+                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
                   overviewExpanded
-                    ? "bg-white text-ink shadow-sm shadow-slate-900/5 ring-1 ring-brand-100"
-                    : "text-slate-600 hover:bg-white hover:text-ink hover:shadow-sm",
+                    ? "bg-brand-50 text-brand-700"
+                    : "text-muted hover:bg-surface-soft hover:text-ink",
                 ].join(" ")}
               >
                 <Database
@@ -205,10 +205,10 @@ export function Sidebar({
                       onKnowledgeNavSelect(key);
                     }}
                     className={[
-                      "flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
                       active
-                        ? "bg-white text-ink shadow-sm shadow-slate-900/5 ring-1 ring-brand-100"
-                        : "text-slate-600 hover:bg-white hover:text-ink hover:shadow-sm",
+                        ? "bg-brand-50 text-brand-700"
+                        : "text-muted hover:bg-surface-soft hover:text-ink",
                     ].join(" ")}
                   >
                     <Icon
@@ -222,17 +222,17 @@ export function Sidebar({
             </nav>
           </div>
 
-          <div className="mt-6 flex shrink-0 items-center justify-between px-1">
-            <div className="text-xs font-semibold text-slate-400">
+          <div className="mt-5 flex shrink-0 items-center justify-between px-2 py-2">
+            <div className="text-xs font-medium text-muted">
               最近对话
             </div>
-            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-600">
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-brand-100 bg-brand-50 px-2 text-[11px] font-semibold leading-none text-brand-600">
               {recentSorted.length}
             </span>
           </div>
-          <div className="sidebar-scroll-area mt-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
+          <div className="sidebar-scroll-area flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
             {filtered.length === 0 ? (
-              <p className="rounded-xl bg-white/60 px-3 py-3 text-xs leading-relaxed text-slate-400">
+              <p className="px-2 py-8 text-center text-xs leading-relaxed text-muted">
                 {recentSorted.length === 0
                   ? "发送第一条消息后会出现记录"
                   : "没有匹配的对话"}
@@ -296,7 +296,7 @@ export function Sidebar({
             role="dialog"
             aria-modal="true"
             aria-labelledby="rename-dialog-title"
-            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-950/15"
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-panel "
             onClick={(e) => e.stopPropagation()}
           >
             <h3
@@ -336,7 +336,7 @@ export function Sidebar({
               </button>
               <button
                 type="button"
-                className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+                className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white shadow-none transition hover:bg-brand-600"
                 onClick={() => {
                   const t = renameModal.draft.trim();
                   if (!t) return;

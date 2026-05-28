@@ -133,26 +133,26 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
                             className={clsx(
                                 'block border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all',
                                 isDragging
-                                    ? 'border-sky-400 bg-sky-50'
+                                    ? 'border-brand-500 bg-brand-50'
                                     : selectedFile
-                                        ? 'border-sky-300 bg-sky-50/40'
+                                        ? 'border-brand-200 bg-brand-50/40'
                                         : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100/50'
                             )}
                         >
                             <input type="file" className="hidden" accept=".docx,.pdf,.md,.doc" onChange={handleFileSelect} />
                             {selectedFile ? (
                                 <div className="space-y-3">
-                                    <div className="w-14 h-14 bg-sky-100 rounded-xl flex items-center justify-center mx-auto">
-                                        <FileText className="w-7 h-7 text-sky-600" />
+                                    <div className="w-14 h-14 bg-brand-50 rounded-xl flex items-center justify-center mx-auto">
+                                        <FileText className="w-7 h-7 text-brand-600" />
                                     </div>
-                                    <p className="text-base font-semibold text-sky-700">{selectedFile.name}</p>
+                                    <p className="text-base font-semibold text-brand-600">{selectedFile.name}</p>
                                     <p className="text-sm text-gray-500">
                                         {(selectedFile.size / 1024 / 1024).toFixed(2)} MB · 点击可重新选择
                                     </p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center mx-auto shadow-sm">
+                                    <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center mx-auto shadow-none">
                                         <Upload className="w-7 h-7 text-gray-400" />
                                     </div>
                                     <p className="text-base font-semibold text-gray-700">拖拽文件至此或点击导入</p>
@@ -167,7 +167,7 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
                             className={clsx(
                                 'w-full flex items-center justify-center gap-2 px-6 py-4 text-base font-semibold rounded-xl transition-all',
                                 selectedFile
-                                    ? 'bg-sky-600 text-white hover:bg-sky-700 shadow-md hover:shadow-lg'
+                                    ? 'bg-brand-500 text-white hover:bg-brand-600 shadow-none hover:shadow-none'
                                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                             )}
                         >
@@ -177,21 +177,21 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
                     </div>
                 ) : parseError ? (
                     /* 解析失败 */
-                    <div className="bg-white border border-red-200 rounded-2xl p-8 shadow-sm">
+                    <div className="bg-white border border-[var(--color-danger-border)] rounded-2xl p-8 shadow-none">
                         <div className="flex items-center gap-3 mb-4">
-                            <AlertCircle className="w-6 h-6 text-red-500" />
+                            <AlertCircle className="w-6 h-6 text-danger" />
                             <div>
                                 <p className="font-semibold text-gray-900">解析失败</p>
                                 <p className="text-sm text-gray-500 truncate max-w-sm">{selectedFile?.name}</p>
                             </div>
                         </div>
-                        <div className="bg-red-50 text-red-700 p-4 rounded-lg text-sm mb-6 whitespace-pre-wrap">
+                        <div className="bg-[var(--color-danger-bg)] text-danger p-4 rounded-lg text-sm mb-6 whitespace-pre-wrap">
                             {parseError}
                         </div>
                         <div className="flex gap-3">
                             <button
                                 onClick={() => { setParseError(null); setIsProcessing(false); setTimeout(handleStart, 50); }}
-                                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-all"
+                                className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg shadow-none transition-all"
                             >
                                 重新解析
                             </button>
@@ -204,11 +204,11 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
+                    <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-none">
                         {/* 文件信息 */}
                         <div className="flex items-center gap-3 mb-8">
-                            <div className="w-10 h-10 bg-sky-50 rounded-xl flex items-center justify-center shrink-0">
-                                <FileText className="w-5 h-5 text-sky-600" />
+                            <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center shrink-0">
+                                <FileText className="w-5 h-5 text-brand-600" />
                             </div>
                             <div className="min-w-0 flex-1">
                                 <p className="text-sm font-semibold text-gray-900 truncate">{selectedFile?.name}</p>
@@ -224,16 +224,16 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
                                 return (
                                     <div key={idx} className="flex items-center gap-2">
                                         {done ? (
-                                            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                                            <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
                                         ) : active ? (
-                                            <Loader2 className="w-5 h-5 text-sky-500 animate-spin shrink-0" />
+                                            <Loader2 className="w-5 h-5 text-brand-500 animate-spin shrink-0" />
                                         ) : (
                                             <div className="w-5 h-5 rounded-full border-2 border-gray-200 shrink-0" />
                                         )}
                                         <span className={clsx(
                                             'text-sm',
-                                            done ? 'text-emerald-600 font-semibold'
-                                                : active ? 'text-sky-600 font-semibold animate-pulse'
+                                            done ? 'text-success font-semibold'
+                                                : active ? 'text-brand-600 font-semibold animate-pulse'
                                                 : 'text-gray-400'
                                         )}>
                                             {step.label}

@@ -340,10 +340,10 @@ export function FeedbackPage() {
   return (
     <>
       <div className="mx-auto min-h-full w-full max-w-7xl space-y-5 px-4 py-5 pb-10 md:px-8 md:py-6 md:pb-12">
-        <section className="rounded-3xl border border-white/80 bg-white p-5 shadow-lg md:p-6">
+        <section className="px-1">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+              <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-600">
                 <ShieldCheck className="h-4 w-4" />
                 邮件工单与愿望单
               </div>
@@ -352,14 +352,14 @@ export function FeedbackPage() {
                 提交后将通过邮件发送至后台配置的邮箱。请尽量在一条反馈中汇总相关信息，便于我们处理。
               </p>
             </div>
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
               <MessageSquarePlus className="h-7 w-7" />
             </div>
           </div>
         </section>
 
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <aside className="w-full shrink-0 rounded-3xl border border-white/80 bg-white p-4 shadow-lg lg:w-56 xl:w-64">
+          <aside className="w-full shrink-0 rounded-xl border border-border bg-white p-4 shadow-none lg:w-56 xl:w-64">
             <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">反馈类型</p>
             <nav className="flex flex-col gap-2">
               {sidebarItems.map((item) => {
@@ -372,12 +372,12 @@ export function FeedbackPage() {
                     className={[
                       "relative rounded-2xl border px-4 py-3 text-left transition-colors",
                       active
-                        ? "border-sky-200 bg-sky-50 text-sky-900"
+                        ? "border-brand-200 bg-brand-50 text-brand-900"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                     ].join(" ")}
                   >
                     {active ? (
-                      <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-blue-600" />
+                      <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-brand-500" />
                     ) : null}
                     <span className="block pl-2 text-sm font-semibold">{item.label}</span>
                     <span className="mt-1 block pl-2 text-xs text-slate-500">{item.description}</span>
@@ -387,7 +387,7 @@ export function FeedbackPage() {
             </nav>
           </aside>
 
-          <section className="min-w-0 flex-1 rounded-3xl border border-white/80 bg-white p-5 shadow-lg md:p-7">
+          <section className="min-w-0 flex-1 rounded-xl border border-border bg-white p-5 shadow-none md:p-7">
             <div className="mb-6 border-b border-slate-100 pb-5">
               <h2 className="text-xl font-semibold text-slate-950">{pageTitle}</h2>
               <p className="mt-1 text-sm text-slate-500">标有 * 的字段为必填。</p>
@@ -403,14 +403,14 @@ export function FeedbackPage() {
                 <label className="block">
                   <span className="text-sm font-semibold text-slate-700">
                     {overviewLabel}
-                    <span className="text-rose-500"> *</span>
+                    <span className="text-danger"> *</span>
                   </span>
                   <input
                     value={overview}
                     onChange={(e) => setOverview(e.target.value)}
                     maxLength={OVERVIEW_MAX}
                     placeholder={mode === "ticket" ? "简要概括问题" : "简要概括期望的新功能"}
-                    className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                    className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition-colors focus:border-brand-200 focus:ring-2 focus:ring-brand-200"
                   />
                   <p className="mt-1 text-right text-xs text-slate-400">
                     {overview.length}/{OVERVIEW_MAX}
@@ -420,7 +420,7 @@ export function FeedbackPage() {
                 <label className="block">
                   <span className="text-sm font-semibold text-slate-700">
                     {descriptionLabel}
-                    <span className="text-rose-500"> *</span>
+                    <span className="text-danger"> *</span>
                   </span>
                   <textarea
                     value={description}
@@ -432,7 +432,7 @@ export function FeedbackPage() {
                         ? "请描述您的问题，可粘贴图片或说明复现步骤"
                         : "请描述您希望新增的功能、使用场景与预期效果"
                     }
-                    className="mt-2 w-full resize-y rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                    className="mt-2 w-full resize-y rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none transition-colors focus:border-brand-200 focus:ring-2 focus:ring-brand-200"
                   />
                   <p className="mt-1 text-right text-xs text-slate-400">
                     {descriptionCount}/{DESCRIPTION_MAX}
@@ -442,7 +442,7 @@ export function FeedbackPage() {
                 <div>
                   <span className="text-sm font-semibold text-slate-700">附件</span>
                   <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800">
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">
                       <Upload className="h-4 w-4" />
                       添加附件
                       <input
@@ -472,7 +472,7 @@ export function FeedbackPage() {
                           <button
                             type="button"
                             onClick={() => removeFile(index)}
-                            className="shrink-0 text-xs font-semibold text-rose-600 hover:text-rose-700"
+                            className="shrink-0 text-xs font-semibold text-danger hover:text-danger"
                           >
                             移除
                           </button>
@@ -480,13 +480,13 @@ export function FeedbackPage() {
                       ))}
                     </ul>
                   ) : null}
-                  {fileError ? <p className="mt-2 text-sm text-rose-600">{fileError}</p> : null}
+                  {fileError ? <p className="mt-2 text-sm text-danger">{fileError}</p> : null}
                 </div>
 
                 <label className="block">
                   <span className="text-sm font-semibold text-slate-700">
                     联系方式（邮箱）
-                    <span className="text-rose-500"> *</span>
+                    <span className="text-danger"> *</span>
                   </span>
                   <input
                     type="email"
@@ -499,7 +499,7 @@ export function FeedbackPage() {
                       hasDefaultContactEmail ? resolvedDefaultContactEmail : "请输入您的联系邮箱"
                     }
                     autoComplete="email"
-                    className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                    className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition-colors focus:border-brand-200 focus:ring-2 focus:ring-brand-200"
                   />
                   {!hasDefaultContactEmail ? (
                     <p className="mt-1 text-xs text-slate-500">请输入您的联系邮箱</p>
@@ -507,16 +507,16 @@ export function FeedbackPage() {
                 </label>
 
                 {pageError ? (
-                  <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{pageError}</p>
+                  <p className="rounded-xl bg-[var(--color-danger-bg)] px-4 py-3 text-sm text-danger">{pageError}</p>
                 ) : null}
                 {successMessage ? (
-                  <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{successMessage}</p>
+                  <p className="rounded-xl bg-[var(--color-success-bg)] px-4 py-3 text-sm text-success">{successMessage}</p>
                 ) : null}
 
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto sm:min-w-[200px]"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-3.5 text-sm font-semibold text-white shadow-none  transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto sm:min-w-[200px]"
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   {submitting ? "提交中…" : "提交"}

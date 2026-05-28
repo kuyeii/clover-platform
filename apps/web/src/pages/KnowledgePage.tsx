@@ -23,28 +23,29 @@ import {
 } from "./knowledgeService";
 
 type KnowledgeStatus = "enabled" | "disabled" | "processing" | "error";
+type KnowledgeStatusFilter = "all" | KnowledgeStatus;
 
 const statusMeta: Record<KnowledgeStatus, { label: string; className: string }> = {
   enabled: {
     label: "已启用",
-    className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    className: "border-[var(--color-success-border)] bg-[var(--color-success-bg)] text-success",
   },
   disabled: {
     label: "未启用",
-    className: "bg-slate-100 text-slate-700 ring-slate-200",
+    className: "border-slate-200 bg-slate-50 text-slate-600",
   },
   processing: {
     label: "处理中",
-    className: "bg-sky-50 text-sky-700 ring-sky-100",
+    className: "border-[var(--color-info-border)] bg-[var(--color-info-bg)] text-brand-600",
   },
   error: {
     label: "异常",
-    className: "bg-rose-50 text-rose-700 ring-rose-100",
+    className: "border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] text-danger",
   },
 };
 
 const actionButtonClass =
-  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-white text-slate-500 transition-colors hover:bg-mist hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50";
 
 function resolveStatus(file: KnowledgeDocumentItem): KnowledgeStatus {
   const raw = `${file.indexing_status ?? ""} ${file.display_status ?? ""}`.toLowerCase();
@@ -61,7 +62,7 @@ function StatusBadge({ status }: { status: KnowledgeStatus }) {
   return (
     <span
       className={[
-        "inline-flex min-w-16 items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ring-1",
+        "inline-flex min-w-16 items-center justify-center whitespace-nowrap rounded-md border px-3 py-1 text-xs font-semibold",
         meta.className,
       ].join(" ")}
     >
@@ -96,6 +97,7 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 export function KnowledgePage() {
   const [documents, setDocuments] = useState<KnowledgeDocumentItem[]>([]);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<KnowledgeStatusFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -127,16 +129,36 @@ export function KnowledgePage() {
 
   const filteredDocuments = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    if (!keyword) return documents;
-    return documents.filter((item) =>
-      [item.name, item.description ?? "", item.data_source_type ?? ""].some((value) =>
-        value.toLowerCase().includes(keyword),
-      ),
-    );
-  }, [documents, query]);
+    return documents.filter((item) => {
+      const status = resolveStatus(item);
+      const matchesStatus = statusFilter === "all" || status === statusFilter;
+      const matchesKeyword =
+        !keyword ||
+        [item.name, item.description ?? "", item.data_source_type ?? ""].some((value) =>
+          value.toLowerCase().includes(keyword),
+        );
+      return matchesStatus && matchesKeyword;
+    });
+  }, [documents, query, statusFilter]);
 
-  const enabledCount = documents.filter((item) => resolveStatus(item) === "enabled").length;
-  const processingCount = documents.filter((item) => resolveStatus(item) === "processing").length;
+  const statusCounts = useMemo(
+    () =>
+      documents.reduce<Record<KnowledgeStatus, number>>(
+        (counts, item) => {
+          counts[resolveStatus(item)] += 1;
+          return counts;
+        },
+        { enabled: 0, disabled: 0, processing: 0, error: 0 },
+      ),
+    [documents],
+  );
+  const enabledCount = statusCounts.enabled;
+  const processingCount = statusCounts.processing;
+  const errorCount = statusCounts.error;
+  const latestUpdatedAt = useMemo(
+    () => Math.max(0, ...documents.map((item) => item.updated_at ?? item.created_at ?? 0)),
+    [documents],
+  );
 
   const handleFileUpload = async (file: File | null) => {
     if (!file) return;
@@ -220,161 +242,198 @@ export function KnowledgePage() {
   };
 
   return (
-    <div className="legacy-portal-ui mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-8">
-      <section className="rounded-2xl border border-white/80 bg-white p-6 shadow-lg">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold text-slate-950">知识库</h1>
-            <p className="text-sm leading-6 text-slate-600">
-              当前操作的是 Dify 共享 Dataset，标书生成和 RAG 问答共用同一个知识库。
-            </p>
-          </div>
+    <div className="legacy-portal-ui mx-auto w-full max-w-7xl space-y-5 px-4 py-6 md:px-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-3xl font-semibold text-slate-950">知识库</h1>
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void reload()}
             disabled={loading}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className={["h-4 w-4", loading ? "animate-spin" : ""].join(" ")} />
             刷新
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setUploadMode("file");
+              fileInputRef.current?.click();
+            }}
+            disabled={submitting}
+            className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-brand-200 bg-brand-50 px-4 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-100 disabled:opacity-50"
+          >
+            {submitting && uploadMode === "file" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            上传资料
+          </button>
         </div>
+      </header>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">文档数</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-950">{documents.length}</p>
+      <section className="rounded-2xl border border-slate-200 bg-white px-5 py-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_repeat(5,minmax(88px,112px))] lg:items-center">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-slate-950">企业共享知识库</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">资料会自动解析为可检索知识，用于问答、检索和标书生成。</p>
           </div>
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">已启用</p>
-            <p className="mt-2 text-2xl font-semibold text-emerald-700">{enabledCount}</p>
-          </div>
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">处理中</p>
-            <p className="mt-2 text-2xl font-semibold text-sky-700">{processingCount}</p>
-          </div>
+          {[
+            { label: "资料", value: documents.length, className: "text-brand-600" },
+            { label: "可检索", value: enabledCount, className: "text-success" },
+            { label: "处理中", value: processingCount, className: "text-brand-600" },
+            { label: "异常", value: errorCount, className: "text-danger" },
+            { label: "最近更新", value: latestUpdatedAt ? formatTimestamp(latestUpdatedAt) : "--", className: "text-slate-600" },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0">
+              <p className="text-xs font-medium text-slate-500">{item.label}</p>
+              <p className={["mt-2 truncate text-xl font-semibold", item.className].join(" ")}>{item.value}</p>
+            </div>
+          ))}
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/80 bg-white p-5 shadow-lg">
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setUploadMode("file")}
-            className={[
-              "inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium ring-1",
-              uploadMode === "file"
-                ? "bg-sky-50 text-sky-700 ring-sky-100"
-                : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
-            ].join(" ")}
-          >
-            <Upload className="h-4 w-4" />
-            上传文件
-          </button>
-          <button
-            type="button"
-            onClick={() => setUploadMode("text")}
-            className={[
-              "inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium ring-1",
-              uploadMode === "text"
-                ? "bg-sky-50 text-sky-700 ring-sky-100"
-                : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
-            ].join(" ")}
-          >
-            <FileText className="h-4 w-4" />
-            新建文本
-          </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        disabled={submitting}
+        onChange={(event) => void handleFileUpload(event.target.files?.[0] ?? null)}
+        className="sr-only"
+      />
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+        <div className="flex flex-col gap-5 border-b border-slate-100 pb-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold text-slate-950">资料管理</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">统一查看、搜索和维护已进入知识库的资料。</p>
+            </div>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜索资料"
+                  className="h-10 w-full rounded-lg border border-border bg-white pl-10 pr-4 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 sm:w-56"
+                />
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as KnowledgeStatusFilter)}
+                className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+                aria-label="资料状态筛选"
+              >
+                <option value="all">全部状态</option>
+                <option value="enabled">可检索</option>
+                <option value="processing">处理中</option>
+                <option value="error">异常</option>
+                <option value="disabled">未启用</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => setUploadMode((current) => (current === "text" ? "file" : "text"))}
+                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-brand-200 bg-brand-50 px-4 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-100"
+              >
+                {uploadMode === "text" ? <X className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                {uploadMode === "text" ? "收起" : "新增"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: "all" as const, label: "全部", count: documents.length, className: "border-slate-200 bg-slate-50 text-slate-600" },
+              { value: "enabled" as const, label: "可检索", count: enabledCount, className: "border-[var(--color-success-border)] bg-[var(--color-success-bg)] text-success" },
+              { value: "processing" as const, label: "处理中", count: processingCount, className: "border-[var(--color-info-border)] bg-[var(--color-info-bg)] text-brand-600" },
+              { value: "error" as const, label: "异常", count: errorCount, className: "border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] text-danger" },
+            ].map((item) => {
+              const active = statusFilter === item.value;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setStatusFilter(item.value)}
+                  className={[
+                    "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border px-3 text-xs font-semibold transition-colors",
+                    active ? item.className : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  {item.label} {item.count}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {uploadMode === "file" ? (
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <input
-              ref={fileInputRef}
-              type="file"
-              disabled={submitting}
-              onChange={(event) => void handleFileUpload(event.target.files?.[0] ?? null)}
-              className="block w-full rounded-lg border border-slate-200 bg-white text-sm text-slate-700 file:mr-4 file:h-10 file:border-0 file:bg-slate-100 file:px-4 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200 disabled:opacity-50"
-            />
-            {submitting ? (
-              <span className="inline-flex items-center gap-2 whitespace-nowrap text-sm text-sky-700">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                入库中
-              </span>
-            ) : null}
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-3">
+        {uploadMode === "text" ? (
+          <div className="mt-5 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <input
               value={textName}
               onChange={(event) => setTextName(event.target.value)}
               placeholder="文档名称"
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-slate-700 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
             <textarea
               value={textBody}
               onChange={(event) => setTextBody(event.target.value)}
               placeholder="正文内容"
               rows={5}
-              className="resize-y rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="resize-y rounded-lg border border-border bg-white px-3 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
             <button
               type="button"
               onClick={() => void handleTextCreate()}
               disabled={submitting}
-              className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50"
+              className="inline-flex h-10 w-fit items-center gap-2 whitespace-nowrap rounded-lg border border-brand-200 bg-brand-50 px-4 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-100 disabled:opacity-50"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               提交入库
             </button>
           </div>
-        )}
+        ) : null}
 
         {error ? (
-          <div className="mt-4 rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <div className="mt-4 rounded-lg border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-4 py-3 text-sm text-danger">
             {error}
           </div>
         ) : null}
-      </section>
-
-      <section className="rounded-2xl border border-white/80 bg-white p-4 shadow-lg md:p-6">
-        <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-xl font-semibold text-slate-950">文档列表</h2>
-          <label className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索文档"
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-300 focus:ring-2 focus:ring-sky-100 sm:w-64"
-            />
-          </label>
-        </div>
 
         <div className="mt-5 hidden overflow-hidden rounded-xl border border-slate-200 lg:block">
           <table className="min-w-full table-fixed divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
-                <th className="w-2/5 px-5 py-4 text-left text-xs font-semibold uppercase text-slate-500">文档</th>
-                <th className="w-24 px-5 py-4 text-left text-xs font-semibold uppercase text-slate-500">分段</th>
-                <th className="w-28 px-5 py-4 text-left text-xs font-semibold uppercase text-slate-500">Tokens</th>
-                <th className="w-32 px-5 py-4 text-left text-xs font-semibold uppercase text-slate-500">更新时间</th>
-                <th className="w-28 px-5 py-4 text-center text-xs font-semibold uppercase text-slate-500">状态</th>
-                <th className="w-36 px-5 py-4 text-center text-xs font-semibold uppercase text-slate-500">操作</th>
+                <th className="w-2/5 px-5 py-4 text-left text-xs font-semibold text-slate-500">资料名称</th>
+                <th className="w-28 px-5 py-4 text-center text-xs font-semibold text-slate-500">状态</th>
+                <th className="w-36 px-5 py-4 text-left text-xs font-semibold text-slate-500">内容量</th>
+                <th className="w-32 px-5 py-4 text-left text-xs font-semibold text-slate-500">更新时间</th>
+                <th className="w-36 px-5 py-4 text-center text-xs font-semibold text-slate-500">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">
-                    <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-sky-600" />
+                  <td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-500">
+                    <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-brand-600" />
                     加载中
                   </td>
                 </tr>
               ) : null}
               {!loading && filteredDocuments.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">
-                    暂无文档。
+                  <td colSpan={5} className="px-5 py-14 text-center text-sm text-slate-500">
+                    <FileText className="mx-auto mb-4 h-12 w-12 rounded-xl border border-slate-200 p-3 text-slate-300" />
+                    <p className="text-base font-semibold text-slate-900">暂无资料</p>
+                    <p className="mt-2">上传企业文件后，系统会自动解析并进入知识库。</p>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => {
+                        setUploadMode("file");
+                        fileInputRef.current?.click();
+                      }}
+                      className="mt-4 inline-flex h-10 items-center justify-center whitespace-nowrap rounded-lg border border-brand-200 bg-brand-50 px-4 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-100 disabled:opacity-50"
+                    >
+                      上传第一个资料
+                    </button>
                   </td>
                 </tr>
               ) : null}
@@ -389,13 +448,14 @@ export function KnowledgePage() {
                             {file.description || file.data_source_type || file.id}
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-600">{file.segment_count ?? "-"}</td>
-                        <td className="px-5 py-4 text-sm text-slate-600">{file.tokens ?? "-"}</td>
-                        <td className="px-5 py-4 text-sm text-slate-600">
-                          {formatTimestamp(file.updated_at ?? file.created_at)}
-                        </td>
                         <td className="px-5 py-4 text-center">
                           <StatusBadge status={status} />
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-600">
+                          {file.segment_count ?? "-"} 分段 / {file.tokens ?? "-"} tokens
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-600">
+                          {formatTimestamp(file.updated_at ?? file.created_at)}
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex items-center justify-center gap-2">
@@ -443,13 +503,26 @@ export function KnowledgePage() {
         <div className="mt-5 space-y-3 lg:hidden">
           {loading ? (
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
-              <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-sky-600" />
+              <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-brand-600" />
               加载中
             </div>
           ) : null}
           {!loading && filteredDocuments.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
-              暂无文档。
+              <FileText className="mx-auto mb-4 h-12 w-12 rounded-xl border border-slate-200 p-3 text-slate-300" />
+              <p className="text-base font-semibold text-slate-900">暂无资料</p>
+              <p className="mt-2">上传企业文件后，系统会自动解析并进入知识库。</p>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  setUploadMode("file");
+                  fileInputRef.current?.click();
+                }}
+                className="mt-4 inline-flex h-10 items-center justify-center whitespace-nowrap rounded-lg border border-brand-200 bg-brand-50 px-4 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-100 disabled:opacity-50"
+              >
+                上传第一个资料
+              </button>
             </div>
           ) : null}
           {!loading
@@ -483,7 +556,7 @@ export function KnowledgePage() {
 
       {selectedDetail ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
-          <section className="max-h-full w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <section className="max-h-full w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-white shadow-panel">
             <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div className="min-w-0">
                 <h3 className="truncate text-lg font-semibold text-slate-950">

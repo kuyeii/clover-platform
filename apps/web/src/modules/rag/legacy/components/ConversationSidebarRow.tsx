@@ -122,16 +122,17 @@ export function ConversationSidebarRow({
     <>
       <div
         className={[
-          "group relative flex min-h-[74px] items-start gap-3 rounded-xl px-3 py-3 transition-colors duration-200",
+          "group relative flex min-h-16 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors duration-200",
           active
-            ? "bg-[#F2F7FD] text-ink"
-            : "text-slate-700 hover:bg-[#F7FBFF]",
+            ? "bg-brand-50 text-brand-900"
+            : "text-slate-700 hover:bg-surface-soft",
         ].join(" ")}
       >
         <span
           aria-hidden
           className={[
-            "mt-[7px] h-2.5 w-2.5 shrink-0 rounded-full bg-brand-500 transition-colors",
+            "h-2 w-2 shrink-0 rounded-full transition-colors",
+            active ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-500",
           ].join(" ")}
         />
         <button
@@ -139,16 +140,21 @@ export function ConversationSidebarRow({
           onClick={onSelect}
           className="min-w-0 flex-1 text-left"
         >
-          <span className="block truncate text-[15px] font-semibold leading-snug text-ink">
+          <span
+            className={[
+              "block truncate text-sm font-medium leading-tight",
+              active ? "text-brand-900" : "text-slate-800",
+            ].join(" ")}
+          >
             {label}
           </span>
           {time ? (
-            <span className="mt-2 block truncate text-[14px] font-medium leading-none text-brand-500">
+            <span className="mt-1 block truncate text-xs leading-none text-muted">
               {time}
             </span>
           ) : null}
         </button>
-        <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           {pinned ? (
             <Pin
               aria-hidden
@@ -172,7 +178,7 @@ export function ConversationSidebarRow({
               setMenuOpen((v) => !v);
             }}
             className={[
-              "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition",
+              "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors",
               "opacity-0 hover:bg-brand-50 hover:text-brand-600 group-hover:opacity-100",
               menuOpen ? "bg-brand-50 text-brand-600 opacity-100" : "",
             ].join(" ")}
@@ -187,7 +193,7 @@ export function ConversationSidebarRow({
             <div
               ref={menuPanelRef}
               role="menu"
-              className="fixed z-[300] w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1.5 shadow-2xl shadow-slate-950/15"
+              className="fixed z-[300] w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1.5 shadow-panel "
               style={{
                 top: menuPos?.top ?? 0,
                 left: menuPos?.left ?? 0,
@@ -223,13 +229,13 @@ export function ConversationSidebarRow({
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
+                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-danger transition hover:bg-[var(--color-danger-bg)]"
                 onClick={() => {
                   setMenuOpen(false);
                   onDelete();
                 }}
               >
-                <Trash2 className="h-4 w-4 shrink-0 text-red-500" aria-hidden />
+                <Trash2 className="h-4 w-4 shrink-0 text-danger" aria-hidden />
                 删除
               </button>
             </div>,

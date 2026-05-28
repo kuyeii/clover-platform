@@ -3,12 +3,12 @@ import { createPortal } from "react-dom";
 import { LayoutGroup, motion } from "framer-motion";
 import {
   BookOpen,
+  ChevronLeft,
   Globe2,
   LayoutGrid,
   LogOut,
   MessageSquare,
   Settings2,
-  Undo2,
   UserRound,
 } from "lucide-react";
 
@@ -101,20 +101,13 @@ function ReturnOverviewButton({
         tabIndex={visible ? 0 : -1}
         onClick={handleClick}
         className={[
-          "relative z-10 inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+          "relative z-10 inline-flex h-7 w-7 items-center justify-center text-center leading-none",
           visible
-            ? "pointer-events-auto text-blue-500 hover:text-blue-600"
+            ? "pointer-events-auto text-brand-500"
             : "pointer-events-none text-slate-300",
         ].join(" ")}
       >
-        <motion.span
-          initial={false}
-          whileHover={{ x: -1 }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
-          className="inline-flex"
-        >
-          <Undo2 className="h-4 w-4 md:h-5 md:w-5" />
-        </motion.span>
+        <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={2.2} />
       </a>
     </motion.span>
   );
@@ -161,7 +154,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
             onClick={() => setAccountPanelOpen(false)}
           >
             <section
-              className="relative max-h-[calc(100vh-32px)] w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-950/20"
+              className="relative max-h-[calc(100vh-32px)] w-full max-w-md rounded-xl border border-border bg-white p-5 shadow-panel"
               onClick={(event) => event.stopPropagation()}
               role="dialog"
               aria-modal="true"
@@ -169,7 +162,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
             >
               <button
                 type="button"
-                className="absolute -right-3 -top-3 z-10 inline-grid h-8 w-8 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-lg transition hover:bg-slate-100 hover:text-slate-950"
+                className="absolute -right-3 -top-3 z-10 inline-grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-white text-muted shadow-panel transition hover:bg-mist hover:text-ink"
                 onClick={() => setAccountPanelOpen(false)}
                 aria-label="关闭用户设置"
               >
@@ -185,8 +178,8 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
       : null;
 
   return (
-    <div className="legacy-portal-ui flex h-full min-h-screen flex-col bg-gradient-to-b from-white via-slate-50 to-sky-50 text-slate-900">
-      <header className="sticky top-0 z-20 w-full border-b border-slate-100 bg-white/95 shadow-sm backdrop-blur-sm">
+    <div className="legacy-portal-ui flex h-full min-h-screen flex-col bg-mist text-ink">
+      <header className="sticky top-0 z-20 w-full border-b border-border bg-white/95 shadow-panel backdrop-blur-sm">
         <div className="flex min-h-14 w-full items-center gap-2 px-3 py-1 sm:gap-3 sm:px-4 md:px-5 md:py-0 lg:gap-5 lg:px-6 2xl:gap-8 2xl:px-8">
           <a
             className="flex min-w-0 shrink-0 items-center"
@@ -217,7 +210,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                     className={[
                       "inline-flex min-w-0 items-center justify-center gap-2 transition-colors",
                       shouldShowPrimaryIndicator
-                        ? "text-blue-600"
+                        ? "text-brand-500"
                         : activeModule
                           ? "text-slate-700 hover:text-slate-900"
                           : "text-slate-600 hover:text-slate-900",
@@ -227,13 +220,13 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                     <ResponsiveNavLabel label={primaryNavLabel} active={shouldShowPrimaryIndicator} />
                   </a>
                 </motion.span>
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 md:right-2">
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 md:right-1">
                   <ReturnOverviewButton visible={isEmbeddedModuleView} navigate={navigate} />
                 </div>
                 {shouldShowPrimaryIndicator ? (
                   <motion.span
                     layoutId="portal-nav-indicator"
-                    className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-blue-600"
+                    className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-brand-500"
                   />
                 ) : null}
               </motion.div>
@@ -248,7 +241,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                     className={[
                       "relative inline-flex h-9 shrink-0 items-center justify-center gap-2 px-1 text-sm font-semibold transition-[width,color] md:h-14 md:text-base xl:px-3 xl:text-lg",
                       isActive ? activeNavItemWidthClass : navItemWidthClass,
-                      isActive ? "text-blue-600" : "text-slate-600 hover:text-slate-900",
+                      isActive ? "text-brand-500" : "text-slate-600 hover:text-slate-900",
                     ].join(" ")}
                   >
                     <item.icon className="h-5 w-5 md:h-6 md:w-6" />
@@ -256,7 +249,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                     {isActive ? (
                       <motion.span
                         layoutId="portal-nav-indicator"
-                        className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-blue-600"
+                        className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-brand-500"
                       />
                     ) : null}
                   </a>
@@ -272,13 +265,13 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                 <button
                   type="button"
                   onClick={() => setAccountPanelOpen((open) => !open)}
-                  className="inline-flex max-w-48 items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="inline-flex max-w-48 items-center gap-2 rounded-full border border-border bg-white px-2 py-1 shadow-none transition-colors hover:bg-mist focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   title={`当前用户：${userDisplayName}`}
                   aria-label="打开用户设置"
                   aria-expanded={accountPanelOpen}
                 >
                   <span
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500 text-xs font-bold text-white"
                     aria-hidden="true"
                   >
                     <UserRound className="h-4 w-4" />
@@ -290,7 +283,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-mist hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   aria-label="退出登录"
                 >
                   <LogOut className="h-4 w-4" aria-hidden="true" />
@@ -302,7 +295,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
       </header>
 
       <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">{children}</div>
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
       </main>
       {accountDialog}
     </div>

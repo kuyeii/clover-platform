@@ -10,8 +10,8 @@ import { splitTextBySearchQuery } from "@/lib/searchText";
 
 function markClassForVariant(variant: "assistant" | "user"): string {
   return variant === "user"
-    ? "rounded-sm bg-amber-300 px-0.5 font-medium text-neutral-900"
-    : "rounded-sm bg-amber-300/95 px-0.5 font-medium text-neutral-900";
+    ? "rounded-sm bg-[var(--color-warning-bg)] px-0.5 font-medium text-neutral-900"
+    : "rounded-sm bg-[var(--color-warning-bg)] px-0.5 font-medium text-neutral-900";
 }
 
 function splitToMarks(text: string, query: string, variant: "assistant" | "user"): ReactNode {

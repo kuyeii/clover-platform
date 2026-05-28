@@ -20,8 +20,8 @@ type FactoryOpts = {
 
 function shellClass(variant: Variant): string {
   return variant === "assistant"
-    ? "overflow-hidden rounded-xl border border-slate-200/90 bg-slate-100/90 shadow-sm"
-    : "overflow-hidden rounded-xl border border-white/20 bg-black/25 shadow-sm";
+    ? "overflow-hidden rounded-xl border border-slate-200/90 bg-slate-100/90 shadow-none"
+    : "overflow-hidden rounded-xl border border-white/20 bg-black/25 shadow-none";
 }
 
 function headerClass(variant: Variant): string {
@@ -126,8 +126,8 @@ export function buildMarkdownCopyChromeComponents(opts: FactoryOpts): Pick<Compo
               role="tooltip"
               className={
                 variant === "assistant"
-                  ? "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-md transition-opacity duration-150 group-hover/mcopy:opacity-100"
-                  : "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-xs font-medium text-ink opacity-0 shadow-md transition-opacity duration-150 group-hover/mcopy:opacity-100"
+                  ? "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-none transition-opacity duration-150 group-hover/mcopy:opacity-100"
+                  : "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-xs font-medium text-ink opacity-0 shadow-none transition-opacity duration-150 group-hover/mcopy:opacity-100"
               }
             >
               复制
@@ -162,8 +162,8 @@ export function buildMarkdownCopyChromeComponents(opts: FactoryOpts): Pick<Compo
               role="tooltip"
               className={
                 variant === "assistant"
-                  ? "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-md transition-opacity duration-150 group-hover/tcopy:opacity-100"
-                  : "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-xs font-medium text-ink opacity-0 shadow-md transition-opacity duration-150 group-hover/tcopy:opacity-100"
+                  ? "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-none transition-opacity duration-150 group-hover/tcopy:opacity-100"
+                  : "pointer-events-none absolute right-0 top-full z-20 mt-1.5 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-xs font-medium text-ink opacity-0 shadow-none transition-opacity duration-150 group-hover/tcopy:opacity-100"
               }
             >
               复制

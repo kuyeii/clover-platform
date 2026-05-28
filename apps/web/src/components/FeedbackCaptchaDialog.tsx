@@ -31,14 +31,14 @@ export function FeedbackCaptchaDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="feedback-captcha-title"
-        className="w-full max-w-md overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-white shadow-panel"
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
           <div>
             <h2 id="feedback-captcha-title" className="text-lg font-semibold text-slate-950">
               验证码
             </h2>
-            <p className="mt-1 text-sm text-amber-800">{hint}</p>
+            <p className="mt-1 text-sm text-warning">{hint}</p>
           </div>
           <button
             type="button"
@@ -53,7 +53,7 @@ export function FeedbackCaptchaDialog({
 
         <div className="space-y-4 px-6 py-6">
           {code ? (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-4">
+            <div className="rounded-xl border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-4 py-4">
               <p className="text-xs font-medium text-slate-500">请对照输入以下数字</p>
               <p className="mt-2 font-mono text-3xl font-bold tracking-[0.35em] text-slate-900">{code}</p>
             </div>
@@ -68,7 +68,7 @@ export function FeedbackCaptchaDialog({
             type="button"
             onClick={onRefresh}
             disabled={loadingCaptcha || submitting}
-            className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-50 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-warning-border)] bg-white px-3 py-2 text-xs font-semibold text-warning transition-colors hover:bg-[var(--color-warning-bg)] disabled:opacity-60"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loadingCaptcha ? "animate-spin" : ""}`} />
             刷新验证码
@@ -77,7 +77,7 @@ export function FeedbackCaptchaDialog({
           <label className="block">
             <span className="text-sm font-semibold text-slate-700">
               输入验证码
-              <span className="text-rose-500"> *</span>
+              <span className="text-danger"> *</span>
             </span>
             <input
               value={captchaInput}
@@ -87,12 +87,12 @@ export function FeedbackCaptchaDialog({
               autoFocus
               placeholder="5 位数字"
               disabled={submitting}
-              className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-4 font-mono text-lg tracking-widest outline-none transition-colors focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50"
+              className="mt-2 h-11 w-full rounded-xl border border-border px-4 font-mono text-lg tracking-widest outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-200 disabled:bg-slate-50"
             />
           </label>
 
           {error ? (
-            <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>
+            <p className="rounded-xl border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-4 py-3 text-sm text-danger">{error}</p>
           ) : null}
         </div>
 
@@ -109,7 +109,7 @@ export function FeedbackCaptchaDialog({
             type="button"
             onClick={onConfirm}
             disabled={submitting || !code || captchaInput.length !== 5}
-            className="inline-flex min-w-[120px] items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex min-w-[120px] items-center justify-center gap-2 rounded-full bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-none transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {submitting ? "提交中…" : "确认提交"}

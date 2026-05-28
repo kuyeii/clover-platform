@@ -30,7 +30,7 @@ import { diagramService } from '../services/diagramService';
 
 export const CONTENT_PREVIEW_PROSE_CLASS =
     'content-editor-prose prose prose-sm prose-sky max-w-none text-gray-700 ' +
-    'prose-headings:font-bold prose-p:leading-relaxed prose-a:text-sky-600 ' +
+    'prose-headings:font-bold prose-p:leading-relaxed prose-a:text-brand-600 ' +
     'prose-table:border-collapse prose-td:border prose-td:border-gray-200 prose-td:p-2 ' +
     'prose-th:border prose-th:border-gray-300 prose-th:bg-gray-50 prose-th:p-2 prose-img:max-w-full';
 
@@ -165,18 +165,18 @@ function DiagramRenderer({ node }: NodeViewProps) {
 
     return (
         <NodeViewWrapper>
-            <div className="my-4 rounded-xl border border-blue-100 overflow-hidden shadow-sm bg-white">
+            <div className="my-4 rounded-xl border border-brand-200 overflow-hidden shadow-none bg-white">
                 {/* 标题栏 */}
-                <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-blue-50 to-slate-50 border-b border-blue-100">
+                <div className="flex items-center justify-between px-4 py-2 bg-brand-50 border-b border-brand-200">
                     <div className="flex items-center gap-2">
-                        <LayoutDashboard className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span className="text-xs font-semibold text-blue-700">{title || typeLabel}</span>
-                        <span className="text-xs text-blue-400 bg-blue-50 px-1.5 py-0.5 rounded">{typeLabel}</span>
+                        <LayoutDashboard className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+                        <span className="text-xs font-semibold text-brand-600">{title || typeLabel}</span>
+                        <span className="text-xs text-brand-500 bg-brand-50 px-1.5 py-0.5 rounded">{typeLabel}</span>
                     </div>
                     <div className="flex items-center gap-1">
                         <button onClick={handleCopy} title="复制 SVG 代码"
                             className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-                            {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                         <button onClick={() => setFullscreen(true)} title="全屏查看"
                             className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
@@ -196,7 +196,7 @@ function DiagramRenderer({ node }: NodeViewProps) {
             {fullscreen && (
                 <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6"
                     onClick={() => setFullscreen(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-auto p-6"
+                    <div className="bg-white rounded-2xl shadow-panel w-full max-w-6xl max-h-[90vh] overflow-auto p-6"
                         onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-base font-bold text-gray-900">{title}</h3>
@@ -405,12 +405,12 @@ function ToolbarButton({ onClick, active, disabled, title, children }: {
                 onMouseEnter={() => { timerRef.current = setTimeout(() => setShowTip(true), 400); }}
                 onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); setShowTip(false); }}
                 className={clsx('p-1.5 rounded-md transition-colors',
-                    active ? 'bg-sky-100 text-sky-700' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700',
+                    active ? 'bg-brand-50 text-brand-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700',
                     disabled && 'opacity-30 cursor-not-allowed')}>
                 {children}
             </button>
             {showTip && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 bg-gray-800 text-white text-xs rounded whitespace-nowrap pointer-events-none z-50 shadow-lg">
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 bg-gray-800 text-white text-xs rounded whitespace-nowrap pointer-events-none z-50 shadow-none">
                     {title}
                     <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-gray-800" />
                 </div>
@@ -428,7 +428,7 @@ function ImageDialog({ onConfirm, onClose }: { onConfirm: (url: string, alt: str
     const [alt, setAlt] = useState('');
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-panel w-full max-w-sm mx-4 overflow-hidden">
                 <div className="px-5 pt-5 pb-4 border-b border-gray-100">
                     <h3 className="text-base font-bold text-gray-900">插入图片</h3>
                 </div>
@@ -438,20 +438,20 @@ function ImageDialog({ onConfirm, onClose }: { onConfirm: (url: string, alt: str
                         <input autoFocus type="text" value={url} onChange={e => setUrl(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter' && url.trim()) { onConfirm(url.trim(), alt.trim()); onClose(); } }}
                             placeholder="https://example.com/image.png"
-                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none" />
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-200 outline-none" />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-gray-500 mb-1">描述文字（可选）</label>
                         <input type="text" value={alt} onChange={e => setAlt(e.target.value)}
                             placeholder="图片说明"
-                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none" />
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-200 outline-none" />
                     </div>
                 </div>
                 <div className="px-5 pb-5 flex gap-3">
                     <button onClick={onClose} className="flex-1 px-4 py-2 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">取消</button>
                     <button onClick={() => { if (url.trim()) { onConfirm(url.trim(), alt.trim()); onClose(); } }}
                         disabled={!url.trim()}
-                        className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-sky-600 hover:bg-sky-700 transition-colors disabled:opacity-40">插入</button>
+                        className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-brand-500 hover:bg-brand-600 transition-colors disabled:opacity-40">插入</button>
                 </div>
             </div>
         </div>
@@ -588,7 +588,7 @@ export function ContentEditor({ content, onChange, readOnly = false, className, 
         inMenu ? (
             <button key={key} type="button" onClick={() => { btn.onClick(); setShowMoreMenu(false); }}
                 className={clsx('flex items-center gap-2.5 w-full px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-left',
-                    btn.active && 'bg-sky-50 text-sky-700')}>
+                    btn.active && 'bg-brand-50 text-brand-600')}>
                 {btn.icon}<span>{btn.title}</span>
             </button>
         ) : (
@@ -623,7 +623,7 @@ export function ContentEditor({ content, onChange, readOnly = false, className, 
                                 <MoreHorizontal className="w-4 h-4" />
                             </button>
                             {showMoreMenu && (
-                                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-1.5 z-50 min-w-[140px]">
+                                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-none p-1.5 z-50 min-w-[140px]">
                                     {overflowBtns.map((btn, i) => renderBtn(btn, `ov${i}`, true))}
                                 </div>
                             )}

@@ -20,10 +20,10 @@ export function AppUsageBadge({ usage }: AppUsageBadgeProps) {
   return (
     <div
       className={[
-        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm backdrop-blur-sm",
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-none",
         usage.inUseByOthers
-          ? "border-amber-200 bg-amber-50/95 text-amber-700"
-          : "border-sky-200 bg-sky-50/95 text-sky-700",
+          ? "border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-warning"
+          : "border-[var(--color-info-border)] bg-[var(--color-info-bg)] text-brand-600",
       ].join(" ")}
       title={usage.userNames.join("、")}
     >

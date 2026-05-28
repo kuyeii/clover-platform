@@ -77,12 +77,12 @@ export function KnowledgeHub() {
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 w-full mt-6 h-[850px] flex flex-col">
+        <div className="bg-white rounded-xl shadow-none border border-gray-100 p-6 w-full mt-6 h-[850px] flex flex-col">
             {/* 1. Header */}
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center">
-                        <Database className="w-6 h-6 mr-2 text-sky-500" />
+                        <Database className="w-6 h-6 mr-2 text-brand-500" />
                         知识库看板
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">
@@ -96,8 +96,8 @@ export function KnowledgeHub() {
                     className={clsx(
                         "inline-flex items-center px-5 py-2.5 text-sm font-medium rounded-lg transition-all",
                         isSyncing
-                            ? "bg-sky-50 text-sky-600 cursor-not-allowed border border-sky-100"
-                            : "bg-sky-600 text-white hover:bg-sky-700 shadow-sm"
+                            ? "bg-brand-50 text-brand-600 cursor-not-allowed border border-brand-200"
+                            : "bg-brand-500 text-white hover:bg-brand-600 shadow-none"
                     )}
                 >
                     <RefreshCw className={clsx("w-4 h-4 mr-2", isSyncing && "animate-spin")} />
@@ -133,7 +133,7 @@ export function KnowledgeHub() {
                                 <tr>
                                     <td colSpan={6} className="px-5 py-16 text-center">
                                         <div className="inline-flex flex-col items-center justify-center">
-                                            <RefreshCw className="w-8 h-8 text-sky-500 animate-spin mb-3" />
+                                            <RefreshCw className="w-8 h-8 text-brand-500 animate-spin mb-3" />
                                             <p className="text-sm font-medium text-gray-500">正在获取知识库状态...</p>
                                         </div>
                                     </td>
@@ -149,7 +149,7 @@ export function KnowledgeHub() {
                                     <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors">
                                         <td className="px-5 py-4">
                                             <div className="flex items-center text-sm font-medium text-gray-700">
-                                                <FileText className="w-4 h-4 mr-2 text-sky-600/70" />
+                                                <FileText className="w-4 h-4 mr-2 text-brand-600/70" />
                                                 {doc.name}
                                             </div>
                                         </td>
@@ -161,19 +161,19 @@ export function KnowledgeHub() {
                                         </td>
                                         <td className="px-5 py-4 text-center">
                                             {doc.status === 'success' && (
-                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-green-50 text-green-700">
+                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-[var(--color-success-bg)] text-success">
                                                     <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
                                                     启用中
                                                 </span>
                                             )}
                                             {doc.status === 'indexing' && (
-                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-sky-50 text-sky-700">
+                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-brand-50 text-brand-600">
                                                     <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" />
                                                     处理中...
                                                 </span>
                                             )}
                                             {doc.status === 'failed' && (
-                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-red-50 text-red-700">
+                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-[var(--color-danger-bg)] text-danger">
                                                     <XCircle className="w-3.5 h-3.5 mr-1" />
                                                     失败
                                                 </span>
@@ -187,10 +187,10 @@ export function KnowledgeHub() {
                                                 onClick={() => handleSyncSingle(doc.id, doc.name)}
                                                 disabled={syncingDocs.has(doc.id) || doc.status === 'indexing'}
                                                 className={clsx(
-                                                    "inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md transition-all shadow-sm",
+                                                    "inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md transition-all shadow-none",
                                                     (syncingDocs.has(doc.id) || doc.status === 'indexing')
                                                         ? "bg-gray-100 text-gray-400 cursor-not-allowed border-transparent"
-                                                        : "bg-white border border-gray-200 text-sky-600 hover:bg-sky-50 hover:border-sky-200"
+                                                        : "bg-white border border-gray-200 text-brand-600 hover:bg-brand-50 hover:border-brand-200"
                                                 )}
                                                 title="重新同步该文件到知识库"
                                             >

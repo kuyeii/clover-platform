@@ -41,7 +41,7 @@ const userClass =
   "prose-code:rounded-md prose-code:bg-white/15 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.9em] prose-code:before:content-none prose-code:after:content-none " +
   "[&_pre_code]:m-0 [&_pre_code]:rounded-none [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:shadow-none " +
   "prose-pre:bg-black/25 prose-pre:text-slate-100 prose-pre:rounded-xl prose-pre:px-3 prose-pre:py-2 " +
-  "prose-a:text-sky-300 prose-a:underline prose-a:decoration-sky-300/50 " +
+  "prose-a:text-brand-500 prose-a:underline prose-a:decoration-brand-200 " +
   "prose-table:text-sm prose-table:border-collapse " +
   "prose-th:border prose-th:border-white/25 prose-th:px-3 prose-th:py-2.5 prose-th:align-top " +
   "prose-td:border prose-td:border-white/25 prose-td:px-3 prose-td:py-2.5 prose-td:align-top " +

@@ -102,7 +102,7 @@ export function PdfPreview({ pdfUrl, fileName, collapsed, onToggleCollapse }: Pd
                     ) : error ? (
                         // 错误状态
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-500">
-                            <X className="w-8 h-8 text-red-500/50" />
+                            <X className="w-8 h-8 text-danger/50" />
                             <p className="text-sm text-center px-4">
                                 PDF 预览加载失败<br />
                                 <span className="text-gray-400">可能是 DOCX 转换尚未完成</span>
