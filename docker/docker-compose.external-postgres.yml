@@ -1,0 +1,57 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: clover-api
+    restart: unless-stopped
+    env_file:
+      - path: ../.env.external-postgres
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      POSTGRES_HOST: ${EXTERNAL_POSTGRES_HOST:?Set EXTERNAL_POSTGRES_HOST to the external PostgreSQL server IP or DNS name}
+      POSTGRES_PORT: ${EXTERNAL_POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${EXTERNAL_POSTGRES_DB:-app_db}
+      POSTGRES_USER: ${EXTERNAL_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${EXTERNAL_POSTGRES_PASSWORD:-postgres123456}
+      DATABASE_URL: postgresql+psycopg://${EXTERNAL_POSTGRES_USER:-postgres}:${EXTERNAL_POSTGRES_PASSWORD:-postgres123456}@${EXTERNAL_POSTGRES_HOST:?Set EXTERNAL_POSTGRES_HOST to the external PostgreSQL server IP or DNS name}:${EXTERNAL_POSTGRES_PORT:-5432}/${EXTERNAL_POSTGRES_DB:-app_db}
+      LIBREOFFICE_PATH: /usr/bin/libreoffice
+      SOFFICE_PATH: /usr/bin/libreoffice
+      RUN_ROOT: /app/legacy/contract_review/data/runs
+      CONTRACT_REVIEW_RUNTIME_ROOT: /app/legacy/contract_review/data
+    volumes:
+      - contract_review_uploads:/app/legacy/contract_review/data/uploads
+      - contract_review_runs:/app/legacy/contract_review/data/runs
+      - bid_generator_pdf_cache:/app/legacy/bid-generator/data/pdf_cache
+      - bid_generator_docx_cache:/app/legacy/bid-generator/data/docx_cache
+      - bid_generator_raw_doc_cache:/app/legacy/bid-generator/data/raw_doc_cache
+      - bid_generator_extracted_images:/app/legacy/bid-generator/data/extracted_images
+      - bid_generator_kb_sync_status:/app/legacy/bid-generator/data/kb_sync_status
+      - bid_generator_knowledge_base:/app/legacy/bid-generator/data/knowledge_base
+      - bid_generator_templates:/app/legacy/bid-generator/data/templates
+    expose:
+      - "5220"
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    container_name: clover-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_PUBLISHED_PORT:-5200}:5200"
+
+volumes:
+  contract_review_uploads:
+  contract_review_runs:
+  bid_generator_pdf_cache:
+  bid_generator_docx_cache:
+  bid_generator_raw_doc_cache:
+  bid_generator_extracted_images:
+  bid_generator_kb_sync_status:
+  bid_generator_knowledge_base:
+  bid_generator_templates:

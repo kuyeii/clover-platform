@@ -57,6 +57,7 @@ clover-platform/
     check_db.py
   docker/
     docker-compose.yml
+    docker-compose.external-postgres.yml
   legacy/
   docs/
   runtime/
@@ -64,10 +65,19 @@ clover-platform/
 
 ## Docker 部署
 
-当前 Docker 部署默认在同一台机器上启动 `web`、`api` 和 PostgreSQL 18。`web`
+当前保留两种 Docker 部署方式：
+
+- 内置 PostgreSQL：`docker/docker-compose.yml`，同一套 Compose 内启动 `web`、`api`
+  和 PostgreSQL 18。
+- 外部 PostgreSQL：`docker/docker-compose.external-postgres.yml`，只启动 `web` 和
+  `api`，数据库连接到外部服务器。
+
+`web`
 使用 Nginx 托管 `apps/web` 构建产物，并把 `/api/v1/*` 和 `/ws/core/*`
 反向代理到 `api:5220`。`api` 直接承载当前统一后端和已迁入的业务能力，不默认启动
 legacy 前端或 legacy 后端进程。
+
+### 方式一：内置 PostgreSQL
 
 1. 准备环境变量：
 
@@ -118,6 +128,63 @@ Compose 会创建 `postgres18_data`、合同审查上传 / 运行产物、标书
 图片缓存 / 知识库 / 模板等持久化 volume。首次创建模板 volume 时，Docker 会把镜像内
 默认模板复制进 volume；后续更新镜像不会自动覆盖已存在的模板 volume。不要用
 `docker compose down -v` 清理生产环境，除非已经完成数据库和业务文件备份。
+
+### 方式二：外部 PostgreSQL
+
+外部数据库可按下面配置在数据库服务器上单独部署：
+
+```yaml
+services:
+  postgres:
+    image: postgres:18
+    container_name: postgres18
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123456
+      POSTGRES_DB: app_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres18_data:/var/lib/postgresql
+
+volumes:
+  postgres18_data:
+```
+
+平台服务器只启动 `web` 和 `api`：
+
+```bash
+cp .env.external-postgres.example .env.external-postgres
+```
+
+把 `.env.external-postgres` 中的 `EXTERNAL_POSTGRES_HOST` 改成外部 PostgreSQL
+服务器 IP 或域名。如果外部数据库使用上面的配置，端口、库名、用户名和密码可保持为
+`5432`、`app_db`、`postgres`、`postgres123456`；生产环境仍建议修改数据库密码、
+`PORTAL_ADMIN_PASSWORD` 和 `PIPT_DB_KEY`。
+
+构建镜像：
+
+```bash
+docker compose --env-file .env.external-postgres -f docker/docker-compose.external-postgres.yml build
+```
+
+首次初始化外部数据库：
+
+```bash
+docker compose --env-file .env.external-postgres -f docker/docker-compose.external-postgres.yml run --rm api python scripts/init_db.py
+docker compose --env-file .env.external-postgres -f docker/docker-compose.external-postgres.yml run --rm api alembic upgrade head
+docker compose --env-file .env.external-postgres -f docker/docker-compose.external-postgres.yml run --rm api python scripts/check_db.py
+```
+
+启动平台：
+
+```bash
+docker compose --env-file .env.external-postgres -f docker/docker-compose.external-postgres.yml up -d
+```
+
+默认访问地址仍为 `http://<平台服务器IP>:5200`。这种方式不会创建
+`postgres18_data` volume；数据库备份、恢复和生命周期由外部 PostgreSQL 服务器负责。
 
 ## 当前不做的事情
 
