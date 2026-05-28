@@ -26,7 +26,7 @@ import {
 import clsx from 'clsx';
 import { marked } from 'marked';
 import turndownService from '../utils/turndown';
-import { resolveProtectedAssetUrl } from '../services/protectedAssetUrl';
+import { diagramService } from '../services/diagramService';
 
 export const CONTENT_PREVIEW_PROSE_CLASS =
     'content-editor-prose prose prose-sm prose-sky max-w-none text-gray-700 ' +
@@ -56,47 +56,6 @@ function makeResponsiveSvg(svg: string): string {
     return processed;
 }
 
-function ProtectedImageNode({ node }: NodeViewProps) {
-    const attrs = node.attrs as { src?: string; alt?: string; title?: string };
-    const src = String(attrs.src || '');
-    const [resolvedSrc, setResolvedSrc] = useState(src);
-
-    useEffect(() => {
-        let cancelled = false;
-        resolveProtectedAssetUrl(src)
-            .then((url) => {
-                if (!cancelled) {
-                    setResolvedSrc(url);
-                }
-            })
-            .catch(() => {
-                if (!cancelled) {
-                    setResolvedSrc('');
-                }
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [src]);
-
-    return (
-        <NodeViewWrapper className="my-2">
-            <img
-                src={resolvedSrc}
-                alt={attrs.alt || ''}
-                title={attrs.title || undefined}
-                className="max-w-full rounded-lg"
-            />
-        </NodeViewWrapper>
-    );
-}
-
-const ProtectedImageExtension = Image.extend({
-    addNodeView() {
-        return ReactNodeViewRenderer(ProtectedImageNode);
-    },
-});
-
 /** 基础 SVG 清洗：移除 script/foreignObject 与内联事件，降低注入风险 */
 function sanitizeSvg(svg: string): string {
     if (!svg) return '';
@@ -117,6 +76,15 @@ function b64Decode(b64: string): string {
     try { return decodeURIComponent(escape(atob(b64))); } catch { return ''; }
 }
 
+function escapeHtmlText(text: string): string {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ── <diagram> 预处理：在 Tiptap 解析 HTML 前提取 SVG ─────────────────────
 /**
  * 把 <diagram type="..." title="..."><svg>...</svg></diagram>
@@ -129,11 +97,13 @@ function preprocessDiagramTags(html: string): string {
         (_, attrsStr: string, inner: string) => {
             const typeM = attrsStr.match(/type="([^"]*)"/);
             const titleM = attrsStr.match(/title="([^"]*)"/);
+            const idM = attrsStr.match(/data-diagram-id="([^"]*)"/);
             const type = typeM?.[1] || 'architecture';
             const title = titleM?.[1] || '架构图';
+            const diagramId = idM?.[1] || '';
             const svgM = inner.match(/<svg[\s\S]*?<\/svg>/i);
             const svgRaw = svgM ? svgM[0] : inner.trim();
-            return `<div data-diagram-type="${type}" data-diagram-title="${encodeURIComponent(title)}" data-diagram-svg="${b64Encode(svgRaw)}"></div>`;
+            return `<div data-diagram-type="${type}" data-diagram-title="${encodeURIComponent(title)}" data-diagram-id="${diagramId}" data-diagram-svg="${b64Encode(svgRaw)}"></div>`;
         }
     );
 }
@@ -146,9 +116,14 @@ function postprocessDiagramNodes(html: string): string {
             const typeM = attrs.match(/data-diagram-type="([^"]*)"/);
             const titleM = attrs.match(/data-diagram-title="([^"]*)"/);
             const svgM = attrs.match(/data-diagram-svg="([^"]*)"/);
+            const idM = attrs.match(/data-diagram-id="([^"]*)"/);
             const type = typeM?.[1] || 'architecture';
             const title = decodeURIComponent(titleM?.[1] || '');
+            const diagramId = idM?.[1] || '';
             const svg = b64Decode(svgM?.[1] || '');
+            if (diagramId && !svg) {
+                return `<diagram data-diagram-id="${diagramId}" type="${type}" title="${title}"></diagram>`;
+            }
             return `<diagram type="${type}" title="${title}">${svg}</diagram>`;
         }
     );
@@ -162,16 +137,27 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 function DiagramRenderer({ node }: NodeViewProps) {
-    const attrs = node.attrs as { type: string; title: string; svgContent: string };
-    const { type, title, svgContent } = attrs;
+    const attrs = node.attrs as { type: string; title: string; svgContent: string; diagramId: string };
+    const { type, title, svgContent, diagramId } = attrs;
     const [fullscreen, setFullscreen] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [remoteSvg, setRemoteSvg] = useState('');
 
-    const responsiveSvg = svgContent ? makeResponsiveSvg(sanitizeSvg(svgContent)) : '';
+    useEffect(() => {
+        if (!diagramId || svgContent) return;
+        let cancelled = false;
+        diagramService.getDiagramSvg(diagramId)
+            .then(svg => { if (!cancelled) setRemoteSvg(svg); })
+            .catch(() => { if (!cancelled) setRemoteSvg(''); });
+        return () => { cancelled = true; };
+    }, [diagramId, svgContent]);
+
+    const effectiveSvg = svgContent || remoteSvg;
+    const responsiveSvg = effectiveSvg ? makeResponsiveSvg(sanitizeSvg(effectiveSvg)) : '';
     const typeLabel = TYPE_LABELS[type] || '图表';
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(svgContent).then(() => {
+        navigator.clipboard.writeText(effectiveSvg).then(() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         });
@@ -225,6 +211,66 @@ function DiagramRenderer({ node }: NodeViewProps) {
     );
 }
 
+function renderDiagramPreviewCards(html: string): string {
+    return html.replace(/<div([^>]*data-diagram-type="[^"]*"[^>]*)><\/div>/g, (_, attrs: string) => {
+        const typeM = attrs.match(/data-diagram-type="([^"]*)"/);
+        const titleM = attrs.match(/data-diagram-title="([^"]*)"/);
+        const svgM = attrs.match(/data-diagram-svg="([^"]*)"/);
+        const type = typeM?.[1] || 'architecture';
+        const title = decodeURIComponent(titleM?.[1] || '') || TYPE_LABELS[type] || '图表';
+        const titleText = escapeHtmlText(title);
+        const typeText = escapeHtmlText(TYPE_LABELS[type] || '图表');
+        const svg = b64Decode(svgM?.[1] || '');
+        const responsiveSvg = svg ? makeResponsiveSvg(sanitizeSvg(svg)) : '';
+        return [
+            '<div class="my-4 rounded-xl border border-blue-100 overflow-hidden shadow-sm bg-white">',
+            '<div class="flex items-center gap-2 px-4 py-2 bg-blue-50 border-b border-blue-100">',
+            `<span class="text-xs font-semibold text-blue-700">${titleText}</span>`,
+            `<span class="text-xs text-blue-400 bg-white px-1.5 py-0.5 rounded">${typeText}</span>`,
+            '</div>',
+            '<div class="p-4 bg-white overflow-x-auto">',
+            responsiveSvg || '<div class="text-center text-gray-400 text-sm py-8">图表内容加载中…</div>',
+            '</div>',
+            '</div>',
+        ].join('');
+    });
+}
+
+export function ContentPreview({ content, className }: { content: string; className?: string }) {
+    const [html, setHtml] = useState(() => renderDiagramPreviewCards(renderContentToHtml(content)));
+
+    useEffect(() => {
+        let cancelled = false;
+        const hydrate = async () => {
+            let next = renderContentToHtml(content);
+            const matches = Array.from(next.matchAll(/<div([^>]*data-diagram-id="([^"]+)"[^>]*)><\/div>/g));
+            for (const match of matches) {
+                const attrs = match[1] || '';
+                const diagramId = match[2] || '';
+                const svgM = attrs.match(/data-diagram-svg="([^"]*)"/);
+                if (!diagramId || svgM?.[1]) continue;
+                const svg = await diagramService.getDiagramSvg(diagramId);
+                if (!svg) continue;
+                const hydrated = match[0].replace(
+                    'data-diagram-svg=""',
+                    `data-diagram-svg="${b64Encode(svg)}"`,
+                );
+                next = next.replace(match[0], hydrated);
+            }
+            if (!cancelled) setHtml(renderDiagramPreviewCards(next));
+        };
+        void hydrate();
+        return () => { cancelled = true; };
+    }, [content]);
+
+    return (
+        <div
+            className={className}
+            dangerouslySetInnerHTML={{ __html: html }}
+        />
+    );
+}
+
 // ── DiagramNode：Tiptap block atom Node ─────────────────────────────────
 
 const DiagramNode = TiptapNode.create({
@@ -237,6 +283,7 @@ const DiagramNode = TiptapNode.create({
             type: { default: 'architecture' },
             title: { default: '' },
             svgContent: { default: '' },
+            diagramId: { default: '' },
         };
     },
 
@@ -249,6 +296,7 @@ const DiagramNode = TiptapNode.create({
                     type: el.getAttribute('data-diagram-type') || 'architecture',
                     title: decodeURIComponent(el.getAttribute('data-diagram-title') || ''),
                     svgContent: b64Decode(el.getAttribute('data-diagram-svg') || ''),
+                    diagramId: el.getAttribute('data-diagram-id') || '',
                 };
             },
         }];
@@ -259,6 +307,7 @@ const DiagramNode = TiptapNode.create({
             'data-diagram-type': node.attrs.type,
             'data-diagram-title': encodeURIComponent(node.attrs.title),
             'data-diagram-svg': b64Encode(node.attrs.svgContent),
+            'data-diagram-id': node.attrs.diagramId,
         }];
     },
 
@@ -427,7 +476,7 @@ export function ContentEditor({ content, onChange, readOnly = false, className, 
             Underline,
             Table.configure({ resizable: true }),
             TableRow, TableCell, TableHeader,
-            ProtectedImageExtension.configure({ allowBase64: true, HTMLAttributes: { class: 'max-w-full rounded-lg my-2' } }),
+            Image.configure({ allowBase64: true, HTMLAttributes: { class: 'max-w-full rounded-lg my-2' } }),
             DiagramNode,
         ],
         content: renderContentToHtml(content) || '',

@@ -212,6 +212,31 @@ class ImageRegistry(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
 
 
+class KnowledgeImageAsset(Base):
+    """知识库图片语义资产表：物理路径仍以 ImageRegistry 为准。"""
+    __tablename__ = "knowledge_image_assets"
+    __table_args__ = (
+        Index("idx_bid_knowledge_image_assets_image_hash", "image_hash"),
+        Index("idx_bid_knowledge_image_assets_placeholder", "placeholder"),
+        Index("idx_bid_knowledge_image_assets_source_doc", "source_doc"),
+        Index("idx_bid_knowledge_image_assets_caption_status", "caption_status"),
+        {"schema": SCHEMA_NAME},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    image_hash = Column(String, unique=True, nullable=False)
+    placeholder = Column(String, unique=True, nullable=False)
+    source_doc = Column(String, nullable=False, server_default="", default="")
+    source_page = Column(Integer, nullable=True)
+    nearby_text_sanitized = Column(Text, nullable=True)
+    caption = Column(String, nullable=False, server_default="", default="")
+    image_type = Column(String, nullable=False, server_default="", default="")
+    summary = Column(Text, nullable=False, server_default="", default="")
+    tags_json = Column(Text, nullable=False, server_default="[]", default="[]")
+    caption_status = Column(String, nullable=False, server_default="pending", default="pending")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
+
+
 
 class ProjectRecord(Base):
     """项目记录表 — 与前端 Project interface 完全对齐"""

@@ -51,24 +51,6 @@ function ProjectView({
     }
   }, [tab, id, navigate]);
 
-  useEffect(() => {
-    if (activeTab !== 'bid' || !activeProject?.id) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        await projectService.syncFromServer();
-        if (!cancelled) refreshProjects();
-      } catch {
-        // 静默刷新失败不打断投标文件编排使用。
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProject?.id, activeTab, refreshProjects]);
-
   // 切 tab → URL 跳转
   const handleTabChange = (newTab: StageId) => {
     navigate(`/projects/${id}/${newTab}`, { replace: true });
@@ -219,6 +201,24 @@ function ProjectView({
     || Boolean(activeProject.outline?.length);
   // 前序阶段默认只读，但技术方案在进入投标文件阶段后仍允许继续编辑和生成。
   const isLockedReadOnly = activeTab !== 'tech' && tabIdx < currentStageIdx;
+
+  useEffect(() => {
+    if (activeTab !== 'bid' || !activeProject?.id) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await projectService.syncFromServer();
+        if (!cancelled) refreshProjects();
+      } catch {
+        // 静默刷新失败不打断投标文件编排使用。
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject?.id, activeTab, refreshProjects]);
 
   // ── 内容区渲染 ──
   const renderContent = () => {
@@ -458,7 +458,7 @@ export default function App() {
     if (repairingLocks) return;
     setRepairingLocks(true);
     try {
-      await projectService.repairZombieLocks();
+      await projectService.repairZombieLocks(undefined, { forceLocalDiagramWait: true });
       reconcileProjectStatuses();
       refreshProjects();
     } finally {

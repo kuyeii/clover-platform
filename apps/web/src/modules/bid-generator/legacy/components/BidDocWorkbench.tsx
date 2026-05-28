@@ -34,7 +34,7 @@ import {
 } from '../services/projectService';
 import { resolveVersionContent } from '../utils/bidExport';
 import { AttachmentAnchorCanvas, type AttachmentMaskRange } from './AttachmentAnchorCanvas';
-import { CONTENT_PREVIEW_PROSE_CLASS, renderContentToHtml } from './ContentEditor';
+import { CONTENT_PREVIEW_PROSE_CLASS, ContentPreview, renderContentToHtml } from './ContentEditor';
 
 interface Props {
     project: Project;
@@ -968,9 +968,9 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                                                         </span>
                                                     </div>
                                                     {item?.content ? (
-                                                        <div
+                                                        <ContentPreview
+                                                            content={item.content}
                                                             className={`${CONTENT_PREVIEW_PROSE_CLASS} mt-3`}
-                                                            dangerouslySetInnerHTML={{ __html: renderContentToHtml(item.content) }}
                                                         />
                                                     ) : (
                                                         <p className="mt-3 text-sm text-gray-400">当前章节尚未生成内容</p>

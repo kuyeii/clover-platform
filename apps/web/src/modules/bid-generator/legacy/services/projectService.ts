@@ -4,10 +4,13 @@
  */
 
 import api from './api';
-import { bidGeneratorFetch, getBackendBaseUrl } from './apiBase';
+import { bidGeneratorFetch } from './apiBase';
 import { extractCoreWritingIntent } from './writingHintService';
+import { DiagramServiceError, diagramService, type DiagramRequest, type DiagramSectionResult } from './diagramService';
 
-const DIAGRAM_GENERATION_ENABLED = false;
+const DIAGRAM_GENERATION_ENABLED = String(import.meta.env.VITE_ENABLE_DIAGRAM_GENERATION || '').toLowerCase() === 'true';
+const _diagramMaxFromEnv = Number(import.meta.env.VITE_MAX_DIAGRAMS || 3);
+const DIAGRAM_MAX_PER_PROJECT = Number.isFinite(_diagramMaxFromEnv) && _diagramMaxFromEnv > 0 ? _diagramMaxFromEnv : 3;
 
 // ─── 投标人信息（per-project，存在项目对象里）—————————————————
 export interface BidderInfo {
@@ -744,6 +747,17 @@ type BatchGenerationBlock = {
     diagramPriority?: number;
 };
 
+type ContentGenerationResult = {
+    content?: string;
+    wordCount: number;
+    qualityScore?: number;
+    feedback?: string;
+    replaceReport?: { placeholder: string; original: string }[];
+    diagramError?: string;
+    diagramUpdate?: boolean;
+    diagramRequest?: DiagramRequest;
+};
+
 type BatchGenerationUnit =
     | { kind: 'single'; key: string; blocks: [BatchGenerationBlock] }
     | { kind: 'group'; key: string; groupId: string; groupTitle: string; blocks: BatchGenerationBlock[] };
@@ -786,6 +800,202 @@ function buildContentGenerationUnits(blocks: BatchGenerationBlock[]): BatchGener
             blocks: members,
         } as BatchGenerationUnit;
     });
+}
+
+function normalizeDiagramSectionResult(row: DiagramSectionResult): ContentGenerationResult {
+    return {
+        content: applyPlaceholderReportToContent(row.content || '', row.replace_report || []),
+        wordCount: Number(row.word_count || 0),
+        qualityScore: row.quality_score,
+        feedback: row.feedback,
+        replaceReport: row.replace_report || [],
+        diagramError: extractDiagramErrorMessage(row.diagram_error),
+        diagramUpdate: true,
+    };
+}
+
+function waitForDiagramQueue(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new DOMException('Aborted', 'AbortError'));
+            return;
+        }
+        const timer = window.setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        const onAbort = () => {
+            window.clearTimeout(timer);
+            reject(new DOMException('Aborted', 'AbortError'));
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+async function startDiagramBatchWithRetry(
+    projectId: string,
+    requests: DiagramRequest[],
+    handlers: { onStage?: (stage: string) => void },
+    signal?: AbortSignal,
+): Promise<string> {
+    const retryDelays = [2000, 4000, 8000, 12000, 15000, 15000, 15000, 15000, 15000, 15000];
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+        try {
+            return await diagramService.startDiagramBatch(projectId, requests, signal);
+        } catch (error) {
+            const isLimit = error instanceof DiagramServiceError
+                && error.status === 409
+                && (!error.code || error.code === 'TASK_LIMIT_REACHED');
+            if (!isLimit || attempt >= retryDelays.length || signal?.aborted) throw error;
+            const delay = retryDelays[attempt];
+            handlers.onStage?.(`🎨 图表队列等待空闲（${Math.round(delay / 1000)}秒后重试）`);
+            setLocalTaskRuntime(projectId, {
+                state: 'queued',
+                taskId: `diagram_wait_${projectId}`,
+                taskType: 'diagram',
+                message: '图表队列等待空闲',
+                progress: 0,
+                cancellable: false,
+            });
+            await waitForDiagramQueue(delay, signal);
+        }
+    }
+    throw new Error('图表队列启动失败');
+}
+
+async function runDiagramBatchQueue(
+    projectId: string,
+    requests: DiagramRequest[],
+    handlers: {
+        onStage?: (stage: string) => void;
+        onSectionDone?: (sectionId: string, result: ContentGenerationResult) => void;
+    },
+    signal?: AbortSignal,
+): Promise<void> {
+    const validRequests = requests.filter(req => req.need_diagram && req.diagram_brief?.trim());
+    if (validRequests.length === 0 || signal?.aborted) return;
+
+    let taskId = '';
+    const deliveredSections = new Set<string>();
+    const deliverSection = (sectionId: string, result: ContentGenerationResult) => {
+        if (!sectionId || deliveredSections.has(sectionId)) return;
+        deliveredSections.add(sectionId);
+        handlers.onSectionDone?.(sectionId, result);
+    };
+    const deliverPendingDiagramErrors = (message: string) => {
+        validRequests.forEach((req) => {
+            if (!req.section_id || deliveredSections.has(req.section_id)) return;
+            handlers.onSectionDone?.(req.section_id, {
+                content: req.base_content || '',
+                wordCount: Number(req.expected_words || 0),
+                qualityScore: req.quality_score,
+                feedback: req.feedback,
+                replaceReport: req.replace_report || [],
+                diagramError: message,
+                diagramUpdate: true,
+            });
+        });
+    };
+    try {
+        handlers.onStage?.(`🎨 图表队列启动（${validRequests.length} 张）`);
+        setLocalTaskRuntime(projectId, {
+            state: 'queued',
+            taskId: `diagram_wait_${projectId}`,
+            taskType: 'diagram',
+            message: '图表队列等待启动',
+            progress: 0,
+            cancellable: false,
+        });
+        taskId = await startDiagramBatchWithRetry(projectId, validRequests, handlers, signal);
+        setLocalTaskRuntime(projectId, {
+            state: 'running',
+            taskId,
+            taskType: 'diagram',
+            message: '图表队列生成中',
+            progress: 0,
+            cancellable: true,
+        });
+        let lastEventId = 0;
+        let lastStage = '';
+        let pollMs = 2000;
+        while (!signal?.aborted) {
+            await waitForDiagramQueue(pollMs, signal);
+            if (signal?.aborted) break;
+            const status = await diagramService.getDiagramTaskStatus(taskId, projectId, lastEventId);
+            if (status.current_stage && status.current_stage !== lastStage) {
+                lastStage = status.current_stage;
+                handlers.onStage?.(lastStage);
+            }
+            for (const event of status.partial_events || []) {
+                lastEventId = Math.max(lastEventId, Number(event.event_id || 0));
+                if (event.phase === 'diagram_section_done' && event.section_id) {
+                    deliverSection(event.section_id, normalizeDiagramSectionResult(event));
+                }
+            }
+            if (typeof status.last_partial_event_id === 'number') {
+                lastEventId = Math.max(lastEventId, status.last_partial_event_id);
+            }
+            if (status.status === 'done' && status.result) {
+                const result = status.result as any;
+                const sections = Array.isArray(result.sections) ? result.sections : [result];
+                sections.forEach((row: DiagramSectionResult) => {
+                    if (row?.section_id) deliverSection(row.section_id, normalizeDiagramSectionResult(row));
+                });
+                setLocalTaskRuntime(projectId, {
+                    state: 'succeeded',
+                    taskId,
+                    taskType: 'diagram',
+                    message: '',
+                    progress: 100,
+                    cancellable: false,
+                });
+                break;
+            }
+            if (status.cancelled || status.status === 'cancelled') break;
+            if (status.timed_out || status.status === 'timeout' || status.status === 'error') {
+                const message = status.error || (status.timed_out || status.status === 'timeout' ? '图表生成超时，已保留正文' : '图表生成失败，已保留正文');
+                console.warn('[diagram batch] diagram queue ended without full success', message);
+                deliverPendingDiagramErrors(message);
+                setLocalTaskRuntime(projectId, {
+                    state: status.timed_out || status.status === 'timeout' ? 'timed_out' : 'failed',
+                    taskId,
+                    taskType: 'diagram',
+                    message,
+                    progress: 100,
+                    cancellable: false,
+                });
+                break;
+            }
+            pollMs = Math.min(5000, pollMs + 500);
+        }
+    } catch (e) {
+        if (!signal?.aborted) {
+            console.warn('[diagram batch] diagram queue failed', e);
+            deliverPendingDiagramErrors('图表队列启动失败，已保留正文');
+            setLocalTaskRuntime(projectId, {
+                state: 'failed',
+                taskId: taskId || `diagram_wait_${projectId}`,
+                taskType: 'diagram',
+                message: '图表队列启动失败',
+                progress: 100,
+                cancellable: false,
+            });
+        }
+    } finally {
+        if (signal?.aborted && taskId) {
+            void diagramService.cancelDiagramTask(taskId, projectId);
+        }
+        if (signal?.aborted) {
+            setLocalTaskRuntime(projectId, {
+                state: 'cancelled',
+                taskId: taskId || `diagram_wait_${projectId}`,
+                taskType: 'diagram',
+                message: '',
+                progress: 100,
+                cancellable: false,
+            });
+        }
+    }
 }
 
 /** 将 replace_report 中的占位符替换为原文（流式展示与落盘时与后端脱敏结果对齐） */
@@ -1552,16 +1762,6 @@ function normalizeProjectFromServer(raw: Project): Project {
     return { ...normalizedProject, taskRuntime: normalized };
 }
 
-function buildBackendAssetUrl(path: string | undefined): string | undefined {
-    if (!path) {
-        return undefined;
-    }
-    if (/^https?:\/\//i.test(path) || path.startsWith('blob:')) {
-        return path;
-    }
-    return `${getBackendBaseUrl()}${path}`;
-}
-
 function mapExtractStageProgress(stage: string): { step: number; label: string; percent: number } {
     const s = (stage || '').trim();
     if (!s) return { step: 0, label: '准备中...', percent: 0 };
@@ -1932,7 +2132,10 @@ export const projectService = {
         return getProjectBusyMetaInternal(project);
     },
 
-    async repairZombieLocks(projectId?: string): Promise<{ checked: number; cleared: number; active: number }> {
+    async repairZombieLocks(
+        projectId?: string,
+        options?: { forceLocalDiagramWait?: boolean },
+    ): Promise<{ checked: number; cleared: number; active: number }> {
         const targets = loadAll().filter((proj) => !projectId || proj.id === projectId);
         let checked = 0;
         let cleared = 0;
@@ -1962,6 +2165,21 @@ export const projectService = {
             let runtimeStatePatch: Partial<ProjectTaskRuntime> | null = null;
 
             for (const [taskId, keys] of taskKeyMap.entries()) {
+                if (taskId.startsWith('diagram_wait_') && latest.taskRuntime?.taskId === taskId) {
+                    if (options?.forceLocalDiagramWait) {
+                        runtimeStatePatch = {
+                            ...latest.taskRuntime,
+                            state: 'timed_out',
+                            message: '本地图表等待态已手动清理',
+                            cancellable: false,
+                            updatedAt: new Date().toISOString(),
+                        };
+                    } else {
+                        projectHasActiveTasks = true;
+                        active += 1;
+                    }
+                    continue;
+                }
                 checked += 1;
                 try {
                     const data = await this.getTaskStatus(taskId, latest.id);
@@ -2217,7 +2435,9 @@ export const projectService = {
                     ? response.analysis_v2
                     : undefined,
                 // PDF 预览 URL — 后端返回相对路径，需拼上后端 origin 才能在 iframe 加载
-                pdfUrl: buildBackendAssetUrl(response.pdf_url),
+                pdfUrl: response.pdf_url
+                    ? `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '')}${response.pdf_url}`
+                    : undefined,
                 bidType: response.bid_type,
                 summary: response.project_summary,
                 mappingTable: response.mapping_table || {},
@@ -2372,7 +2592,9 @@ export const projectService = {
                     ? resultData.analysis_report : undefined,
                 analysisV2: resultData.analysis_v2?.schema_version
                     ? resultData.analysis_v2 : undefined,
-                pdfUrl: buildBackendAssetUrl(resultData.pdf_url),
+                pdfUrl: resultData.pdf_url
+                    ? `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '')}${resultData.pdf_url}`
+                    : undefined,
                 bidType: resultData.bid_type,
                 summary: resultData.project_summary,
                 mappingTable: resultData.mapping_table || {},
@@ -2607,6 +2829,7 @@ export const projectService = {
         },
         signal?: AbortSignal,
     ): Promise<void> {
+
         const response = await bidGeneratorFetch(`/tasks/${taskId}/progress?project_id=${encodeURIComponent(projectId)}`, { signal });
         if (!response.ok) {
             if (response.status === 404) {
@@ -2727,6 +2950,7 @@ export const projectService = {
         onChunk?: (partial: string) => void,
         onBidAttachments?: (items: BidAttachmentItem[]) => void,
     ): Promise<{ content: string } | null> {
+
         const res = await bidGeneratorFetch(`/projects/${projectId}/analyze-node`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2946,12 +3170,12 @@ export const projectService = {
             placeholder_hint: placeholderHint,
             analysis_context: analysisContext,  // 注入匹配到的招标文件解析
             generation_strategy: generationStrategy,
-            enable_diagrams: false,
-            max_diagrams: 0,
-            need_diagram: false,
-            diagram_brief: '',
+            enable_diagrams: DIAGRAM_GENERATION_ENABLED,
+            max_diagrams: DIAGRAM_MAX_PER_PROJECT,
+            need_diagram: DIAGRAM_GENERATION_ENABLED && diagramMeta.needDiagram,
+            diagram_brief: DIAGRAM_GENERATION_ENABLED ? diagramMeta.diagramBrief : '',
             diagram_type_hint: diagramMeta.diagramTypeHint,
-            diagram_priority: 0,
+            diagram_priority: diagramMeta.diagramPriority,
             mapping_table: { ...mappingTable, ...bidderMappingTable },
         });
         return {
@@ -2986,7 +3210,7 @@ export const projectService = {
     }, callbacks: {
         onChunk: (text: string) => void;
         onStage: (stage: string) => void;
-        onDone: (result: { wordCount: number; qualityScore?: number; feedback?: string; replaceReport?: { placeholder: string; original: string }[]; diagramError?: string }) => void;
+        onDone: (result: ContentGenerationResult) => void;
         onError: (err: string) => void;
     }): AbortController {
         const controller = new AbortController();
@@ -3059,7 +3283,7 @@ export const projectService = {
         }
 
         const enableDiagrams = DIAGRAM_GENERATION_ENABLED;
-        const maxDiagrams = 0;
+        const maxDiagrams = DIAGRAM_MAX_PER_PROJECT;
         const needDeferredDiagram =
             enableDiagrams && maxDiagrams > 0 && diagramMeta.needDiagram && diagramMeta.diagramBrief.trim().length > 0;
 
@@ -3100,10 +3324,10 @@ export const projectService = {
             // 结构化图表入参（来自大纲）
             enable_diagrams: enableDiagrams,
             max_diagrams: maxDiagrams,
-            need_diagram: false,
-            diagram_brief: '',
+            need_diagram: enableDiagrams && diagramMeta.needDiagram,
+            diagram_brief: enableDiagrams ? diagramMeta.diagramBrief : '',
             diagram_type_hint: diagramMeta.diagramTypeHint,
-            diagram_priority: 0,
+            diagram_priority: diagramMeta.diagramPriority,
             defer_diagram: needDeferredDiagram,
         };
         const taskStorageKey = buildContentTaskStorageKey(params.projectId, params.sectionId);
@@ -3190,22 +3414,42 @@ export const projectService = {
                         }
 
                         if (taskStatus.status === 'done' && taskStatus.result) {
-                            let r = taskStatus.result as {
+                            const r = taskStatus.result as {
                                 content?: string;
                                 word_count?: number;
                                 quality_score?: number;
                                 feedback?: string;
                                 replace_report?: { placeholder: string; original: string }[];
                                 diagram_deferred?: boolean;
+                                diagram_request?: DiagramRequest;
                                 diagram_error?: unknown;
                                 diagram_specs?: unknown;
                             };
-                            const contentPhase = r;
-                            let skipFinalDelivery = false;
-
-                            if (needDeferredDiagram && r.diagram_deferred && !controller.signal.aborted) {
-                                callbacks.onStage('🎨 正在提交独立图表任务…');
-                                const diagramBody = {
+                            const diagramError = extractDiagramErrorMessage(r.diagram_error);
+                            if (diagramError) {
+                                console.warn('[content task] diagram generation degraded to text-only result', {
+                                    projectId: params.projectId,
+                                    sectionId: params.sectionId,
+                                    taskId: task_id,
+                                    diagram_error: r.diagram_error,
+                                });
+                                callbacks.onStage('⚠️ 图表生成失败，已保留正文');
+                            }
+                            const displayContent = applyPlaceholderReportToContent(
+                                r.content || '',
+                                r.replace_report,
+                            );
+                            if (r.content) callbacks.onChunk(displayContent);
+                            setLocalTaskRuntime(params.projectId, {
+                                state: 'succeeded',
+                                taskId: task_id,
+                                taskType: 'content',
+                                message: '',
+                                progress: 100,
+                                cancellable: false,
+                            });
+                            const diagramRequest = needDeferredDiagram && r.diagram_deferred
+                                ? {
                                     project_id: params.projectId,
                                     section_id: params.sectionId,
                                     section_title: params.sectionTitle,
@@ -3226,175 +3470,17 @@ export const projectService = {
                                     quality_score: r.quality_score,
                                     feedback: r.feedback,
                                     replace_report: r.replace_report || [],
-                                };
-                                const dStart = await bidGeneratorFetch(`/tasks/start-diagram`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(diagramBody),
-                                });
-                                if (!dStart.ok) {
-                                    setLocalTaskRuntime(params.projectId, {
-                                        state: 'succeeded',
-                                        taskId: task_id,
-                                        taskType: 'content',
-                                        message: '图表任务未启动，已保留正文',
-                                        progress: 100,
-                                        cancellable: false,
-                                    });
-                                    callbacks.onStage('⚠️ 图表任务未启动，已保留正文');
-                                } else {
-                                    const { task_id: diagramTid } = await dStart.json();
-                                    localStorage.setItem(taskStorageKey, diagramTid);
-                                    localStorage.removeItem(`content_task_${params.sectionId}`);
-                                    setLocalTaskRuntime(params.projectId, {
-                                        state: 'running',
-                                        taskId: diagramTid,
-                                        taskType: 'diagram',
-                                        message: params.sectionTitle ? `${params.sectionTitle} 图表生成中` : '图表生成中',
-                                        progress: 0,
-                                        cancellable: true,
-                                    });
-                                    callbacks.onStage(`🔄 图表生成中（${diagramTid.slice(0, 8)}）`);
-                                    let dpoll = 2000;
-                                    let dStage = '';
-                                    while (!controller.signal.aborted) {
-                                        await new Promise<void>(res => setTimeout(res, dpoll));
-                                        if (controller.signal.aborted) break;
-                                        try {
-                                            const dsr = await bidGeneratorFetch(`/tasks/${diagramTid}/status?project_id=${encodeURIComponent(params.projectId)}`);
-                                            if (!dsr.ok) {
-                                                if (dsr.status === 404) {
-                                                    setLocalTaskRuntime(params.projectId, {
-                                                        state: 'timed_out',
-                                                        taskId: diagramTid,
-                                                        taskType: 'diagram',
-                                                        message: '图表任务不存在或已过期',
-                                                        cancellable: false,
-                                                    });
-                                                    callbacks.onError('图表任务不存在或已过期');
-                                                    skipFinalDelivery = true;
-                                                    break;
-                                                }
-                                                continue;
-                                            }
-                                            const dts = await dsr.json();
-                                            if (dts.current_stage && dts.current_stage !== dStage) {
-                                                dStage = dts.current_stage;
-                                                callbacks.onStage(dStage);
-                                            }
-                                            if (dts.status === 'done' && dts.result) {
-                                                const deferredDiagramError = extractDiagramErrorMessage(dts.result?.diagram_error);
-                                                if (deferredDiagramError) {
-                                                    console.warn('[diagram task] deferred diagram generation failed', {
-                                                        projectId: params.projectId,
-                                                        sectionId: params.sectionId,
-                                                        taskId: diagramTid,
-                                                        diagram_error: dts.result?.diagram_error,
-                                                    });
-                                                    callbacks.onStage('⚠️ 图表生成失败，已保留正文');
-                                                }
-                                                setLocalTaskRuntime(params.projectId, {
-                                                    state: 'succeeded',
-                                                    taskId: diagramTid,
-                                                    taskType: 'diagram',
-                                                    message: '',
-                                                    progress: 100,
-                                                    cancellable: false,
-                                                });
-                                                r = dts.result;
-                                                break;
-                                            }
-                                            if (dts.status === 'cancelled' || dts.cancelled) {
-                                                setLocalTaskRuntime(params.projectId, {
-                                                    state: 'cancelled',
-                                                    taskId: diagramTid,
-                                                    taskType: 'diagram',
-                                                    message: '已取消',
-                                                    cancellable: false,
-                                                });
-                                                callbacks.onError('__cancelled__');
-                                                localStorage.removeItem(taskStorageKey);
-                                                localStorage.removeItem(`content_task_${params.sectionId}`);
-                                                skipFinalDelivery = true;
-                                                break;
-                                            }
-                                            if (dts.status === 'timeout' || dts.timed_out) {
-                                                setLocalTaskRuntime(params.projectId, {
-                                                    state: 'timed_out',
-                                                    taskId: diagramTid,
-                                                    taskType: 'diagram',
-                                                    message: dts.error || '图表生成超时，已自动解除任务锁',
-                                                    cancellable: false,
-                                                });
-                                                callbacks.onError(dts.error || '图表生成超时，已自动解除任务锁');
-                                                localStorage.removeItem(taskStorageKey);
-                                                localStorage.removeItem(`content_task_${params.sectionId}`);
-                                                skipFinalDelivery = true;
-                                                break;
-                                            }
-                                            if (dts.status === 'error') {
-                                                if (dts.error) {
-                                                    console.warn('[diagram task] diagram task ended in error state', {
-                                                        projectId: params.projectId,
-                                                        sectionId: params.sectionId,
-                                                        taskId: diagramTid,
-                                                        error: dts.error,
-                                                    });
-                                                }
-                                                setLocalTaskRuntime(params.projectId, {
-                                                    state: 'succeeded',
-                                                    taskId: diagramTid,
-                                                    taskType: 'diagram',
-                                                    message: '图表生成失败，已保留正文',
-                                                    progress: 100,
-                                                    cancellable: false,
-                                                });
-                                                callbacks.onStage('⚠️ 图表生成失败，已保留正文');
-                                                r = contentPhase;
-                                                break;
-                                            }
-                                            dpoll = Math.min(5000, dpoll + 500);
-                                        } catch { /* 重试 */ }
-                                    }
-                                    if (controller.signal.aborted) {
-                                        skipFinalDelivery = true;
-                                    }
-                                }
-                            }
-
-                            if (!skipFinalDelivery) {
-                                const diagramError = extractDiagramErrorMessage(r.diagram_error);
-                                if (diagramError) {
-                                    console.warn('[content task] diagram generation degraded to text-only result', {
-                                        projectId: params.projectId,
-                                        sectionId: params.sectionId,
-                                        taskId: localStorage.getItem(taskStorageKey) || task_id,
-                                        diagram_error: r.diagram_error,
-                                    });
-                                    callbacks.onStage('⚠️ 图表生成失败，已保留正文');
-                                }
-                                const displayContent = applyPlaceholderReportToContent(
-                                    r.content || '',
-                                    r.replace_report,
-                                );
-                                if (r.content) callbacks.onChunk(displayContent);
-                                const latestTaskId = localStorage.getItem(taskStorageKey) || task_id;
-                                setLocalTaskRuntime(params.projectId, {
-                                    state: 'succeeded',
-                                    taskId: latestTaskId,
-                                    taskType: latestTaskId === task_id ? 'content' : 'diagram',
-                                    message: '',
-                                    progress: 100,
-                                    cancellable: false,
-                                });
-                                callbacks.onDone({
-                                    wordCount: r.word_count || 0,
-                                    qualityScore: r.quality_score,
-                                    feedback: r.feedback,
-                                    replaceReport: r.replace_report || [],
-                                    diagramError,
-                                });
-                            }
+                                } satisfies DiagramRequest
+                                : undefined;
+                            callbacks.onDone({
+                                content: displayContent,
+                                wordCount: r.word_count || 0,
+                                qualityScore: r.quality_score,
+                                feedback: r.feedback,
+                                replaceReport: r.replace_report || [],
+                                diagramError,
+                                diagramRequest,
+                            });
                             localStorage.removeItem(taskStorageKey);
                             localStorage.removeItem(`content_task_${params.sectionId}`);
                             break;
@@ -3454,6 +3540,19 @@ export const projectService = {
         return controller;
     },
 
+    /** 对已生成正文执行独立图表补写；只跑 diagram batch，不重新生成正文。 */
+    generateDiagramBatch(
+        projectId: string,
+        requests: DiagramRequest[],
+        callbacks: {
+            onStage?: (stage: string) => void;
+            onSectionDone?: (sectionId: string, result: ContentGenerationResult) => void;
+        },
+        signal?: AbortSignal,
+    ): Promise<void> {
+        return runDiagramBatchQueue(projectId, requests, callbacks, signal);
+    },
+
     generateContentRewriteStream(params: {
         projectId: string;
         sectionId: string;
@@ -3471,6 +3570,7 @@ export const projectService = {
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
             diagramError?: string;
+            diagramUpdate?: boolean;
         }) => void;
         onError: (err: string) => void;
     }): AbortController {
@@ -3687,6 +3787,8 @@ export const projectService = {
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
             diagramError?: string;
+            diagramUpdate?: boolean;
+            diagramRequest?: DiagramRequest;
         }) => void;
         onDone: (result: {
             sections: Array<{
@@ -3697,6 +3799,8 @@ export const projectService = {
                 feedback?: string;
                 replaceReport?: { placeholder: string; original: string }[];
                 diagramError?: string;
+                diagramRequest?: DiagramRequest;
+                diagramUpdate?: boolean;
             }>;
             failedSections?: Array<{
                 sectionId: string;
@@ -3789,15 +3893,14 @@ export const projectService = {
                 analysis_context: analysisContext,
                 requires_search: requiresSearch,
                 generation_strategy: generationStrategy,
-                need_diagram: false,
-                diagram_brief: '',
+                need_diagram: DIAGRAM_GENERATION_ENABLED && diagramMeta.needDiagram,
+                diagram_brief: DIAGRAM_GENERATION_ENABLED ? diagramMeta.diagramBrief : '',
                 diagram_type_hint: diagramMeta.diagramTypeHint,
-                diagram_priority: 0,
+                diagram_priority: diagramMeta.diagramPriority,
             };
         });
-
         const enableDiagrams = DIAGRAM_GENERATION_ENABLED;
-        const maxDiagrams = 0;
+        const maxDiagrams = DIAGRAM_MAX_PER_PROJECT;
         const requestBody = {
             project_id: params.projectId,
             group_id: params.groupId,
@@ -3864,6 +3967,7 @@ export const projectService = {
                     feedback: row.feedback,
                     replaceReport: row.replace_report || row.replaceReport || [],
                     diagramError: extractDiagramErrorMessage(row.diagram_error ?? row.diagramError),
+                    diagramRequest: row.diagram_request ?? row.diagramRequest,
                 });
                 const deliverPartialSection = (row: any) => {
                     const sectionId = String(row?.section_id || row?.sectionId || '');
@@ -4298,7 +4402,7 @@ export const projectService = {
         onProgress: (
             blockId: string,
             status: 'generating' | 'chunk' | 'stage' | 'done' | 'error',
-            result?: { content: string; wordCount: number; qualityScore?: number; feedback?: string; replaceReport?: { placeholder: string; original: string }[]; stage?: string },
+            result?: ContentGenerationResult & { stage?: string },
             error?: string,
         ) => void,
         /** 外部取消信号：abort 后中断后续 block 的生成 */
@@ -4308,6 +4412,18 @@ export const projectService = {
         let cursor = 0;
         const activeCtrls = new Map<string, AbortController>();
         const units = buildContentGenerationUnits(blocks);
+        const diagramRequests: DiagramRequest[] = [];
+        const diagramRequestSectionIds = new Set<string>();
+        const enqueueDiagramRequest = (sectionId: string, request?: DiagramRequest, content?: string) => {
+            if (!request || diagramRequestSectionIds.has(sectionId)) return;
+            diagramRequestSectionIds.add(sectionId);
+            diagramRequests.push({
+                ...request,
+                project_id: projectId,
+                section_id: sectionId,
+                base_content: content || request.base_content || '',
+            });
+        };
 
         const runUnit = async (unit: BatchGenerationUnit) => {
             if (signal?.aborted) return;
@@ -4335,14 +4451,17 @@ export const projectService = {
                                         });
                                     },
                                     onSectionDone: (section) => {
-                                        if (deliveredInUnit.has(section.sectionId)) return;
+                                        if (deliveredInUnit.has(section.sectionId) && !section.diagramUpdate) return;
                                         deliveredInUnit.add(section.sectionId);
+                                        enqueueDiagramRequest(section.sectionId, section.diagramRequest, section.content);
                                         onProgress(section.sectionId, 'done', {
                                             content: section.content,
                                             wordCount: section.wordCount,
                                             qualityScore: section.qualityScore,
                                             feedback: section.feedback,
                                             replaceReport: section.replaceReport,
+                                            diagramUpdate: section.diagramUpdate,
+                                            diagramRequest: section.diagramRequest,
                                         });
                                     },
                                     onDone: (res) => {
@@ -4353,12 +4472,14 @@ export const projectService = {
                                             const section = byId.get(block.id);
                                             if (section && !deliveredInUnit.has(block.id)) {
                                                 deliveredInUnit.add(block.id);
+                                                enqueueDiagramRequest(block.id, section.diagramRequest, section.content);
                                                 onProgress(block.id, 'done', {
                                                     content: section.content,
                                                     wordCount: section.wordCount,
                                                     qualityScore: section.qualityScore,
                                                     feedback: section.feedback,
                                                     replaceReport: section.replaceReport,
+                                                    diagramRequest: section.diagramRequest,
                                                 });
                                                 return;
                                             }
@@ -4414,12 +4535,15 @@ export const projectService = {
                                     },
                                     onDone: (res) => {
                                         activeCtrls.delete(unit.key);
+                                        enqueueDiagramRequest(block.id, res.diagramRequest, res.content || accumulated);
                                         onProgress(block.id, 'done', {
-                                            content: accumulated,
+                                            content: res.content || accumulated,
                                             wordCount: res.wordCount,
                                             qualityScore: res.qualityScore,
                                             feedback: res.feedback,
                                             replaceReport: res.replaceReport,
+                                            diagramUpdate: res.diagramUpdate,
+                                            diagramRequest: res.diagramRequest,
                                         });
                                         finish();
                                     },
@@ -4464,7 +4588,22 @@ export const projectService = {
 
         if (signal?.aborted) {
             for (const ctrl of activeCtrls.values()) ctrl.abort();
+            return;
         }
+
+        void runDiagramBatchQueue(
+            projectId,
+            diagramRequests,
+            {
+                onStage: (stage) => {
+                    blocks.forEach(block => onProgress(block.id, 'stage', { content: '', wordCount: 0, stage }));
+                },
+                onSectionDone: (sectionId, result) => {
+                    onProgress(sectionId, 'done', result);
+                },
+            },
+            signal,
+        );
     },
 
     /**

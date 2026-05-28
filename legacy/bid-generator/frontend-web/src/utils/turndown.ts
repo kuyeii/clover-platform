@@ -20,8 +20,12 @@ turndownService.addRule('diagrams', {
         const el = node as HTMLElement;
         const type = el.getAttribute('type') || '';
         const title = el.getAttribute('title') || '';
-        // 保留图表内部原始 SVG，避免二次编辑/保存后图表内容丢失
+        const diagramId = el.getAttribute('data-diagram-id') || '';
         const inner = el.innerHTML || '';
+        if (diagramId && !inner) {
+            // Artifact 图表只保存引用，避免把大段 SVG 写回正文。
+            return `\n<diagram data-diagram-id="${diagramId}" type="${type}" title="${title}"></diagram>\n`;
+        }
         return `\n<diagram type="${type}" title="${title}">${inner}</diagram>\n`;
     }
 });

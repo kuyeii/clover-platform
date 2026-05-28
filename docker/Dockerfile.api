@@ -15,6 +15,9 @@ RUN apt-get update \
       curl \
       fontconfig \
       fonts-noto-cjk \
+      libgl1 \
+      libglib2.0-0 \
+      libmagic1 \
       libreoffice \
       libreoffice-writer \
       libreoffice-l10n-zh-cn \
@@ -62,6 +65,7 @@ RUN mkdir -p \
       /app/legacy/bid-generator/data/projects \
       /app/legacy/bid-generator/data/kb_sync_status \
       /app/legacy/bid-generator/data/knowledge_base \
+      /app/legacy/bid-generator/data/diagram_artifacts \
       /app/legacy/bid-generator/data/templates \
       /app/legacy/bid-generator/data/tender_documents
 

@@ -21,10 +21,10 @@ import {
     buildContentTaskStorageKey,
     getContentTaskStorageCandidates,
 } from '../services/projectService';
-import { bidGeneratorFetch } from '../services/apiBase';
 import clsx from 'clsx';
 import { ContentEditor } from './ContentEditor';
 import { TaskLoadingState } from './TaskLoadingState';
+import { bidGeneratorFetch } from '../services/apiBase';
 import { ProtectedIframe } from './ProtectedIframe';
 
 interface Props {
@@ -144,6 +144,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     const [forging, setForging] = useState(false); // 生成最终文档状态
     const [error, setError] = useState<string | null>(null);
     const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+    const [isDiagramRuntimeBusy, setIsDiagramRuntimeBusy] = useState(false);
 
     // PDF 预览面板折叠状态（默认折叠）
     const [showPdf, setShowPdf] = useState(false);
@@ -185,6 +186,22 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
         onBusyChange?.(isContentGenerationBusy);
         return () => { onBusyChange?.(false); };
     }, [isContentGenerationBusy, onBusyChange]);
+
+    useEffect(() => {
+        if (!projectId) {
+            setIsDiagramRuntimeBusy(false);
+            return;
+        }
+        const updateDiagramBusy = () => {
+            const proj = projectService.getById(projectId);
+            const busyMeta = projectService.getProjectBusyMeta(proj);
+            setIsDiagramRuntimeBusy(
+                Boolean(busyMeta.runtimeBusy && busyMeta.activeTaskType === 'diagram'),
+            );
+        };
+        updateDiagramBusy();
+        return projectService.subscribe(updateDiagramBusy);
+    }, [projectId]);
 
     const countVisibleWords = (text: string): number => {
         if (!text) return 0;
@@ -258,6 +275,20 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                 [blockId]: {
                     ...existing,
                     status: 'generating',
+                    stage,
+                },
+            };
+        });
+    }, []);
+
+    const patchDiagramStage = useCallback((blockId: string, stage: string) => {
+        setContentStates(prev => {
+            const existing: BlockContentState = prev[blockId] ?? { status: 'idle', content: '', wordCount: 0 };
+            return {
+                ...prev,
+                [blockId]: {
+                    ...existing,
+                    status: existing.status === 'done' ? 'done' : 'generating',
                     stage,
                 },
             };
@@ -436,6 +467,28 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         diagramError: result.diagramError,
                         replaceReport: result.replaceReport,
                     });
+                    if (result.diagramRequest) {
+                        patchContentState(block.id, { stage: '🎨 图表生成中' });
+                        projectService.generateDiagramBatch(projectId, [result.diagramRequest], {
+                            onStage: (stage) => {
+                                patchContentState(block.id, { stage });
+                            },
+                            onSectionDone: (sectionId, diagramResult) => {
+                                if (sectionId !== block.id) return;
+                                persistGeneratedResult(block.id, {
+                                    content: diagramResult.content || accumulated,
+                                    qualityScore: diagramResult.qualityScore,
+                                    feedback: diagramResult.feedback,
+                                    diagramError: diagramResult.diagramError,
+                                    replaceReport: diagramResult.replaceReport,
+                                });
+                            },
+                        }).finally(() => {
+                            patchContentState(block.id, { stage: undefined });
+                        });
+                    } else {
+                        patchContentState(block.id, { stage: undefined });
+                    }
                 },
                 onError: (err) => {
                     if (err === '__cancelled__' || err?.includes?.('用户手动取消') || err?.includes?.('取消')) {
@@ -464,6 +517,12 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     // ─── 生成最终 Docx ───
     const handleForgeDocument = useCallback(async () => {
         if (!projectId || !template) return;
+        const proj = projectService.getById(projectId);
+        const busyMeta = projectService.getProjectBusyMeta(proj);
+        if (busyMeta.runtimeBusy && busyMeta.activeTaskType === 'diagram') {
+            console.warn('图表仍在生成，暂不导出无图版本');
+            return;
+        }
         // 收集所有已完成章节
         const doneSections = template.blocks
             .filter(b => isContentBlock(b) && contentStates[b.id]?.status === 'done')
@@ -720,10 +779,11 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         wordCount: countVisibleWords(result.content || ''),
                     });
                 } else if (status === 'stage' && result?.stage) {
-                    patchGeneratingStageSafely(blockId, result.stage);
+                    if (result.stage.includes('图表')) patchDiagramStage(blockId, result.stage);
+                    else patchGeneratingStageSafely(blockId, result.stage);
                 } else if (status === 'done' && result) {
-                    persistGeneratedResult(blockId, result);
-                    setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
+                    persistGeneratedResult(blockId, { ...result, content: result.content || '' });
+                    if (!result.diagramUpdate) setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
                 } else if (status === 'error') {
                     setQueuedBlockIds(prev => { const s = new Set(prev); s.delete(blockId); return s; });
                     const previous = contentStates[blockId];
@@ -750,7 +810,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
             setGenerateAllProgress(null);
             setQueuedBlockIds(new Set()); // 全部完成，清除队列
         }
-    }, [isLocked, projectId, template, checkedBlockIds, getGlobalOutlineString, contentStates, persistGeneratedResult, immediatelyPersist, isBatchSelectableBlock, patchGeneratingStageSafely]);
+    }, [isLocked, projectId, template, checkedBlockIds, getGlobalOutlineString, contentStates, persistGeneratedResult, immediatelyPersist, isBatchSelectableBlock, patchGeneratingStageSafely, patchDiagramStage]);
 
     // ─── 一键生成全部 ───
     const handleGenerateAll = useCallback(async () => {
@@ -839,10 +899,11 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         wordCount: countVisibleWords(result.content || ''),
                     });
                 } else if (status === 'stage' && result?.stage) {
-                    patchGeneratingStageSafely(blockId, result.stage);
+                    if (result.stage.includes('图表')) patchDiagramStage(blockId, result.stage);
+                    else patchGeneratingStageSafely(blockId, result.stage);
                 } else if (status === 'done' && result) {
-                    persistGeneratedResult(blockId, result);
-                    setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
+                    persistGeneratedResult(blockId, { ...result, content: result.content || '' });
+                    if (!result.diagramUpdate) setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
                 } else if (status === 'error') {
                     const previous = contentStates[blockId];
                     if (previous?.previousContent?.trim()) {
@@ -868,7 +929,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
             setGenerateAllProgress(null);
             setQueuedBlockIds(new Set());
         }
-    }, [isLocked, projectId, template, getGlobalOutlineString, persistGeneratedResult, contentStates, immediatelyPersist, queuedBlockIds, patchGeneratingStageSafely]);
+    }, [isLocked, projectId, template, getGlobalOutlineString, persistGeneratedResult, contentStates, immediatelyPersist, queuedBlockIds, patchGeneratingStageSafely, patchDiagramStage]);
 
     // ─── 新增章节 ───
     const handleAddBlock = useCallback(() => {
@@ -1342,10 +1403,12 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                     {/* 导出技术方案 */}
                     {projectId && (
                         <button onClick={handleForgeDocument}
-                            disabled={forging || !contentBlocks.some(b => contentStates[b.id]?.status === 'done')}
+                            disabled={forging || isDiagramRuntimeBusy || !contentBlocks.some(b => contentStates[b.id]?.status === 'done')}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                             {forging
                                 ? <><Loader2 className="w-3 h-3 animate-spin" />导出中</>
+                                : isDiagramRuntimeBusy
+                                    ? <><Loader2 className="w-3 h-3 animate-spin" />图表生成中</>
                                 : <><FileDown className="w-3 h-3" />导出技术方案</>
                             }
                         </button>

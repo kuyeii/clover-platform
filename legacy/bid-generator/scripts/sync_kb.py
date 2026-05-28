@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
@@ -31,6 +32,28 @@ PIPT_API_URL = os.getenv("PIPT_API_URL", "http://localhost:5000")
 
 ROOT_DIR = Path(__file__).parent.parent
 KB_DIR = ROOT_DIR / "data" / "knowledge_base"
+
+
+def build_image_blocks(image_map: dict[str, Any]) -> str:
+    """从解析器返回的 image_map 中提取结构化知识库图片块。"""
+    blocks: list[str] = []
+    for placeholder, info in (image_map or {}).items():
+        if not isinstance(info, dict):
+            continue
+        block = str(info.get("knowledge_block") or "").strip()
+        if block:
+            blocks.append(block)
+            continue
+        desc = str(info.get("description") or "知识库配图").strip()
+        blocks.append("\n".join([
+            "【知识库图片】",
+            f"图片占位符：{placeholder}",
+            f"图注：{desc}",
+            "类型：其他",
+            f"说明：{desc}",
+            f"使用规则：如正文需要引用该图，必须输出 ![图：{desc}]({placeholder})",
+        ]))
+    return "\n\n".join(blocks)
 
 
 async def desensitize_text(text: str, filename: str) -> str:
@@ -150,13 +173,24 @@ async def sync_all_kb_files(target_file_prefix=None):
 
     processed = 0
     failed = 0
+    image_total = 0
+    image_captioned = 0
+    image_caption_failed = 0
 
     for file_path in files:
         ext = file_path.suffix.lower()
         logger.info(f"开始处理: {file_path.name}")
-        _update_status({"current_file": file_path.name, "processed": processed, "failed": failed})
+        _update_status({
+            "current_file": file_path.name,
+            "processed": processed,
+            "failed": failed,
+            "image_total": image_total,
+            "image_captioned": image_captioned,
+            "image_caption_failed": image_caption_failed,
+        })
 
         raw_text = ""
+        image_map = {}
         if ext == ".txt":
             with open(file_path, "r", encoding="utf-8") as f:
                 raw_text = f.read()
@@ -171,6 +205,18 @@ async def sync_all_kb_files(target_file_prefix=None):
                 )
                 if image_map:
                     logger.info(f"从 {file_path.name} 提取并打标了 {len(image_map)} 张图片。")
+                    image_total += len(image_map)
+                    for info in image_map.values():
+                        status = str((info or {}).get("caption_status") or "").strip()
+                        if status == "captioned":
+                            image_captioned += 1
+                        elif status:
+                            image_caption_failed += 1
+                    _update_status({
+                        "image_total": image_total,
+                        "image_captioned": image_captioned,
+                        "image_caption_failed": image_caption_failed,
+                    })
             except Exception as e:
                 logger.error(f"解析文件失败 {file_path.name}: {e}")
                 failed += 1
@@ -179,6 +225,10 @@ async def sync_all_kb_files(target_file_prefix=None):
         if not raw_text.strip():
             logger.warning(f"文件内容为空，跳过: {file_path.name}")
             continue
+
+        image_blocks = build_image_blocks(image_map)
+        if image_blocks:
+            raw_text = f"{raw_text}\n\n{image_blocks}"
 
         # 分块脱敏
         chunk_size = 4000
@@ -203,6 +253,9 @@ async def sync_all_kb_files(target_file_prefix=None):
         "status": final_status,
         "processed": processed,
         "failed": failed,
+        "image_total": image_total,
+        "image_captioned": image_captioned,
+        "image_caption_failed": image_caption_failed,
         "current_file": "",
         "finished_at": __import__("datetime").datetime.now().isoformat(),
     })

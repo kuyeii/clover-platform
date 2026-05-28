@@ -10,6 +10,7 @@ DocumentForge — 最终文档组装引擎
 """
 
 import hashlib
+import html
 import logging
 import os
 import re
@@ -32,6 +33,10 @@ from .svg_export import preprocess_svg_for_png
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "official_template_cn.docx"
+_PRO_ENGINE_ROOT = Path(__file__).resolve().parents[2]
+_DIAGRAM_ARTIFACT_ROOT = Path(
+    os.environ.get("DIAGRAM_ARTIFACT_DIR", str(_PRO_ENGINE_ROOT / "data" / "diagram_artifacts"))
+)
 
 
 # ── SVG 图表 → PNG 临时文件（供 DOCX 插图使用）───────────────────────────────
@@ -73,7 +78,60 @@ def _svg_to_temp_png(svg_text: str, title: str) -> Optional[str]:
         return None
 
 
-def _strip_diagrams_to_images(markdown: str) -> str:
+def _safe_artifact_token(value: str, fallback: str = "default") -> str:
+    token = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "").strip())
+    return token or fallback
+
+
+def _get_html_attr(attrs_str: str, name: str) -> str:
+    m = re.search(
+        rf'\b{re.escape(name)}\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))',
+        attrs_str or "",
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return ""
+    return html.unescape(next((g for g in m.groups() if g is not None), "")).strip()
+
+
+def _read_diagram_artifact(project_id: str, diagram_id: str) -> str:
+    """
+    从后端落盘 artifact 读取 SVG。
+
+    Args:
+        project_id: 项目 ID，用于定位 data/diagram_artifacts/{project_id}
+        diagram_id: 图表 artifact ID，不允许路径穿越
+
+    Returns:
+        str: SVG 文本；不存在或非法时返回空字符串
+    """
+    safe_diagram_id = _safe_artifact_token(diagram_id, "")
+    if not safe_diagram_id or safe_diagram_id != str(diagram_id or "").strip():
+        return ""
+
+    candidates: list[Path] = []
+    safe_project_id = _safe_artifact_token(project_id, "")
+    if safe_project_id:
+        candidates.append(_DIAGRAM_ARTIFACT_ROOT / safe_project_id / f"{safe_diagram_id}.svg")
+    # 兼容历史正文缺 project_id 的情况：只按文件名在 artifact 根目录下兜底查找。
+    candidates.extend(_DIAGRAM_ARTIFACT_ROOT.glob(f"*/{safe_diagram_id}.svg"))
+
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+            try:
+                resolved.relative_to(_DIAGRAM_ARTIFACT_ROOT.resolve())
+            except ValueError:
+                continue
+            if resolved.exists() and resolved.is_file():
+                svg_text = resolved.read_text(encoding="utf-8").strip()
+                return svg_text if svg_text.lower().startswith("<svg") else ""
+        except Exception as e:
+            logger.warning("读取图表 artifact 失败（%s）: %s", safe_diagram_id, e)
+    return ""
+
+
+def _strip_diagrams_to_images(markdown: str, project_id: str = "") -> str:
     """
     扫描 Markdown 正文中的 <diagram> 块，将其转换为可被 md_to_docx 处理的格式：
     - 成功转 PNG → 替换为 ![标题](tmp_png路径) + 图注段落
@@ -83,10 +141,17 @@ def _strip_diagrams_to_images(markdown: str) -> str:
         attrs_str = m.group(1)
         body = m.group(2)
 
-        title_m = re.search(r'title="([^"]*)"', attrs_str)
-        title = title_m.group(1) if title_m else "架构图"
+        title = _get_html_attr(attrs_str, "title") or "架构图"
+        diagram_id = _get_html_attr(attrs_str, "data-diagram-id")
 
-        # 提取内嵌 SVG
+        # 优先读取 artifact 引用，避免 DOCX 导出依赖前端回填大段 SVG。
+        raw_svg = _read_diagram_artifact(project_id, diagram_id) if diagram_id else ""
+        if raw_svg:
+            png_path = _svg_to_temp_png(raw_svg, title)
+            if png_path:
+                return f"\n\n**图：{title}**\n\n![{title}]({png_path})\n\n"
+
+        # 兼容旧正文：提取内嵌 SVG
         svg_m = re.search(r'<svg[\s\S]*?</svg>', body, re.IGNORECASE)
         if svg_m:
             # 基础校验：必须以 <svg 开头，防止脏数据
@@ -97,7 +162,7 @@ def _strip_diagrams_to_images(markdown: str) -> str:
                     return f"\n\n**图：{title}**\n\n![{title}]({png_path})\n\n"
 
         # 降级：图表转换失败时插入友好文字提示，不阻断导出流程
-        logger.warning(f"图表 '{title}' SVG 无效或转换失败，以文字占位替代")
+        logger.warning(f"图表 '{title}' SVG 无效、artifact 缺失或转换失败，以文字占位替代")
         return f"\n\n> 【图表：{title}（电子版文档中可查看）】\n\n"
 
     return re.sub(
@@ -306,6 +371,7 @@ class DocumentForge:
         bidder_info: Optional[dict] = None,
         image_map: Optional[dict] = None,
         template_path: Optional[str] = None,
+        project_id: Optional[str] = None,
     ):
         """
         Args:
@@ -313,10 +379,12 @@ class DocumentForge:
             bidder_info: 投标人信息（BidderInfo 结构）
             image_map: 图片占位符映射表 (如 {"{{IMG_0001}}": "/path/to/img.png"})
             template_path: Word 模板路径（可选）
+            project_id: 项目 ID，用于解析后端落盘的图表 artifact
         """
         self.restorer = PlaceholderRestorer(mapping_table or {})
         self.bidder_info = bidder_info or {}
         self.image_map = image_map or {}
+        self.project_id = project_id or ""
         env_template = os.environ.get("FORGE_TEMPLATE_PATH", "").strip()
         candidate = template_path or env_template or str(_DEFAULT_TEMPLATE_PATH)
         self.template_path = candidate if candidate and Path(candidate).exists() else None
@@ -398,7 +466,7 @@ class DocumentForge:
 
         # ── 步骤 1.5b：将正文内的 <diagram> SVG 块转为临时 PNG ──
         # 必须在 md_to_docx 之前处理，否则 <diagram> 标签会被当作乱码文本写入 Word
-        full_markdown = _strip_diagrams_to_images(full_markdown)
+        full_markdown = _strip_diagrams_to_images(full_markdown, self.project_id)
 
         # ── 步骤 2：Markdown → DOCX ──
         converter = MarkdownToDocxConverter(template_path=self.template_path)

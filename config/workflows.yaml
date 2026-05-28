@@ -29,6 +29,16 @@ workflows:
     dataset:
       id_env: DIFY_BID_BASE_ID
       api_key_env: DIFY_DATASET_API_KEY
+    runtime:
+      remote_vision_enabled_env: REMOTE_VISION_ENABLED
+      remote_vision_api_url_env: REMOTE_VISION_API_URL
+      remote_vision_api_key_env: REMOTE_VISION_API_KEY
+      remote_vision_model_env: REMOTE_VISION_MODEL
+      remote_vision_timeout_env: REMOTE_VISION_TIMEOUT
+      remote_vision_max_tokens_env: REMOTE_VISION_MAX_TOKENS
+      diagram_generation_enabled_env: ENABLE_DIAGRAM_GENERATION
+      max_diagram_running_tasks_env: MAX_DIAGRAM_RUNNING_TASKS
+      diagram_artifact_dir_env: DIAGRAM_ARTIFACT_DIR
     managed:
       structure_generator:
         api_key_env: DIFY_WORKFLOW_STRUCTURE_GENERATOR

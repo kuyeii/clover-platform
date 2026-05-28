@@ -11,6 +11,8 @@ httpx
 requests
 python-docx
 docxcompose
+reportlab>=4.2.0
+svglib>=1.5.1
 json_repair
 lxml
 PyMuPDF

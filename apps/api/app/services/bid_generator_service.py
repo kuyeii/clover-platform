@@ -19,7 +19,7 @@ from packages.py_common.db.session import get_engine
 
 logger = logging.getLogger(__name__)
 
-DIAGRAM_GENERATION_ENABLED = False
+DIAGRAM_GENERATION_ENABLED = os.environ.get("ENABLE_DIAGRAM_GENERATION", "false").strip().lower() == "true"
 _IMPORT_LOCK = threading.RLock()
 _LEGACY_MODULES: dict[str, ModuleType] = {}
 

@@ -44,7 +44,7 @@ from .docanalysis_protocol import (
     split_bid_attachments_tag,
 )
 from .engine import DesensitizeEngine
-from .database import get_db, MappingRecord, ProjectRecord, SessionLocal
+from .database import get_db, MappingRecord, ProjectRecord, SessionLocal, ImageRegistry, KnowledgeImageAsset
 from .content_placeholder_resolve import find_illegal_pipt_bidder_placeholders, resolve_body_placeholders
 
 logger = logging.getLogger(__name__)
@@ -547,24 +547,38 @@ import base64
 import tempfile
 import uuid
 import shutil
+import hashlib
 from pathlib import Path
 import re
 
-def _tag_image_with_vlm(image_path: str) -> str:
-    """调用局域网内的 VLM 模型为提取出的图表/图片打标，支持失败重试"""
+def _parse_json_object_text(text: str) -> dict:
+    raw = str(text or "").strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", raw, count=1)
+        raw = re.sub(r"\n?```$", "", raw, count=1)
+    m = re.search(r"\{[\s\S]*\}", raw)
+    if m:
+        raw = m.group(0)
     try:
-        vlm_api_url = os.environ.get("VLM_API_URL", "http://localhost:8000/v1/chat/completions")
-        vlm_model = os.environ.get("VLM_MODEL", "qwen-vl-chat")
-        # 本函数使用 OpenAI 兼容多模态 JSON（image_url），须指向 /v1/chat/completions，而非 Ollama 原生 /api/chat
-        if "/api/chat" in vlm_api_url and "/v1/" not in vlm_api_url:
-            logger.warning(
-                "VLM_API_URL 指向 /api/chat，与当前 OpenAI 格式多模态请求不兼容，"
-                "请改为例如 http://<host>:11435/v1/chat/completions"
-            )
-        # 可通过 .env 调整的参数
-        vlm_timeout = int(os.environ.get("VLM_TIMEOUT", "120"))
-        vlm_max_tokens = int(os.environ.get("VLM_MAX_TOKENS", "200"))
-        max_retries = 2
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _tag_image_with_vlm(image_path: str) -> str:
+    """调用远端 OpenAI 兼容多模态服务为图片打标；禁用时返回空字符串。"""
+    try:
+        if os.environ.get("REMOTE_VISION_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+            return ""
+        vlm_api_url = os.environ.get("REMOTE_VISION_API_URL", "").strip()
+        vlm_model = os.environ.get("REMOTE_VISION_MODEL", "").strip()
+        if not vlm_api_url or not vlm_model:
+            logger.warning("REMOTE_VISION_API_URL / REMOTE_VISION_MODEL 未配置，跳过图片打标")
+            return ""
+        vlm_timeout = int(os.environ.get("REMOTE_VISION_TIMEOUT", "120"))
+        vlm_max_tokens = int(os.environ.get("REMOTE_VISION_MAX_TOKENS", "400"))
+        api_key = os.environ.get("REMOTE_VISION_API_KEY", "").strip()
 
         with open(image_path, "rb") as f:
             b64_img = base64.b64encode(f.read()).decode('utf-8')
@@ -575,24 +589,147 @@ def _tag_image_with_vlm(image_path: str) -> str:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "你是一个专业的解决方案架构解读助手。这是从标书/架构设计文档中截取的一张图片。\n\n请按以下准则提取这张图的核心信息，供下游的其他大语言模型作为事实依据参考：\n1. 【判断类型】首先指出这是一张什么图（如：系统架构图、网络拓扑图、业务流程图、数据表格、或其他配图）。\n2. 【拆解核心事实】如果是架构图/流程图，请依次列出它包含了哪些层级（如前端、后端、数据层），或者数据流向的关键节点。\n3. 【绝对禁止敏感词】如果图中出现了具体的人名、手机号、邮箱、真实的服务器 IP 地址、或者真实的甲方/乙方机构名称，请务必用“某人”、“某机构”、“[IP地址]”等泛指词替换，绝对不可将这类实体词照抄输出。\n4. 【精简干练】不要描述颜色等无关紧要的外观，直击技术或业务要点；整体字数控制在200字以内，力求让无法看到图片的外部AI通过你的描述就能脑补出图中的全貌。"},
+                        {"type": "text", "text": "你是知识库图片标注器。请识别图片内容并只输出 JSON，不要输出解释。\n字段：caption(12-30字图注)、image_type(如系统架构图/流程图/截图/表格/其他)、summary(120字以内说明)、key_elements(字符串数组)、tags(字符串数组)。不得照抄图片中的真实人名、手机号、邮箱、IP、机构名称，需泛化为某人、某机构、[IP地址]。"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}}
                     ]
                 }
             ],
-            "max_tokens": 150
+            "max_tokens": vlm_max_tokens
         }
-        # 排队及多模态长文本推理较慢，放宽至 120s
-        resp = requests.post(vlm_api_url, json=payload, timeout=120)
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        resp = requests.post(vlm_api_url, json=payload, headers=headers, timeout=vlm_timeout)
         if resp.status_code == 200:
             res_data = resp.json()
             content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
             if content:
                 return content.strip()
-        return "无法提取图片描述"
+        return ""
     except Exception as e:
-        logger.warning(f"VLM 打标失败 ({image_path}): {e}")
-        return "图片描述提取失败"
+        logger.warning(f"远端图片打标失败 ({image_path}): {e}")
+        return ""
+
+
+def _normalize_image_caption_payload(raw_caption: str, fallback_caption: str = "知识库配图") -> dict:
+    data = _parse_json_object_text(raw_caption)
+    caption = str(data.get("caption") or "").strip() if data else ""
+    image_type = str(data.get("image_type") or "").strip() if data else ""
+    summary = str(data.get("summary") or "").strip() if data else ""
+    tags = data.get("tags") if data else []
+    if not isinstance(tags, list):
+        tags = []
+    if not caption and raw_caption and len(raw_caption.strip()) >= 4:
+        caption = raw_caption.strip().splitlines()[0][:40]
+        summary = raw_caption.strip()[:180]
+    return {
+        "caption": caption or fallback_caption,
+        "image_type": image_type or "其他",
+        "summary": summary or caption or fallback_caption,
+        "tags": [str(x).strip() for x in tags if str(x).strip()][:8],
+        "caption_status": "captioned" if caption and caption != fallback_caption else "weak",
+    }
+
+
+def _build_knowledge_image_block(asset: dict) -> str:
+    tags = asset.get("tags") or []
+    tag_text = "、".join(tags) if isinstance(tags, list) else str(tags or "")
+    source = asset.get("source_doc") or ""
+    page = asset.get("source_page")
+    source_text = f"{source}，第 {page} 页" if source and page else source
+    return "\n".join([
+        "【知识库图片】",
+        f"图片占位符：{asset.get('placeholder', '')}",
+        f"图注：{asset.get('caption', '知识库配图')}",
+        f"类型：{asset.get('image_type', '其他')}",
+        f"来源：{source_text}",
+        f"说明：{asset.get('summary', '')}",
+        f"标签：{tag_text}",
+        f"使用规则：如正文需要引用该图，必须输出 ![图：{asset.get('caption', '知识库配图')}]({asset.get('placeholder', '')})",
+    ]).strip()
+
+
+def _register_knowledge_image_asset(
+    *,
+    filename: str,
+    image_bytes: bytes,
+    original_name: str,
+    fallback_caption: str = "知识库配图",
+    source_page: int | None = None,
+) -> tuple[str, str, dict]:
+    """持久化图片并写入图片注册表/知识库语义资产表，返回占位符、图注和 image_map 信息。"""
+    img_hash = hashlib.md5(image_bytes).hexdigest()
+    safe_original_name = Path(original_name or "image.bin").name
+    new_img_name = f"{img_hash}_{safe_original_name}"
+    permanent_img_dir = PRO_ENGINE_ROOT / "data" / "extracted_images"
+    permanent_img_dir.mkdir(parents=True, exist_ok=True)
+    dest_img = permanent_img_dir / new_img_name
+    if not dest_img.exists():
+        with open(dest_img, "wb") as f:
+            f.write(image_bytes)
+
+    placeholder = f"__PRO_IMG_{img_hash}__"
+    caption_payload = _normalize_image_caption_payload(
+        _tag_image_with_vlm(str(dest_img)),
+        fallback_caption=fallback_caption,
+    )
+    tag_desc = caption_payload["caption"]
+    preview_url = f"/api/extracted-images/{new_img_name}"
+
+    db = SessionLocal()
+    try:
+        changed = False
+        row = db.query(ImageRegistry).filter_by(image_hash=img_hash).first()
+        if not row:
+            row = ImageRegistry(
+                image_hash=img_hash,
+                project_id=None,
+                abs_path=str(dest_img),
+                preview_url=preview_url,
+                placeholder=placeholder,
+                vlm_caption=tag_desc,
+                is_reference_only=1,
+            )
+            db.add(row)
+            changed = True
+        asset = db.query(KnowledgeImageAsset).filter_by(image_hash=img_hash).first()
+        if not asset:
+            asset = KnowledgeImageAsset(
+                image_hash=img_hash,
+                placeholder=placeholder,
+                source_doc=filename or "",
+                source_page=source_page,
+                nearby_text_sanitized="",
+                caption=caption_payload["caption"],
+                image_type=caption_payload["image_type"],
+                summary=caption_payload["summary"],
+                tags_json=json.dumps(caption_payload["tags"], ensure_ascii=False),
+                caption_status=caption_payload["caption_status"],
+            )
+            db.add(asset)
+            changed = True
+        if changed:
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"知识库图片注册写入失败: {e}")
+    finally:
+        db.close()
+
+    img_info = {
+        "abs_path": str(dest_img),
+        "preview_url": preview_url,
+        "description": tag_desc,
+        "knowledge_block": _build_knowledge_image_block({
+            "placeholder": placeholder,
+            "caption": caption_payload["caption"],
+            "image_type": caption_payload["image_type"],
+            "summary": caption_payload["summary"],
+            "tags": caption_payload["tags"],
+            "source_doc": filename or "",
+            "source_page": source_page,
+        }),
+        "caption_status": caption_payload["caption_status"],
+    }
+    return placeholder, tag_desc, img_info
 
 # ───────── 通用工具函数 ─────────
 
@@ -845,7 +982,7 @@ def _preprocess_docx_alignment(src_path: str) -> str:
 
 
 
-def _extract_docx_with_tables(doc) -> str:
+def _extract_docx_with_tables(doc, filename: str = "", extract_images: bool = False) -> tuple[str, dict]:
     """
     按文档 body 元素顺序提取 DOCX 全文（段落 + 表格），保持原始排列。
     表格转为 Markdown 格式（| col1 | col2 |），便于 LLM 理解结构化内容。
@@ -857,6 +994,12 @@ def _extract_docx_with_tables(doc) -> str:
     TBL_TAG = f"{{{WPC_NS}}}tbl"
     ROW_TAG = f"{{{WPC_NS}}}tr"
     CELL_TAG = f"{{{WPC_NS}}}tc"
+    DRAWING_TAG = f"{{{WPC_NS}}}drawing"
+    A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    BLIP_TAG = f"{{{A_NS}}}blip"
+    REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    EMBED_ATTR = f"{{{REL_NS}}}embed"
+    image_map: dict = {}
 
     def _cell_text(cell_elem) -> str:
         """提取单元格内所有段落文本，多段以空格连接"""
@@ -883,6 +1026,29 @@ def _extract_docx_with_tables(doc) -> str:
             md_rows.insert(1, separator)
         return "\n".join(md_rows)
 
+    def _extract_images_from_elem(elem) -> list[str]:
+        if not extract_images:
+            return []
+        refs: list[str] = []
+        for drawing in elem.findall(f".//{DRAWING_TAG}"):
+            for blip in drawing.findall(f".//{BLIP_TAG}"):
+                embed_id = blip.get(EMBED_ATTR)
+                if not embed_id or embed_id not in doc.part.rels:
+                    continue
+                rel = doc.part.rels[embed_id]
+                if "image" not in rel.reltype:
+                    continue
+                blob = rel.target_part.blob
+                original_name = rel.target_part.partname.split("/")[-1]
+                placeholder, tag_desc, img_info = _register_knowledge_image_asset(
+                    filename=filename,
+                    image_bytes=blob,
+                    original_name=original_name,
+                )
+                image_map[placeholder] = img_info
+                refs.append(f"![{tag_desc}]({placeholder})")
+        return refs
+
     # 遍历 body 直接子元素，按原始顺序
     body = doc.element.body
     parts = []
@@ -890,16 +1056,19 @@ def _extract_docx_with_tables(doc) -> str:
         tag = child.tag
         if tag == PARA_TAG:
             t = "".join(node.text or "" for node in child.iter(f"{{{WPC_NS}}}t"))
+            image_refs = _extract_images_from_elem(child)
             if t.strip():
                 parts.append(t)
+            parts.extend(image_refs)
         elif tag == TBL_TAG:
             md = _table_to_markdown(child)
             if md:
                 parts.append(f"\n{md}\n")
+            parts.extend(_extract_images_from_elem(child))
 
     result = "\n".join(parts)
-    logger.info(f"DOCX 全文提取完成: {len(result)} 字符（含表格 Markdown）")
-    return result
+    logger.info(f"DOCX 全文提取完成: {len(result)} 字符（含表格 Markdown），图片 {len(image_map)} 张")
+    return result, image_map
 
 
 # ── 投标文件模块：段落定位符缓存（模块级 in-memory）──────────────────────────
@@ -1012,7 +1181,7 @@ def _restore_locator_cache_from_disk(project_id: str) -> bool:
         return False
     docx_path = PRO_ENGINE_ROOT / "data" / "docx_cache" / f"{project_id}.docx"
     if not docx_path.exists():
-        # 兼容兜底：若原始 DOCX 不在磁盘，尝试用项目快照恢复块索引
+        # 兼容兜底：若原始 DOCX 不在磁盘，尝试用 SQLite 快照恢复块索引
         db_blocks = _load_doc_blocks_snapshot(project_id)
         if db_blocks:
             _locator_cache[project_id] = {
@@ -1021,7 +1190,7 @@ def _restore_locator_cache_from_disk(project_id: str) -> bool:
                 "doc_blocks": db_blocks,
                 "snapshot_only": True,
             }
-            logger.info(f"[{project_id}] 已从项目快照恢复 doc_blocks: {len(db_blocks)} 个")
+            logger.info(f"[{project_id}] 已从 SQLite 快照恢复 doc_blocks: {len(db_blocks)} 个")
             return True
         return False
     try:
@@ -1472,8 +1641,6 @@ def _extract_raw_text_with_images(filename: str, content_bytes: bytes, use_visio
                     permanent_img_dir.mkdir(parents=True, exist_ok=True)
 
                     import concurrent.futures
-                    import hashlib
-
                     # 找出文档中所有的图片引用
                     matches = list(re.finditer(r'!\[(.*?)\]\((.*?)\)', md_text))
                     
@@ -1487,48 +1654,13 @@ def _extract_raw_text_with_images(filename: str, content_bytes: bytes, use_visio
                             return match.group(0), "", None
 
                         with open(source_img, "rb") as bf:
-                            img_hash = hashlib.md5(bf.read()).hexdigest()
+                            image_bytes = bf.read()
 
-                        new_img_name = f"{img_hash}_{source_img.name}"
-                        dest_img = permanent_img_dir / new_img_name
-                        if not dest_img.exists():
-                            shutil.copy(source_img, dest_img)
-
-                        placeholder = f"__PRO_IMG_{img_hash}__"
-
-                        # 仅安全调用部署在内网无出网风险的本地 VLM 打标
-                        tag_desc = _tag_image_with_vlm(str(dest_img))
-                        if not tag_desc or "无法提取" in tag_desc or len(tag_desc) < 4:
-                            tag_desc = "本地配图"
-
-                        # 注入 PostgreSQL 图片注册表保护池
-                        from app.api_lite.database import SessionLocal, ImageRegistry
-                        db = SessionLocal()
-                        try:
-                            if not db.query(ImageRegistry).filter_by(image_hash=img_hash).first():
-                                row = ImageRegistry(
-                                    image_hash=img_hash,
-                                    project_id=None,
-                                    abs_path=str(dest_img),
-                                    preview_url=f"/api/extracted-images/{new_img_name}",
-                                    placeholder=placeholder,
-                                    vlm_caption=tag_desc,
-                                    is_reference_only=1
-                                )
-                                db.add(row)
-                                db.commit()
-                        except Exception as e:
-                            db.rollback()
-                            logger.error(f"ImageRegistry 写入失败 (PDF): {e}")
-                        finally:
-                            db.close()
-
-                        # 向外仅暴露安全的脱壳标记符及图注
-                        img_info = {
-                            "abs_path": str(dest_img),
-                            "preview_url": f"/api/extracted-images/{new_img_name}",
-                            "description": tag_desc,
-                        }
+                        placeholder, tag_desc, img_info = _register_knowledge_image_asset(
+                            filename=filename,
+                            image_bytes=image_bytes,
+                            original_name=source_img.name,
+                        )
                         return match.group(0), f"![{tag_desc}]({placeholder})", (placeholder, img_info)
 
                     # 使用线程池并发请求本地局域网大模型（并发数通过 VLM_CONCURRENT 配置，默认2）
@@ -1572,7 +1704,7 @@ def _extract_raw_text_with_images(filename: str, content_bytes: bytes, use_visio
         try:
             import docx as _docx
             doc = _docx.Document(io.BytesIO(content_bytes))
-            return _extract_docx_with_tables(doc), image_map
+            return _extract_docx_with_tables(doc, filename, extract_images=use_vision_parsing)
         except Exception:
             pass
         try:
@@ -1594,7 +1726,7 @@ def _extract_raw_text_with_images(filename: str, content_bytes: bytes, use_visio
             try:
                 import docx as _docx
                 doc = _docx.Document(io.BytesIO(content_bytes))
-                return _extract_docx_with_tables(doc), image_map
+                return _extract_docx_with_tables(doc, filename, extract_images=use_vision_parsing)
             except Exception as _e:
                 logger.warning(f"伪装成 .doc 的 DOCX 解析失败: {_e}")
 
@@ -5076,6 +5208,7 @@ def _build_hybrid_forge_docx(
         mapping_table=full_mapping,
         bidder_info=request.bidder_info,
         image_map=request.image_map,
+        project_id=project_id,
     )
 
     def _prepend_page_break(doc_obj: Document) -> Document:
@@ -5225,6 +5358,7 @@ async def forge_document(request: _ForgeDocumentRequest, db: Session = Depends(g
                 mapping_table=full_mapping,
                 bidder_info=request.bidder_info,
                 image_map=request.image_map,
+                project_id=request.project_id,
             )
             docx_bytes = forge.build(
                 sections=request.sections,
@@ -5271,9 +5405,106 @@ _kb_sync_guard = _asyncio.Lock()
 _kb_sync_dedupe: dict[str, str] = {}
 
 
+class _KnowledgeImageUpdateRequest(_BaseModel):
+    caption: str | None = None
+    image_type: str | None = None
+    summary: str | None = None
+    tags: list[str] | None = None
+    caption_status: str | None = None
+
+
+def _parse_kb_image_tags(tags_json: str) -> list[str]:
+    try:
+        loaded = json.loads(tags_json or "[]")
+        if isinstance(loaded, list):
+            return [str(item).strip() for item in loaded if str(item).strip()]
+    except Exception:
+        return []
+    return []
+
+
+def _serialize_kb_image_asset(asset: KnowledgeImageAsset, registry: ImageRegistry | None = None) -> dict:
+    return {
+        "image_hash": asset.image_hash,
+        "placeholder": asset.placeholder,
+        "source_doc": asset.source_doc,
+        "source_page": asset.source_page,
+        "caption": asset.caption,
+        "image_type": asset.image_type,
+        "summary": asset.summary,
+        "tags": _parse_kb_image_tags(asset.tags_json),
+        "caption_status": asset.caption_status,
+        "preview_url": registry.preview_url if registry else "",
+        "created_at": asset.created_at.isoformat() if asset.created_at else "",
+    }
+
+
 def _kb_sync_max_running() -> int:
     limits = task_manager.get_limits()
     return max(1, int(limits.get("max_kb_sync_running", 1)))
+
+
+@router.get("/knowledge/images", summary="获取知识库图片语义资产")
+async def list_knowledge_images(
+    source_doc: str = "",
+    caption_status: str = "",
+    limit: int = 200,
+    db: Session = Depends(get_db),
+):
+    """返回已入库的知识库图片资产，真实物理路径不出后端。"""
+    safe_limit = min(max(int(limit or 200), 1), 500)
+    query = db.query(KnowledgeImageAsset).order_by(KnowledgeImageAsset.created_at.desc())
+    if source_doc.strip():
+        query = query.filter(KnowledgeImageAsset.source_doc == source_doc.strip())
+    if caption_status.strip():
+        query = query.filter(KnowledgeImageAsset.caption_status == caption_status.strip())
+    assets = query.limit(safe_limit).all()
+    hashes = [str(asset.image_hash or "").lower() for asset in assets]
+    registries = {}
+    if hashes:
+        rows = db.query(ImageRegistry).filter(ImageRegistry.image_hash.in_(hashes)).all()
+        registries = {str(row.image_hash or "").lower(): row for row in rows}
+    return {
+        "items": [
+            _serialize_kb_image_asset(asset, registries.get(str(asset.image_hash or "").lower()))
+            for asset in assets
+        ],
+        "total": len(assets),
+    }
+
+
+@router.patch("/knowledge/images/{image_hash}", summary="修订知识库图片语义资产")
+async def update_knowledge_image(
+    image_hash: str,
+    request: _KnowledgeImageUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """人工修订远端视觉打标结果，供后续知识库同步和正文引用使用。"""
+    normalized_hash = re.sub(r"[^a-fA-F0-9]", "", image_hash or "").lower()
+    if not normalized_hash:
+        raise HTTPException(status_code=400, detail="无效的 image_hash")
+    asset = db.query(KnowledgeImageAsset).filter_by(image_hash=normalized_hash).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="知识库图片不存在")
+
+    if request.caption is not None:
+        asset.caption = request.caption.strip() or "知识库配图"
+    if request.image_type is not None:
+        asset.image_type = request.image_type.strip() or "其他"
+    if request.summary is not None:
+        asset.summary = request.summary.strip()
+    if request.tags is not None:
+        tags = [str(item).strip() for item in request.tags if str(item).strip()]
+        asset.tags_json = json.dumps(tags, ensure_ascii=False)
+    if request.caption_status is not None:
+        asset.caption_status = request.caption_status.strip() or "manual"
+    else:
+        asset.caption_status = "manual"
+
+    db.commit()
+    db.refresh(asset)
+    registry = db.query(ImageRegistry).filter_by(image_hash=normalized_hash).first()
+    return _serialize_kb_image_asset(asset, registry)
 
 
 async def _acquire_kb_sync_dedupe_key(dedupe_key: str) -> Optional[str]:

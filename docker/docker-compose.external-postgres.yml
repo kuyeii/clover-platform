@@ -22,6 +22,15 @@ services:
       SOFFICE_PATH: /usr/bin/libreoffice
       RUN_ROOT: /app/legacy/contract_review/data/runs
       CONTRACT_REVIEW_RUNTIME_ROOT: /app/legacy/contract_review/data
+      REMOTE_VISION_ENABLED: ${REMOTE_VISION_ENABLED:-false}
+      REMOTE_VISION_API_URL: ${REMOTE_VISION_API_URL:-}
+      REMOTE_VISION_API_KEY: ${REMOTE_VISION_API_KEY:-}
+      REMOTE_VISION_MODEL: ${REMOTE_VISION_MODEL:-}
+      REMOTE_VISION_TIMEOUT: ${REMOTE_VISION_TIMEOUT:-120}
+      REMOTE_VISION_MAX_TOKENS: ${REMOTE_VISION_MAX_TOKENS:-400}
+      ENABLE_DIAGRAM_GENERATION: ${ENABLE_DIAGRAM_GENERATION:-false}
+      MAX_DIAGRAM_RUNNING_TASKS: ${MAX_DIAGRAM_RUNNING_TASKS:-1}
+      DIAGRAM_ARTIFACT_DIR: ${DIAGRAM_ARTIFACT_DIR:-/app/legacy/bid-generator/data/diagram_artifacts}
     volumes:
       - contract_review_uploads:/app/legacy/contract_review/data/uploads
       - contract_review_runs:/app/legacy/contract_review/data/runs
@@ -32,6 +41,7 @@ services:
       - bid_generator_kb_sync_status:/app/legacy/bid-generator/data/kb_sync_status
       - bid_generator_knowledge_base:/app/legacy/bid-generator/data/knowledge_base
       - bid_generator_templates:/app/legacy/bid-generator/data/templates
+      - bid_generator_diagram_artifacts:/app/legacy/bid-generator/data/diagram_artifacts
     expose:
       - "5220"
 
@@ -39,6 +49,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.web
+      args:
+        VITE_ENABLE_DIAGRAM_GENERATION: ${ENABLE_DIAGRAM_GENERATION:-false}
+        VITE_MAX_DIAGRAMS: ${VITE_MAX_DIAGRAMS:-3}
     container_name: clover-web
     restart: unless-stopped
     depends_on:
@@ -57,3 +70,4 @@ volumes:
   bid_generator_kb_sync_status:
   bid_generator_knowledge_base:
   bid_generator_templates:
+  bid_generator_diagram_artifacts:
