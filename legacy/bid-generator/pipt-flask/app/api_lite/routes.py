@@ -44,7 +44,15 @@ from .docanalysis_protocol import (
     split_bid_attachments_tag,
 )
 from .engine import DesensitizeEngine
-from .database import get_db, MappingRecord, ProjectRecord, SessionLocal, ImageRegistry, KnowledgeImageAsset
+from .database import (
+    get_db,
+    add_pipt_audit_log,
+    MappingRecord,
+    ProjectRecord,
+    SessionLocal,
+    ImageRegistry,
+    KnowledgeImageAsset,
+)
 from .content_placeholder_resolve import find_illegal_pipt_bidder_placeholders, resolve_body_placeholders
 
 logger = logging.getLogger(__name__)
@@ -186,7 +194,7 @@ async def get_analysis_framework():
 
 
 @router.post("/recognize", response_model=RecognizeResponse, summary="NER 识别")
-async def recognize(request: RecognizeRequest):
+async def recognize(request: RecognizeRequest, db: Session = Depends(get_db)):
     """
     对输入文本进行命名实体识别（NER），返回识别到的敏感实体。
     不修改原文，仅返回识别结果。
@@ -194,6 +202,17 @@ async def recognize(request: RecognizeRequest):
     try:
         engine = get_engine()
         entities = engine.recognize(request.text, request.target_entities)
+        add_pipt_audit_log(
+            db,
+            operation="recognize",
+            status="success" if entities else "empty",
+            source="api.recognize",
+            text=request.text,
+            details={
+                "entity_count": len(entities),
+                "target_entities": request.target_entities,
+            },
+        )
         return RecognizeResponse(
             entities=entities,
             entity_count=len(entities),
@@ -231,6 +250,7 @@ async def desensitize(request: DesensitizeRequest, db: Session = Depends(get_db)
             placeholder_format=request.placeholder_format,
             db_session=db,
             llm_mode=getattr(request, 'llm_mode', None),  # 覆盖 LLM 模式
+            audit_context={"source": "api.desensitize", "session_id": request.session_id},
         )
 
         # 同时保留 session 级 MappingRecord，兼容旧还原接口
@@ -286,6 +306,8 @@ async def batch_desensitize(request: BatchDesensitizeRequest, db: Session = Depe
                 method=method,
                 placeholder_format=request.placeholder_format,
                 llm_mode=getattr(request, 'llm_mode', None),
+                db_session=db,
+                audit_context={"source": "api.desensitize_batch", "session_id": request.session_id},
             )
             total_count += result.entity_count
             results.append(result)
@@ -368,6 +390,30 @@ async def restore_text(request: RestoreRequest, db: Session = Depends(get_db)):
         if p in restored_text:
             restored_text = restored_text.replace(p, orig)
             count += 1
+            add_pipt_audit_log(
+                db,
+                operation="restore",
+                status="success",
+                source="api.restore",
+                session_id=request.session_id,
+                placeholder=p,
+                original_text=orig,
+                text=request.text,
+                details={"strategy": "entity_registry_or_mapping_record"},
+            )
+    for p in placeholders:
+        if p not in mapping:
+            add_pipt_audit_log(
+                db,
+                operation="restore",
+                status="miss",
+                source="api.restore",
+                session_id=request.session_id,
+                placeholder=p,
+                text=request.text,
+                details={"reason": "placeholder_not_found"},
+            )
+    db.commit()
 
     logger.info(f"复原完成: {count} 处占位符（全局 {len(global_rows)} + session 回退 {count - len(global_rows)}）")
     return RestoreResponse(restored_text=restored_text, restored_count=count)
@@ -1957,8 +2003,10 @@ async def extract_project_requirements(
             )
 
         if enable_desensitize:
+            db = None
             try:
                 engine = get_engine()
+                db = SessionLocal()
                 # 从 config.yaml 读 tender profile 配置
                 profile_config = load_profile_config(desensitize_profile)
                 target_entities = profile_config.get(
@@ -1972,7 +2020,12 @@ async def extract_project_requirements(
                     text=raw_document[:300000],
                     target_entities=target_entities,
                     method=method,
+                    db_session=db,
                     llm_mode=os.environ.get('PIPT_LLM_MODE_EXTRACT', 'verify_only'),
+                    audit_context={
+                        "source": "projects.extract",
+                        "project_id": project_id or cache_id,
+                    },
                 )
                 text_for_dify = desen_result.desensitized_text
                 mapping_table = getattr(desen_result, "mapping_table", {}) or {}
@@ -1986,6 +2039,12 @@ async def extract_project_requirements(
                 text_for_dify = raw_document[:300000]
                 mapping_table = {}
                 entity_count = 0
+            finally:
+                if db is not None:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
         else:
             mapping_table = {}
             entity_count = 0
@@ -2129,8 +2188,10 @@ async def extract_project_requirements_stream(
 
             if enable_desensitize:
                 yield f"event: progress\ndata: {_json.dumps({'step': 1, 'label': '隐私脱敏处理中', 'percent': 20}, ensure_ascii=False)}\n\n"
+                db = None
                 try:
                     engine = get_engine()
+                    db = SessionLocal()
                     profile_config = load_profile_config(desensitize_profile)
                     target_entities = profile_config.get(
                         "target_entities", ["name", "phone", "email", "id_number"]
@@ -2143,7 +2204,12 @@ async def extract_project_requirements_stream(
                         text=raw_document[:300000],
                         target_entities=target_entities,
                         method=method,
+                        db_session=db,
                         llm_mode=os.environ.get('PIPT_LLM_MODE_EXTRACT', 'verify_only'),
+                        audit_context={
+                            "source": "projects.extract_stream",
+                            "project_id": project_id or cache_id,
+                        },
                     )
                     text_for_dify = desen_result.desensitized_text
                     mapping_table = getattr(desen_result, "mapping_table", {}) or {}
@@ -2154,6 +2220,12 @@ async def extract_project_requirements_stream(
                     logger.warning(f"脱敏处理失败，使用原文继续: {desen_err}")
                     text_for_dify = raw_document[:300000]
                     yield f"event: progress\ndata: {_json.dumps({'step': 1, 'label': '脱敏跳过（使用原文）', 'percent': 50}, ensure_ascii=False)}\n\n"
+                finally:
+                    if db is not None:
+                        try:
+                            db.close()
+                        except Exception:
+                            pass
             else:
                 yield f"event: progress\ndata: {_json.dumps({'step': 1, 'label': '跳过脱敏', 'percent': 50}, ensure_ascii=False)}\n\n"
 
@@ -3948,11 +4020,26 @@ def _finalize_legacy_content_output(
             content = _strip_response_section_numbering_legacy(content)
 
     replace_map: dict[str, str] = {}
-    content, _, replace_report = resolve_body_placeholders(
-        content,
-        replace_map,
-        request_mapping_flat or {},
-    )
+    db = SessionLocal()
+    try:
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map,
+            request_mapping_flat or {},
+            db_session=db,
+            audit_source="api.content_result",
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map,
+            request_mapping_flat or {},
+            audit_source="api.content_result",
+        )
+    finally:
+        db.close()
     placeholder_issues = sorted(find_illegal_pipt_bidder_placeholders(content))
     if placeholder_issues:
         raise RuntimeError("占位符格式异常且无法可靠还原")

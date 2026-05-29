@@ -264,9 +264,26 @@ async def _run_diagram_request(
     if diagrams_generated:
         diagram_html_blocks = [_build_diagram_reference_tag(d) for d in diagrams_generated]
         content = content + "\n" + "\n".join(diagram_html_blocks)
-    content, _, replace_report = resolve_body_placeholders(
-        content, replace_map_seed, request_mapping_flat
-    )
+    db = SessionLocal()
+    try:
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map_seed,
+            request_mapping_flat,
+            db_session=db,
+            audit_source="task.diagram_section",
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map_seed,
+            request_mapping_flat,
+            audit_source="task.diagram_section",
+        )
+    finally:
+        db.close()
     req_for_result = {**request, "replace_report": replace_report}
     return _build_diagram_task_result(req_for_result, content, diagrams_generated, diagram_error)
 
@@ -593,7 +610,26 @@ def _finalize_single_content_result(
             quality_score = None
 
     replace_map: dict[str, str] = {}
-    content, _, replace_report = resolve_body_placeholders(content, replace_map, request_mapping_flat)
+    db = SessionLocal()
+    try:
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map,
+            request_mapping_flat,
+            db_session=db,
+            audit_source="task.content_result",
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map,
+            request_mapping_flat,
+            audit_source="task.content_result",
+        )
+    finally:
+        db.close()
     content, referenced_images = _normalize_referenced_images(content)
     placeholder_issues = sorted(find_illegal_pipt_bidder_placeholders(content))
     return {
@@ -2675,8 +2711,10 @@ async def start_extract_task(
             entity_count = 0
             if enable_desensitize:
                 task_manager.update_stage(task_id, "隐私脱敏处理中")
+                db = None
                 try:
                     engine = _r.get_engine()
+                    db = SessionLocal()
                     profile_config = _r.load_profile_config(desensitize_profile)
                     target_entities = profile_config.get("target_entities", ["name", "phone", "email", "id_number"])
                     method = profile_config.get("method", "mask")
@@ -2685,7 +2723,13 @@ async def start_extract_task(
                         text=raw_document[:300000],
                         target_entities=target_entities,
                         method=method,
+                        db_session=db,
                         llm_mode=os.environ.get('PIPT_LLM_MODE_EXTRACT', 'verify_only'),
+                        audit_context={
+                            "source": "task.extract",
+                            "project_id": project_id or cache_id,
+                            "task_id": task_id,
+                        },
                     )
                     text_for_dify = desen_result.desensitized_text
                     mapping_table = getattr(desen_result, "mapping_table", {}) or {}
@@ -2695,6 +2739,12 @@ async def start_extract_task(
                     logger.warning(f"脱敏失败: {e}")
                     text_for_dify = raw_document[:300000]
                     task_manager.update_stage(task_id, "脱敏跳过（使用原文）")
+                finally:
+                    if db is not None:
+                        try:
+                            db.close()
+                        except Exception:
+                            pass
             else:
                 task_manager.update_stage(task_id, "跳过脱敏")
 
@@ -2892,9 +2942,26 @@ async def start_content_task(request: dict):
                     pass
 
             # 输出侧占位符：模型正文中残留的 {{__PIPT__}}/{{__BIDDER__}} 与入参侧同一套解析
-            content, replace_map, replace_report = resolve_body_placeholders(
-                content, replace_map, request_mapping_flat
-            )
+            db = SessionLocal()
+            try:
+                content, replace_map, replace_report = resolve_body_placeholders(
+                    content,
+                    replace_map,
+                    request_mapping_flat,
+                    db_session=db,
+                    audit_source="task.start_content",
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                content, replace_map, replace_report = resolve_body_placeholders(
+                    content,
+                    replace_map,
+                    request_mapping_flat,
+                    audit_source="task.start_content",
+                )
+            finally:
+                db.close()
             content, referenced_images = _normalize_referenced_images(content)
             placeholder_issues = sorted(find_illegal_pipt_bidder_placeholders(content))
             if placeholder_issues:

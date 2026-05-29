@@ -394,6 +394,7 @@ COMPETITOR_ANALYSIS_INDEXES: tuple[str, ...] = (
 BID_GENERATOR_TABLES: tuple[str, ...] = (
     "mapping_records",
     "entity_registry",
+    "pipt_audit_logs",
     "image_registry",
     "knowledge_image_assets",
     "projects",
@@ -420,6 +421,23 @@ CREATE_BID_GENERATOR_TABLE_SQLS: tuple[str, ...] = (
       global_index INTEGER NOT NULL,
       first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       hit_count INTEGER NOT NULL DEFAULT 1
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS bid_generator.pipt_audit_logs (
+      id TEXT PRIMARY KEY,
+      operation TEXT NOT NULL,
+      status TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT '',
+      session_id TEXT NULL,
+      project_id TEXT NULL,
+      task_id TEXT NULL,
+      placeholder TEXT NULL,
+      entity_type TEXT NULL,
+      original_hash TEXT NULL,
+      text_hash TEXT NULL,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """,
     """
@@ -469,6 +487,12 @@ CREATE_BID_GENERATOR_INDEX_SQLS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_bid_entity_registry_entity_key ON bid_generator.entity_registry(entity_key)",
     "CREATE INDEX IF NOT EXISTS idx_bid_entity_registry_placeholder ON bid_generator.entity_registry(placeholder)",
     "CREATE INDEX IF NOT EXISTS idx_bid_entity_registry_entity_type ON bid_generator.entity_registry(entity_type)",
+    "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_operation ON bid_generator.pipt_audit_logs(operation)",
+    "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_status ON bid_generator.pipt_audit_logs(status)",
+    "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_project_id ON bid_generator.pipt_audit_logs(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_session_id ON bid_generator.pipt_audit_logs(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_placeholder ON bid_generator.pipt_audit_logs(placeholder)",
+    "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_created_at ON bid_generator.pipt_audit_logs(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_bid_image_registry_image_hash ON bid_generator.image_registry(image_hash)",
     "CREATE INDEX IF NOT EXISTS idx_bid_image_registry_project_id ON bid_generator.image_registry(project_id)",
     "CREATE INDEX IF NOT EXISTS idx_bid_image_registry_placeholder ON bid_generator.image_registry(placeholder)",
@@ -487,6 +511,12 @@ BID_GENERATOR_INDEXES: tuple[str, ...] = (
     "idx_bid_entity_registry_entity_key",
     "idx_bid_entity_registry_placeholder",
     "idx_bid_entity_registry_entity_type",
+    "idx_bid_pipt_audit_logs_operation",
+    "idx_bid_pipt_audit_logs_status",
+    "idx_bid_pipt_audit_logs_project_id",
+    "idx_bid_pipt_audit_logs_session_id",
+    "idx_bid_pipt_audit_logs_placeholder",
+    "idx_bid_pipt_audit_logs_created_at",
     "idx_bid_image_registry_image_hash",
     "idx_bid_image_registry_project_id",
     "idx_bid_image_registry_placeholder",

@@ -337,3 +337,91 @@ def get_project_mappings_payload(project_id: str) -> dict[str, Any]:
     except TypeError:
         count = 0
     return {"mappings": mapping_table, "count": count}
+
+
+def _json_detail_value(value: Any) -> Any:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+    return value
+
+
+def list_pipt_audit_logs_payload(
+    *,
+    project_id: str | None = None,
+    task_id: str | None = None,
+    session_id: str | None = None,
+    operation: str | None = None,
+    status: str | None = None,
+    placeholder: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """查询 PIPT 脱敏识别/回映射审计日志。返回值不包含敏感明文，仅包含 hash 与结构化上下文。"""
+    bounded_limit = max(1, min(int(limit or 100), 500))
+    filters = []
+    params: dict[str, Any] = {"limit": bounded_limit}
+    for key, value in (
+        ("project_id", project_id),
+        ("task_id", task_id),
+        ("session_id", session_id),
+        ("operation", operation),
+        ("status", status),
+        ("placeholder", placeholder),
+    ):
+        normalized = str(value or "").strip()
+        if not normalized:
+            continue
+        filters.append(f"{key} = :{key}")
+        params[key] = normalized
+    where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
+    try:
+        with get_engine().begin() as conn:
+            exists = conn.execute(text("SELECT to_regclass('bid_generator.pipt_audit_logs') IS NOT NULL")).scalar_one()
+            if not exists:
+                raise PlatformError(
+                    code="DATABASE_ERROR",
+                    message="PIPT 审计日志表不存在，请先执行数据库迁移。",
+                    status_code=500,
+                    details={"table": "bid_generator.pipt_audit_logs"},
+                )
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT id, operation, status, source, session_id, project_id, task_id,
+                           placeholder, entity_type, original_hash, text_hash, details, created_at
+                    FROM bid_generator.pipt_audit_logs
+                    {where_sql}
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings().all()
+    except PlatformError:
+        raise
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise _database_error(exc) from exc
+
+    items = [
+        {
+            "id": str(row["id"]),
+            "operation": str(row["operation"]),
+            "status": str(row["status"]),
+            "source": str(row.get("source") or ""),
+            "session_id": row.get("session_id"),
+            "project_id": row.get("project_id"),
+            "task_id": row.get("task_id"),
+            "placeholder": row.get("placeholder"),
+            "entity_type": row.get("entity_type"),
+            "original_hash": row.get("original_hash"),
+            "text_hash": row.get("text_hash"),
+            "details": _json_detail_value(row.get("details")),
+            "created_at": _iso_value(row.get("created_at")),
+        }
+        for row in rows
+    ]
+    return {"items": items, "count": len(items), "limit": bounded_limit}

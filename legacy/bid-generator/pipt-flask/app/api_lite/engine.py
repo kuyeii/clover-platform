@@ -8,12 +8,15 @@ pipt-lite 脱敏引擎
 """
 
 import logging
+import hashlib
 import re
+import threading
 from typing import Optional
 
 from .schemas import EntityItem, DesensitizeResponse
 
 logger = logging.getLogger(__name__)
+_ENTITY_REGISTRY_LOCK = threading.RLock()
 
 
 class DesensitizeEngine:
@@ -748,22 +751,36 @@ class DesensitizeEngine:
         return entities
 
     def _deduplicate_entities(self, entities: list[EntityItem]) -> list[EntityItem]:
-        """去除重叠的实体（保留较长的那个）"""
+        """去除无效或重叠实体，避免短实体覆盖长实体导致错映射。"""
         if len(entities) <= 1:
-            return entities
+            return [
+                entity for entity in entities
+                if entity.text and entity.start >= 0 and entity.end > entity.start
+            ]
 
-        # 按起始位置排序
-        sorted_entities = sorted(entities, key=lambda e: (e.start, -(e.end - e.start)))
+        valid_entities = [
+            entity for entity in entities
+            if entity.text and entity.start >= 0 and entity.end > entity.start
+        ]
+        if len(valid_entities) <= 1:
+            return valid_entities
 
-        result = [sorted_entities[0]]
-        for entity in sorted_entities[1:]:
-            last = result[-1]
-            # 如果当前实体和上一个有重叠，跳过较短的
-            if entity.start < last.end:
+        # 长实体优先保留；再按位置输出，避免同一区间内短词被误替换。
+        by_priority = sorted(valid_entities, key=lambda e: (-(e.end - e.start), e.start, e.entity_type))
+        selected: list[EntityItem] = []
+        occupied: list[tuple[int, int]] = []
+        seen = set()
+        for entity in by_priority:
+            key = (entity.start, entity.end, entity.entity_type, entity.text)
+            if key in seen:
                 continue
-            result.append(entity)
+            seen.add(key)
+            if any(entity.start < end and entity.end > start for start, end in occupied):
+                continue
+            selected.append(entity)
+            occupied.append((entity.start, entity.end))
 
-        return result
+        return sorted(selected, key=lambda e: (e.start, e.end))
 
     def desensitize(
         self,
@@ -773,6 +790,7 @@ class DesensitizeEngine:
         placeholder_format: str = "{{__PIPT_{type}_{index}__}}",
         db_session=None,
         llm_mode: Optional[str] = None,
+        audit_context: Optional[dict] = None,
     ) -> DesensitizeResponse:
         """
         Args:
@@ -782,7 +800,31 @@ class DesensitizeEngine:
         # 识别实体（透传 llm_mode 覆盖）
         entities = self.recognize(text, target_entities, llm_mode_override=llm_mode)
 
+        audit_context = audit_context or {}
+        audit_source = str(audit_context.get("source") or "engine.desensitize")
+        audit_session_id = audit_context.get("session_id")
+        audit_project_id = audit_context.get("project_id")
+        audit_task_id = audit_context.get("task_id")
+
         if not entities:
+            if db_session is not None:
+                from app.api_lite.database import add_pipt_audit_log
+                add_pipt_audit_log(
+                    db_session,
+                    operation="recognize",
+                    status="empty",
+                    source=audit_source,
+                    session_id=audit_session_id,
+                    project_id=audit_project_id,
+                    task_id=audit_task_id,
+                    text=text,
+                    details={
+                        "entity_count": 0,
+                        "target_entities": target_entities,
+                        "method": method,
+                        "llm_mode": llm_mode or "",
+                    },
+                )
             return DesensitizeResponse(
                 desensitized_text=text,
                 mapping_table={},
@@ -797,13 +839,60 @@ class DesensitizeEngine:
 
         # 预加载 EntityRegistry 依赖（仅在有 db_session 时）
         if db_session is not None:
-            from app.api_lite.database import EntityRegistry, FernetEncryptor, make_entity_key
+            from app.api_lite.database import EntityRegistry, FernetEncryptor, add_pipt_audit_log, make_entity_key
             from sqlalchemy import func as _func
+            from sqlalchemy import text as _sql_text
             enc = FernetEncryptor.get()
+            add_pipt_audit_log(
+                db_session,
+                operation="recognize",
+                status="success",
+                source=audit_source,
+                session_id=audit_session_id,
+                project_id=audit_project_id,
+                task_id=audit_task_id,
+                text=text,
+                details={
+                    "entity_count": len(entities),
+                    "target_entities": target_entities,
+                    "method": method,
+                    "llm_mode": llm_mode or "",
+                },
+            )
 
         for entity in sorted_entities:
             original = entity.text
             entity_type = entity.entity_type
+            current_slice = text[entity.start:entity.end]
+            if current_slice != original:
+                logger.warning(
+                    "跳过位置不一致的 PIPT 实体: type=%s start=%s end=%s expected_len=%s actual_len=%s",
+                    entity_type,
+                    entity.start,
+                    entity.end,
+                    len(original),
+                    len(current_slice),
+                )
+                if db_session is not None:
+                    add_pipt_audit_log(
+                        db_session,
+                        operation="desensitize",
+                        status="skipped",
+                        source=audit_source,
+                        session_id=audit_session_id,
+                        project_id=audit_project_id,
+                        task_id=audit_task_id,
+                        entity_type=entity_type,
+                        original_text=original,
+                        text=text,
+                        details={
+                            "reason": "span_text_mismatch",
+                            "start": entity.start,
+                            "end": entity.end,
+                            "actual_hash": hashlib.sha256(current_slice.encode("utf-8")).hexdigest() if current_slice else "",
+                        },
+                    )
+                continue
 
             # ── 占位符分配 ────────────────────────────────────────────────────
             if db_session is not None:
@@ -817,23 +906,31 @@ class DesensitizeEngine:
                     # 命中：复用已有占位符，更新引用计数
                     placeholder = row.placeholder
                     row.hit_count = (row.hit_count or 0) + 1
+                    registry_status = "reuse"
                     db_session.flush()
                 else:
-                    # 未命中：分配新全局序号
-                    max_idx = db_session.query(_func.max(EntityRegistry.global_index)).filter(
-                        EntityRegistry.entity_type == entity_type
-                    ).scalar() or 0
-                    next_idx = max_idx + 1
-                    placeholder = placeholder_format.replace("{type}", entity_type).replace("{index}", str(next_idx))
-                    row = EntityRegistry(
-                        entity_key=ekey,
-                        entity_type=entity_type,
-                        original_text_enc=enc.encrypt(original),
-                        placeholder=placeholder,
-                        global_index=next_idx,
-                    )
-                    db_session.add(row)
-                    db_session.flush()
+                    # 未命中：分配新全局序号。同进程内加锁，避免并发请求抢同一类型序号。
+                    with _ENTITY_REGISTRY_LOCK:
+                        # PostgreSQL 事务级锁兜底多进程部署，防止同类型实体并发抢号。
+                        db_session.execute(
+                            _sql_text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+                            {"lock_key": f"bid_generator.entity_registry.{entity_type}"},
+                        )
+                        max_idx = db_session.query(_func.max(EntityRegistry.global_index)).filter(
+                            EntityRegistry.entity_type == entity_type
+                        ).scalar() or 0
+                        next_idx = max_idx + 1
+                        placeholder = placeholder_format.replace("{type}", entity_type).replace("{index}", str(next_idx))
+                        row = EntityRegistry(
+                            entity_key=ekey,
+                            entity_type=entity_type,
+                            original_text_enc=enc.encrypt(original),
+                            placeholder=placeholder,
+                            global_index=next_idx,
+                        )
+                        db_session.add(row)
+                        registry_status = "create"
+                        db_session.flush()
             else:
                 # 降级：内存计数器（向后兼容）
                 counter = self._placeholder_counter.get(entity_type, 0) + 1
@@ -855,6 +952,27 @@ class DesensitizeEngine:
             # 始终以占位符作为 mapping_table 的 key（mask 模式也记录，用于还原）
             mapping_table[placeholder] = original
             result_text = result_text[:entity.start] + replacement + result_text[entity.end:]
+            if db_session is not None:
+                add_pipt_audit_log(
+                    db_session,
+                    operation="desensitize",
+                    status="success",
+                    source=audit_source,
+                    session_id=audit_session_id,
+                    project_id=audit_project_id,
+                    task_id=audit_task_id,
+                    placeholder=placeholder,
+                    entity_type=entity_type,
+                    original_text=original,
+                    text=text,
+                    details={
+                        "registry_status": registry_status,
+                        "method": method,
+                        "start": entity.start,
+                        "end": entity.end,
+                        "replacement_len": len(replacement),
+                    },
+                )
 
         if db_session is not None:
             try:
