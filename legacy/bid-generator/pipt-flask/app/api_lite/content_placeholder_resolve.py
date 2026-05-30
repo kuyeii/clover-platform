@@ -5,9 +5,26 @@ import re
 import logging
 from typing import Any
 
+try:
+    from .pipt_protocol import find_supported_placeholders, is_strong_pipt_token
+except ImportError:  # pragma: no cover - 兼容按文件路径加载的单测
+    import importlib.util
+    from pathlib import Path
+
+    _protocol_path = Path(__file__).with_name("pipt_protocol.py")
+    _protocol_spec = importlib.util.spec_from_file_location("pipt_protocol", _protocol_path)
+    if _protocol_spec is None or _protocol_spec.loader is None:
+        raise
+    _protocol_module = importlib.util.module_from_spec(_protocol_spec)
+    _protocol_spec.loader.exec_module(_protocol_module)
+    find_supported_placeholders = _protocol_module.find_supported_placeholders
+    is_strong_pipt_token = _protocol_module.is_strong_pipt_token
+
 logger = logging.getLogger(__name__)
 
-_PLACEHOLDER_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
+_PLACEHOLDER_RE = re.compile(
+    r"(?:\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}|@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@)"
+)
 _ILLEGAL_PIPT_RE = re.compile(r"\{\{\s*PIPT_(\d+)\s*\}\}", re.IGNORECASE)
 _ILLEGAL_BIDDER_RE = re.compile(r"\{\{\s*BIDDER_([A-Z_]+)\s*\}\}")
 _MALFORMED_PIPT_RE = re.compile(
@@ -15,9 +32,16 @@ _MALFORMED_PIPT_RE = re.compile(
     re.IGNORECASE,
 )
 _SUSPECT_PLACEHOLDER_RE = re.compile(
-    r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})",
+    r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})|@@[^@\s]*(?:PIPT|BIDDER)[^@\s]*@@?",
     re.IGNORECASE,
 )
+_STRONG_BIDDER_FIELD_BY_TOKEN: dict[str, str] = {
+    "@@PIPT:v1:e900001:kb1d0c001@@": "ORG",
+    "@@PIPT:v1:e900002:kb1d0c002@@": "LEGAL_REP",
+    "@@PIPT:v1:e900003:kb1d0c003@@": "LEAD",
+    "@@PIPT:v1:e900004:kb1d0c004@@": "PHONE",
+    "@@PIPT:v1:e900005:kb1d0c005@@": "DATE",
+}
 
 
 def _normalize_original_text(value: Any) -> str:
@@ -37,7 +61,7 @@ def _normalize_original_text(value: Any) -> str:
 def find_pipt_bidder_placeholders(text: str) -> set[str]:
     if not text:
         return set()
-    return set(_PLACEHOLDER_RE.findall(text))
+    return find_supported_placeholders(text)
 
 
 def find_illegal_pipt_bidder_placeholders(text: str) -> set[str]:
@@ -58,25 +82,39 @@ def _enrich_replace_map(
     db_session: Any = None,
 ) -> None:
     """根据正文里出现的占位符扩展 replace_map（查 DB + 回退 request_mapping）。"""
-    from app.api_lite.database import EntityRegistry, FernetEncryptor, SessionLocal
-
-    pipt_missing = [p for p in found if p.startswith("{{__PIPT_") and p not in replace_map]
-    if pipt_missing:
-        owns_session = db_session is None
-        db = db_session or SessionLocal()
-        try:
-            enc = FernetEncryptor.get()
-            rows = db.query(EntityRegistry).filter(EntityRegistry.placeholder.in_(pipt_missing)).all()
-            for row in rows:
-                replace_map[row.placeholder] = _normalize_original_text(enc.decrypt(row.original_text_enc))
-        finally:
-            if owns_session:
-                db.close()
-
     if isinstance(request_mapping, dict):
         for ph in found:
             if ph not in replace_map and ph in request_mapping:
                 replace_map[ph] = _normalize_original_text(request_mapping[ph])
+
+    pipt_missing = [
+        p for p in found
+        if (p.startswith("{{__PIPT_") or is_strong_pipt_token(p)) and p not in replace_map
+    ]
+    if pipt_missing:
+        from app.api_lite.database import EntityRegistry, FernetEncryptor, SessionLocal
+
+        owns_session = db_session is None
+        db = db_session or SessionLocal()
+        try:
+            enc = FernetEncryptor.get()
+            legacy_missing = [p for p in pipt_missing if p.startswith("{{__PIPT_")]
+            strong_missing = [p for p in pipt_missing if is_strong_pipt_token(p)]
+            rows = db.query(EntityRegistry).filter(
+                (EntityRegistry.placeholder.in_(legacy_missing))
+                | (EntityRegistry.strong_placeholder.in_(strong_missing))
+            ).all()
+            for row in rows:
+                original = _normalize_original_text(enc.decrypt(row.original_text_enc))
+                if row.placeholder in pipt_missing:
+                    replace_map[row.placeholder] = original
+                if row.strong_placeholder in pipt_missing:
+                    replace_map[row.strong_placeholder] = original
+        except Exception as exc:
+            logger.warning("PIPT 实体映射查询失败，保留未解析占位符并交由上层处理: %s", exc)
+        finally:
+            if owns_session:
+                db.close()
 
 
 def _normalize_placeholder_key(value: str) -> str:
@@ -113,6 +151,10 @@ def _build_request_mapping_suffix_index(request_mapping: dict[str, Any]) -> tupl
         bidder_match = re.search(r"\{\{__BIDDER_([A-Z_]+)__\}\}", key)
         if bidder_match and bidder_match.group(1) not in bidder_by_key:
             bidder_by_key[bidder_match.group(1)] = normalized
+            continue
+        strong_bidder_key = _STRONG_BIDDER_FIELD_BY_TOKEN.get(key)
+        if strong_bidder_key and strong_bidder_key not in bidder_by_key:
+            bidder_by_key[strong_bidder_key] = normalized
     unique_by_index = {
         idx: next(iter(values))
         for idx, values in pipt_index_candidates.items()
@@ -279,14 +321,45 @@ def _resolve_illegal_placeholders(
     return out, report
 
 
-def apply_replace_map_to_text(text: str, replace_map: dict[str, str]) -> str:
+def apply_replace_map_to_text(
+    text: str,
+    replace_map: dict[str, str],
+    *,
+    db_session: Any = None,
+    audit_source: str = "content_placeholder_resolve",
+) -> tuple[str, list[dict[str, str]]]:
     if not text or not replace_map:
-        return text or ""
+        return text or "", []
     out = text
+    report: list[dict[str, str]] = []
     for ph, orig in replace_map.items():
-        if ph in out:
+        if ph not in out:
+            continue
+        if ph in _STRONG_BIDDER_FIELD_BY_TOKEN:
             out = out.replace(ph, orig)
-    return out
+            report.append({"placeholder": ph, "original": orig, "status": "success"})
+            _audit_resolve_event(
+                db_session,
+                status="success",
+                source=audit_source,
+                token=ph,
+                original=orig,
+                text=out,
+                details={"strategy": "bidder_strong_placeholder", "field": _STRONG_BIDDER_FIELD_BY_TOKEN[ph]},
+            )
+            continue
+        out = out.replace(ph, orig)
+        report.append({"placeholder": ph, "original": orig, "status": "success"})
+        _audit_resolve_event(
+            db_session,
+            status="success",
+            source=audit_source,
+            token=ph,
+            original=orig,
+            text=out,
+            details={"strategy": "exact_placeholder"},
+        )
+    return out, report
 
 
 def resolve_body_placeholders(
@@ -306,25 +379,30 @@ def resolve_body_placeholders(
     found = find_pipt_bidder_placeholders(text)
     if found:
         _enrich_replace_map(found, merged, request_mapping, db_session=db_session)
-    out = apply_replace_map_to_text(text, merged)
-    for ph, orig in merged.items():
-        if ph in text:
-            _audit_resolve_event(
-                db_session,
-                status="success",
-                source=audit_source,
-                token=ph,
-                original=orig,
-                text=text,
-                details={"strategy": "exact_placeholder"},
-            )
+    out, report = apply_replace_map_to_text(
+        text,
+        merged,
+        db_session=db_session,
+        audit_source=audit_source,
+    )
     out, illegal_report = _resolve_illegal_placeholders(
         out,
         request_mapping,
         db_session=db_session,
         audit_source=audit_source,
     )
-    report = [{"placeholder": ph, "original": orig, "status": "success"} for ph, orig in merged.items()]
     if illegal_report:
         report.extend(illegal_report)
+    unresolved = find_pipt_bidder_placeholders(out)
+    if unresolved:
+        for token in sorted(unresolved):
+            _audit_resolve_event(
+                db_session,
+                status="miss",
+                source=audit_source,
+                token=token,
+                text=out,
+                details={"reason": "supported_placeholder_unresolved"},
+            )
+            report.append({"placeholder": token, "original": "", "status": "miss"})
     return out, merged, report

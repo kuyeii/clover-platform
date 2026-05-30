@@ -145,7 +145,13 @@ export function Sidebar({
         setTimeout(() => setBidderSaved(false), 2000);
     };
 
-    const bidderConfigured = !!(activeProject?.bidderInfo?.orgName || activeProject?.bidderInfo?.legalRep);
+    const bidder = activeProject?.bidderInfo;
+    const bidderConfigured = !!(
+        bidder?.orgName?.trim()
+        && bidder?.legalRep?.trim()
+        && bidder?.projectLead?.trim()
+        && bidder?.phone?.trim()
+    );
 
     return (
         <div className={clsx(
@@ -265,9 +271,9 @@ export function Sidebar({
                             <p className="text-xs text-gray-400 text-center py-2">请先选择或创建项目</p>
                         ) : (
                             <>
-                                <p className="text-xs text-gray-500 pb-1">
-                                    仅存于本地设备，<span className="font-medium text-danger">绝不传输到任何云端服务器</span>。生成时会以匿名占位符传入模型。
-                                </p>
+	                                <p className="text-xs text-gray-500 pb-1">
+	                                    正文生成前必须配置。系统会先在本地服务匹配脱敏实体库，再以统一 token 传入模型。
+	                                </p>
                                 {BIDDER_FIELDS.map(field => (
                                     <div key={field.key}>
                                         <label className="block text-xs text-gray-500 mb-0.5">{field.label}</label>

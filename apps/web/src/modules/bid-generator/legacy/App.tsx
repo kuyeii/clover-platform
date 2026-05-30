@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { Routes, Route, useParams, useNavigate, Navigate, useMatch, useLocation } from 'react-router-dom';
+import { Routes, Route, useParams, useNavigate, Navigate, useMatch } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { KnowledgeHub } from './components/Dashboard/KnowledgeHub';
 import { ProjectCreator } from './components/Project/ProjectCreator';
@@ -11,6 +11,7 @@ import { TechProposalGate } from './components/TechProposalGate';
 import { StageTopBar, getCurrentStageIndex, type StageId } from './components/StageTopBar';
 import type { Project, TechProposalConfig } from './services/projectService';
 import { buildInitialOutlineFromTechnicalHeadings, projectService } from './services/projectService';
+import { shouldBlockProjectNavigation } from './services/navigationPolicy';
 import { useState } from 'react';
 import { AlertTriangle, FileDown, FolderOpen, Loader2, Lock } from 'lucide-react';
 import { buildBidExportSections } from './utils/bidExport';
@@ -327,7 +328,6 @@ export default function App() {
     targetLabel: string;
   }>({ open: false, targetLabel: '' });
   const navigate = useNavigate();
-  const location = useLocation();
 
   const refreshProjects = useCallback(() => {
     setProjects(projectService.getAll());
@@ -391,7 +391,8 @@ export default function App() {
   }, []);
 
   const hasBusyTask = projects.some(isProjectBusy);
-  const busyProjectId = projects.find((proj) => isProjectBusy(proj))?.id || null;
+  const busyProjectIds = projects.filter(isProjectBusy).map((proj) => proj.id);
+  const activeProjectBusy = shouldBlockProjectNavigation(activeProjectId, busyProjectIds);
 
   useEffect(() => {
     (async () => {
@@ -421,19 +422,6 @@ export default function App() {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [hasBusyTask]);
-
-  useEffect(() => {
-    if (!busyProjectId) return;
-    if (activeProjectId === busyProjectId) return;
-    const locked = projects.find((proj) => proj.id === busyProjectId);
-    if (!locked) return;
-    if (globalTab === 'knowledge') return;
-    // 新建项目页需要完整展示预处理进度，不应被忙任务自动跳转抢走
-    if (!location.pathname.startsWith('/projects/')) return;
-    if (!activeProjectId) {
-      navigate(`/projects/${busyProjectId}/${getProjectTabByStatus(locked)}`, { replace: true });
-    }
-  }, [busyProjectId, activeProjectId, projects, navigate, globalTab, location.pathname]);
 
   const handleSelectProject = (id: string) => {
     const proj = projects.find(p => p.id === id);
@@ -467,7 +455,7 @@ export default function App() {
   }, [refreshProjects, reconcileProjectStatuses, repairingLocks]);
 
   const guardNavigation = (targetLabel: string, action: () => void) => {
-    if (!busyProjectId || activeProjectId === busyProjectId) {
+    if (!activeProjectBusy) {
       action();
       return;
     }
@@ -489,8 +477,8 @@ export default function App() {
         onBidderInfoUpdated={refreshProjects}
         onRepairLocks={handleRepairZombieLocks}
         repairingLocks={repairingLocks}
-        lockedProjectId={busyProjectId}
-        disableNewProject={Boolean(busyProjectId)}
+        lockedProjectId={activeProjectBusy ? activeProjectId : null}
+        disableNewProject={activeProjectBusy}
       />
 
       {/* 右侧主内容区 */}
@@ -530,7 +518,7 @@ export default function App() {
                 <h3 className="text-base font-bold text-gray-900">检测到生成任务进行中</h3>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                当前有真实 AI 任务仍在执行。为避免同一浏览器窗口下的项目状态串扰，任务运行期间不允许切换到「{switchWarn.targetLabel}」。
+                当前项目有真实 AI 任务仍在执行。为避免同一浏览器窗口下的项目状态串扰，任务运行期间不允许切换到「{switchWarn.targetLabel}」。
               </p>
             </div>
             <div className="px-6 pb-6 flex gap-3">

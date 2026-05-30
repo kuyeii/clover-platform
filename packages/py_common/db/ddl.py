@@ -15,6 +15,8 @@ CORE_TABLES: tuple[str, ...] = (
     "audit_logs",
     "files",
     "jobs",
+    "pipt_gateway_events",
+    "pipt_gateway_mappings",
 )
 
 MODULE_META: tuple[tuple[str, str, str], ...] = (
@@ -121,6 +123,53 @@ CREATE_CORE_TABLE_SQLS: tuple[str, ...] = (
       finished_at TIMESTAMPTZ NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS core.pipt_gateway_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      request_id TEXT NOT NULL,
+      module_code VARCHAR(100) NOT NULL,
+      purpose VARCHAR(100) NOT NULL,
+      operation VARCHAR(50) NOT NULL,
+      status VARCHAR(50) NOT NULL,
+      mode VARCHAR(50) NOT NULL DEFAULT 'compatibility',
+      input_text_hash TEXT NULL,
+      output_text_hash TEXT NULL,
+      placeholder_count INTEGER NOT NULL DEFAULT 0,
+      unsupported_count INTEGER NOT NULL DEFAULT 0,
+      missing_count INTEGER NOT NULL DEFAULT 0,
+      unexpected_count INTEGER NOT NULL DEFAULT 0,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS core.pipt_gateway_mappings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      request_id TEXT NOT NULL,
+      module_code VARCHAR(100) NOT NULL,
+      purpose VARCHAR(100) NOT NULL,
+      placeholder TEXT NOT NULL,
+      entity_type VARCHAR(100) NOT NULL,
+      original_text_enc TEXT NOT NULL,
+      original_text_hash TEXT NOT NULL,
+      placeholder_protocol VARCHAR(50) NOT NULL DEFAULT 'strong',
+      encryption_status VARCHAR(50) NOT NULL DEFAULT 'plaintext',
+      expires_at TIMESTAMPTZ NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(request_id, placeholder)
+    )
+    """,
+)
+
+ALTER_CORE_TABLE_SQLS: tuple[str, ...] = (
+    """
+    ALTER TABLE core.pipt_gateway_events
+    ADD COLUMN IF NOT EXISTS unexpected_count INTEGER NOT NULL DEFAULT 0
+    """,
+    """
+    ALTER TABLE core.pipt_gateway_mappings
+    ADD COLUMN IF NOT EXISTS encryption_status VARCHAR(50) NOT NULL DEFAULT 'plaintext'
+    """,
 )
 
 CREATE_CORE_INDEX_SQLS: tuple[str, ...] = (
@@ -134,6 +183,16 @@ CREATE_CORE_INDEX_SQLS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_jobs_module_code ON core.jobs(module_code)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_status ON core.jobs(status)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_created_by ON core.jobs(created_by)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_events_request_id ON core.pipt_gateway_events(request_id)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_events_module_code ON core.pipt_gateway_events(module_code)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_events_operation ON core.pipt_gateway_events(operation)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_events_status ON core.pipt_gateway_events(status)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_events_created_at ON core.pipt_gateway_events(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_request_id ON core.pipt_gateway_mappings(request_id)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_placeholder ON core.pipt_gateway_mappings(placeholder)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_module_code ON core.pipt_gateway_mappings(module_code)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_created_at ON core.pipt_gateway_mappings(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_expires_at ON core.pipt_gateway_mappings(expires_at)",
 )
 
 CORE_INDEXES: tuple[str, ...] = (
@@ -147,6 +206,16 @@ CORE_INDEXES: tuple[str, ...] = (
     "idx_jobs_module_code",
     "idx_jobs_status",
     "idx_jobs_created_by",
+    "idx_pipt_gateway_events_request_id",
+    "idx_pipt_gateway_events_module_code",
+    "idx_pipt_gateway_events_operation",
+    "idx_pipt_gateway_events_status",
+    "idx_pipt_gateway_events_created_at",
+    "idx_pipt_gateway_mappings_request_id",
+    "idx_pipt_gateway_mappings_placeholder",
+    "idx_pipt_gateway_mappings_module_code",
+    "idx_pipt_gateway_mappings_created_at",
+    "idx_pipt_gateway_mappings_expires_at",
 )
 
 PORTAL_TABLES: tuple[str, ...] = (
@@ -274,6 +343,7 @@ CONTRACT_REVIEW_INDEXES: tuple[str, ...] = (
 RAG_TABLES: tuple[str, ...] = (
     "conversations",
     "chat_turns",
+    "knowledge_documents",
 )
 
 CREATE_RAG_TABLE_SQLS: tuple[str, ...] = (
@@ -300,6 +370,34 @@ CREATE_RAG_TABLE_SQLS: tuple[str, ...] = (
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS rag.knowledge_documents (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL,
+      source_type TEXT NOT NULL DEFAULT 'file',
+      original_content BYTEA NULL,
+      content_text TEXT NOT NULL DEFAULT '',
+      content_hash CHAR(64) NOT NULL DEFAULT repeat('0', 64),
+      mime_type TEXT NULL,
+      file_size BIGINT NULL,
+      parse_status TEXT NOT NULL DEFAULT 'pending',
+      privacy_status TEXT NOT NULL DEFAULT 'pending',
+      has_sensitive BOOLEAN NOT NULL DEFAULT FALSE,
+      sensitive_count INTEGER NOT NULL DEFAULT 0,
+      sensitive_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+      recognition_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      dify_document_id TEXT NULL,
+      dify_batch TEXT NULL,
+      pipt_request_id TEXT NULL,
+      pipt_mapping_count INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      parsed_at TIMESTAMPTZ NULL,
+      synced_at TIMESTAMPTZ NULL
+    )
+    """,
 )
 
 CREATE_RAG_INDEX_SQLS: tuple[str, ...] = (
@@ -319,6 +417,18 @@ CREATE_RAG_INDEX_SQLS: tuple[str, ...] = (
     CREATE INDEX IF NOT EXISTS idx_rag_chat_turns_user_created
       ON rag.chat_turns(user_id, created_at DESC)
     """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_knowledge_documents_updated_at
+      ON rag.knowledge_documents(updated_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_knowledge_documents_sync_status
+      ON rag.knowledge_documents(sync_status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_knowledge_documents_has_sensitive
+      ON rag.knowledge_documents(has_sensitive)
+    """,
 )
 
 RAG_INDEXES: tuple[str, ...] = (
@@ -326,6 +436,9 @@ RAG_INDEXES: tuple[str, ...] = (
     "idx_rag_conversations_pinned_at",
     "idx_rag_chat_turns_session_created",
     "idx_rag_chat_turns_user_created",
+    "idx_rag_knowledge_documents_updated_at",
+    "idx_rag_knowledge_documents_sync_status",
+    "idx_rag_knowledge_documents_has_sensitive",
 )
 
 COMPETITOR_ANALYSIS_TABLES: tuple[str, ...] = (
@@ -418,6 +531,7 @@ CREATE_BID_GENERATOR_TABLE_SQLS: tuple[str, ...] = (
       entity_type TEXT NOT NULL,
       original_text_enc TEXT NOT NULL,
       placeholder TEXT UNIQUE NOT NULL,
+      strong_placeholder TEXT UNIQUE NULL,
       global_index INTEGER NOT NULL,
       first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       hit_count INTEGER NOT NULL DEFAULT 1
@@ -481,11 +595,19 @@ CREATE_BID_GENERATOR_TABLE_SQLS: tuple[str, ...] = (
     """,
 )
 
+ALTER_BID_GENERATOR_TABLE_SQLS: tuple[str, ...] = (
+    """
+    ALTER TABLE bid_generator.entity_registry
+    ADD COLUMN IF NOT EXISTS strong_placeholder TEXT NULL
+    """,
+)
+
 CREATE_BID_GENERATOR_INDEX_SQLS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_bid_mapping_records_session_id ON bid_generator.mapping_records(session_id)",
     "CREATE INDEX IF NOT EXISTS idx_bid_mapping_records_placeholder ON bid_generator.mapping_records(placeholder)",
     "CREATE INDEX IF NOT EXISTS idx_bid_entity_registry_entity_key ON bid_generator.entity_registry(entity_key)",
     "CREATE INDEX IF NOT EXISTS idx_bid_entity_registry_placeholder ON bid_generator.entity_registry(placeholder)",
+    "CREATE INDEX IF NOT EXISTS idx_bid_entity_registry_strong_placeholder ON bid_generator.entity_registry(strong_placeholder)",
     "CREATE INDEX IF NOT EXISTS idx_bid_entity_registry_entity_type ON bid_generator.entity_registry(entity_type)",
     "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_operation ON bid_generator.pipt_audit_logs(operation)",
     "CREATE INDEX IF NOT EXISTS idx_bid_pipt_audit_logs_status ON bid_generator.pipt_audit_logs(status)",
@@ -510,6 +632,7 @@ BID_GENERATOR_INDEXES: tuple[str, ...] = (
     "idx_bid_mapping_records_placeholder",
     "idx_bid_entity_registry_entity_key",
     "idx_bid_entity_registry_placeholder",
+    "idx_bid_entity_registry_strong_placeholder",
     "idx_bid_entity_registry_entity_type",
     "idx_bid_pipt_audit_logs_operation",
     "idx_bid_pipt_audit_logs_status",

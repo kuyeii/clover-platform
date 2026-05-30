@@ -5,6 +5,7 @@ import type {
   BidKbSyncJob,
   BidKnowledgeResponse,
   BidKnowledgeSyncResponse,
+  BidOutlineSection,
   BidProjectData,
   BidProjectRecord,
   BidStreamEvent,
@@ -16,12 +17,106 @@ import type {
 const API_PREFIX = "/bid-generator/api";
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const DIAGRAM_GENERATION_ENABLED = String(import.meta.env.VITE_ENABLE_DIAGRAM_GENERATION || "").toLowerCase() === "true";
+const DIAGRAM_MAX_PER_PROJECT = (() => {
+  const value = Number(import.meta.env.VITE_MAX_DIAGRAMS || 3);
+  return Number.isFinite(value) && value > 0 ? value : 3;
+})();
 
 type RequestControl = {
   signal?: AbortSignal;
 };
 
 type StreamEventHandler = (event: BidStreamEvent) => void | Promise<void>;
+
+type PlaceholderManifest = Record<string, Record<string, string>>;
+type PlaceholderPolicy = Record<string, unknown>;
+
+function findOutlineSection(
+  outline: BidOutlineSection[] | undefined | null,
+  sectionId: string,
+): BidOutlineSection | undefined {
+  if (!outline?.length || !sectionId) return undefined;
+  for (const section of outline) {
+    if (section.id === sectionId) return section;
+    const nested = findOutlineSection(section.children, sectionId);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function resolveSectionDiagramMeta(
+  outline: BidOutlineSection[] | undefined | null,
+  sectionId: string,
+): { needDiagram: boolean; diagramBrief: string; diagramTypeHint: string; diagramPriority: number } {
+  const section = findOutlineSection(outline, sectionId);
+  return {
+    needDiagram: Boolean(section?.needDiagram ?? section?.need_diagram ?? false),
+    diagramBrief: String(section?.diagramBrief ?? section?.diagram_brief ?? "").trim(),
+    diagramTypeHint: String(section?.diagramTypeHint ?? section?.diagram_type_hint ?? "architecture").trim() || "architecture",
+    diagramPriority: Number(section?.diagramPriority ?? section?.diagram_priority ?? 0) || 0,
+  };
+}
+
+function buildOutlineNeighborhoodSlice(
+  outline: BidOutlineSection[] | undefined | null,
+  sectionId: string,
+  fallbackOutline: string,
+): string {
+  if (!outline?.length || !sectionId) return fallbackOutline || "";
+
+  const markCurrent = (title: string, depth: number): string => {
+    const indent = depth > 0 ? "  ".repeat(depth) : "";
+    return `${indent}[当前] ${title}`;
+  };
+
+  for (let i = 0; i < outline.length; i += 1) {
+    const section = outline[i];
+    if (section.id === sectionId) {
+      const lines: string[] = [];
+      const sectionStart = Math.max(0, i - 1);
+      const sectionEnd = Math.min(outline.length - 1, i + 1);
+      for (let index = sectionStart; index <= sectionEnd; index += 1) {
+        lines.push(index === i ? markCurrent(outline[index].title || "", 0) : outline[index].title || "");
+      }
+      for (const child of section.children || []) lines.push(`  ${child.title || ""}`);
+      return lines.filter(Boolean).join("\n");
+    }
+
+    const children = section.children || [];
+    for (let j = 0; j < children.length; j += 1) {
+      const child = children[j];
+      if (child.id === sectionId) {
+        const lines: string[] = [section.title || ""].filter(Boolean);
+        const childStart = Math.max(0, j - 1);
+        const childEnd = Math.min(children.length - 1, j + 1);
+        for (let index = childStart; index <= childEnd; index += 1) {
+          const title = children[index].title || "";
+          lines.push(index === j ? markCurrent(title, 1) : `  ${title}`);
+        }
+        for (const grandChild of child.children || []) lines.push(`    ${grandChild.title || ""}`);
+        return lines.filter(Boolean).join("\n");
+      }
+
+      const grandChildren = child.children || [];
+      for (let k = 0; k < grandChildren.length; k += 1) {
+        const grandChild = grandChildren[k];
+        if (grandChild.id === sectionId) {
+          const lines: string[] = [section.title || "", `  ${child.title || ""}`].filter(Boolean);
+          const grandChildStart = Math.max(0, k - 1);
+          const grandChildEnd = Math.min(grandChildren.length - 1, k + 1);
+          for (let index = grandChildStart; index <= grandChildEnd; index += 1) {
+            const title = grandChildren[index].title || "";
+            lines.push(index === k ? markCurrent(title, 2) : `    ${title}`);
+          }
+          return lines.filter(Boolean).join("\n");
+        }
+      }
+    }
+  }
+
+  return fallbackOutline || "";
+}
 
 export function fetchBidHealth(options: RequestControl = {}) {
   return apiClient.get<{ status?: string; service?: string }>("/bid-generator/health", {
@@ -131,10 +226,13 @@ export function desensitizeText(input: {
   method?: string;
   targetEntities?: string[];
   sessionId?: string;
+  placeholderProtocol?: "legacy" | "strong";
 }) {
   return apiClient.post<{
     desensitized_text: string;
     mapping_table?: Record<string, string>;
+    placeholder_manifest?: PlaceholderManifest;
+    placeholder_policy?: PlaceholderPolicy;
     entity_count?: number;
     entities?: unknown[];
   }>(
@@ -145,6 +243,7 @@ export function desensitizeText(input: {
       method: input.method || "placeholder",
       target_entities: input.targetEntities?.length ? input.targetEntities : undefined,
       session_id: input.sessionId || "apps-web-bid-generator",
+      placeholder_protocol: input.placeholderProtocol || "strong",
     },
     { unwrapEnvelope: false },
   );
@@ -223,6 +322,7 @@ export async function startExtractTask(projectId: string, file: File, projectNam
 
 export async function startOutlineTask(project: BidProjectRecord, expectedTotalWords = 0) {
   const data = normalizeProjectData(project);
+  const enableDiagrams = DIAGRAM_GENERATION_ENABLED;
   return apiClient.post<{ task_id: string }>(
     `${API_PREFIX}/tasks/start-outline`,
     {
@@ -232,8 +332,8 @@ export async function startOutlineTask(project: BidProjectRecord, expectedTotalW
       use_knowledge: true,
       analysis_context: buildAnalysisContext(data.analysisReport || data.analysis_report || []),
       expected_total_words: expectedTotalWords,
-      enable_diagrams: false,
-      max_diagrams: 0,
+      enable_diagrams: enableDiagrams,
+      max_diagrams: enableDiagrams ? DIAGRAM_MAX_PER_PROJECT : 0,
       structure_heading_seed_json: JSON.stringify(
         (data.analysisV2 as { bid_structure?: { technical_sections?: unknown[] } } | undefined)?.bid_structure?.technical_sections || [],
       ),
@@ -287,6 +387,7 @@ export async function streamGenerateOutline(
   signal?: AbortSignal,
 ) {
   const data = normalizeProjectData(project);
+  const enableDiagrams = DIAGRAM_GENERATION_ENABLED;
   await streamJsonRequest(
     `${API_PREFIX}/projects/generate-outline-stream`,
     {
@@ -305,8 +406,8 @@ export async function streamGenerateOutline(
       technical_targets_json: JSON.stringify(
         (data.analysisV2 as { technical_targets?: unknown[] } | undefined)?.technical_targets || [],
       ),
-      enable_diagrams: false,
-      max_diagrams: 0,
+      enable_diagrams: enableDiagrams,
+      max_diagrams: enableDiagrams ? DIAGRAM_MAX_PER_PROJECT : 0,
     },
     onEvent,
     signal,
@@ -326,6 +427,9 @@ export async function streamGenerateContent(
   signal?: AbortSignal,
 ) {
   const data = normalizeProjectData(input.project);
+  const enableDiagrams = DIAGRAM_GENERATION_ENABLED;
+  const sectionOutlineSlice = buildOutlineNeighborhoodSlice(data.outline, input.sectionId, input.globalOutline);
+  const diagramMeta = resolveSectionDiagramMeta(data.outline, input.sectionId);
   await streamJsonRequest(
     `${API_PREFIX}/projects/generate-content-stream`,
     {
@@ -336,12 +440,22 @@ export async function streamGenerateContent(
       expected_words: input.expectedWords,
       project_summary: data.summary || data.project_summary || "",
       global_outline: input.globalOutline,
-      section_outline_slice: input.sectionTitle,
+      section_outline_slice: sectionOutlineSlice || input.sectionTitle,
       requires_search: false,
-      placeholder_hint: buildPlaceholderHint(data.mappingTable || data.mapping_table || {}),
+      placeholder_hint: buildPlaceholderHint(
+        data.mappingTable || data.mapping_table || {},
+        data.placeholderManifest || data.placeholder_manifest || {},
+      ),
       analysis_context: buildAnalysisContext(data.analysisReport || data.analysis_report || []),
       generation_strategy: "general",
+      enable_diagrams: enableDiagrams,
+      max_diagrams: enableDiagrams ? DIAGRAM_MAX_PER_PROJECT : 0,
+      need_diagram: enableDiagrams && diagramMeta.needDiagram,
+      diagram_brief: enableDiagrams ? diagramMeta.diagramBrief : "",
+      diagram_type_hint: diagramMeta.diagramTypeHint,
+      diagram_priority: diagramMeta.diagramPriority,
       mapping_table: data.mappingTable || data.mapping_table || {},
+      bidder_info: data.bidderInfo || {},
     },
     onEvent,
     signal,
@@ -505,6 +619,8 @@ export function normalizeProjectData(project: BidProjectRecord | null | undefine
     analysisReport: data.analysisReport || data.analysis_report || [],
     analysisV2: data.analysisV2 || data.analysis_v2,
     mappingTable: data.mappingTable || data.mapping_table || {},
+    placeholderManifest: data.placeholderManifest || data.placeholder_manifest || {},
+    placeholderPolicy: data.placeholderPolicy || data.placeholder_policy || {},
     imageMap: data.imageMap || data.image_map || {},
     entityCount: Number(data.entityCount ?? data.entity_count ?? 0),
     requiredAttachments: data.requiredAttachments || data.required_attachments || [],
@@ -528,6 +644,10 @@ export function mergeExtractIntoProject(project: BidProjectRecord, payload: BidE
     analysis_v2: payload.analysis_v2 || current.analysisV2,
     mappingTable: payload.mapping_table || {},
     mapping_table: payload.mapping_table || {},
+    placeholderManifest: payload.placeholder_manifest || {},
+    placeholder_manifest: payload.placeholder_manifest || {},
+    placeholderPolicy: payload.placeholder_policy || {},
+    placeholder_policy: payload.placeholder_policy || {},
     entityCount: payload.entity_count || 0,
     entity_count: payload.entity_count || 0,
     imageMap: payload.image_map || {},
@@ -755,9 +875,34 @@ function buildAnalysisContext(nodes: unknown[]) {
   return value.length > 6000 ? `${value.slice(0, 6000)}\n\n...` : value;
 }
 
-function buildPlaceholderHint(mappingTable: Record<string, string>) {
-  const count = Object.keys(mappingTable || {}).length;
-  return count ? `文中含 ${count} 个脱敏占位符，请原样保留，不要改写占位符格式。` : "";
+function buildPlaceholderHint(mappingTable: Record<string, string>, manifest: PlaceholderManifest = {}) {
+  const tokens = Object.keys(manifest || {}).length ? Object.keys(manifest) : Object.keys(mappingTable || {});
+  if (!tokens.length) {
+    return "";
+  }
+  const sample = tokens.slice(0, 8).join("、");
+  const suffix = tokens.length > 8 ? " ..." : "";
+  const contextRows = tokens.slice(0, 80).map((token) => {
+    const meta = manifest[token] || {};
+    const sourceContext = String(meta.source_context || "").trim();
+    const tokenContext = String(meta.source_context_with_token || "").trim();
+    const row: Record<string, string> = {
+      token,
+      entity_type: String(meta.entity_type || ""),
+      role: String(meta.role || ""),
+    };
+    if (sourceContext) row.source_context = sourceContext;
+    if (tokenContext) row.source_context_with_token = tokenContext;
+    return row;
+  });
+  return [
+    `文中含 ${tokens.length} 个本地脱敏占位符，统一使用 @@PIPT:v1:e000001:kxxxxxxxx@@ 强 token 样式，兼容历史 {{__PIPT_类型_序号__}} 格式。`,
+    "这些 token 只代表安全语义，不包含真实敏感值；输出必须逐字原样保留，禁止改写、缩写、翻译、拆分或重新编号。",
+    "可以参考 PIPT_TOKEN_CONTEXT_JSON 理解每个 token 的实体类型和上下文；引用时必须输出 token 本身。",
+    `PIPT_ALLOWED_PLACEHOLDERS_JSON:${JSON.stringify(tokens)}`,
+    `PIPT_TOKEN_CONTEXT_JSON:${JSON.stringify(contextRows)}`,
+    sample ? `当前 token 示例：${sample}${suffix}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 function buildForgeSections(data: BidProjectData) {

@@ -6,9 +6,11 @@ import importlib
 import logging
 import sys
 import threading
+import socket
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 from fastapi import APIRouter
 from app.core.config import get_api_settings
@@ -19,7 +21,6 @@ from packages.py_common.db.session import get_engine
 
 logger = logging.getLogger(__name__)
 
-DIAGRAM_GENERATION_ENABLED = os.environ.get("ENABLE_DIAGRAM_GENERATION", "false").strip().lower() == "true"
 _IMPORT_LOCK = threading.RLock()
 _LEGACY_MODULES: dict[str, ModuleType] = {}
 
@@ -29,7 +30,8 @@ WORKFLOWS: tuple[tuple[str, str, str, bool, str], ...] = (
     ("content_group_writer", "DIFY_WORKFLOW_CONTENT_GROUP_WRITER", "H2分组正文生成", True, "managed"),
     ("content_rewrite", "DIFY_WORKFLOW_CONTENT_REWRITE", "单章节重生成", True, "managed"),
     ("response_content_writer", "DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER", "响应情况正文生成", True, "managed"),
-    ("diagram_generator", "DIFY_WORKFLOW_DIAGRAM_GENERATOR", "图表生成", True, "managed"),
+    ("diagram_generator", "DIFY_WORKFLOW_DIAGRAM_GENERATOR", "图表生成（SVG）", True, "managed"),
+    ("diagram_generator_mermaid", "DIFY_WORKFLOW_DIAGRAM_GENERATOR_MERMAID", "图表生成（Mermaid）", True, "managed"),
     ("doc_analysis", "DIFY_WORKFLOW_DOC_ANALYSIS", "文档分析", True, "managed"),
     ("requirement_extractor", "DIFY_WORKFLOW_REQUIREMENT_EXTRACTOR", "需求提取", False, "legacy"),
     ("blueprint_generator", "DIFY_WORKFLOW_BLUEPRINT_GENERATOR", "全局策略蓝图", False, "legacy"),
@@ -179,16 +181,87 @@ def _get_workflow_key_source(workflow_name: str) -> tuple[bool, str]:
     return False, "missing"
 
 
+def _diagram_generation_enabled() -> bool:
+    return os.environ.get("ENABLE_DIAGRAM_GENERATION", "false").strip().lower() == "true"
+
+
+def _check_dns_host(host: str, port: int = 443) -> dict[str, str | int | bool]:
+    """轻量 DNS 诊断，不发起模型请求，也不暴露任何密钥。"""
+    try:
+        socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        return {
+            "host": host,
+            "port": port,
+            "resolvable": False,
+            "status": "error",
+            "message": f"DNS 解析失败: {exc}",
+        }
+    except OSError as exc:
+        return {
+            "host": host,
+            "port": port,
+            "resolvable": False,
+            "status": "error",
+            "message": f"DNS 检查失败: {exc}",
+        }
+    return {
+        "host": host,
+        "port": port,
+        "resolvable": True,
+        "status": "ok",
+        "message": "DNS 可解析",
+    }
+
+
+def _model_provider_diagnostics() -> dict[str, dict[str, str | int | bool]]:
+    return {
+        "dashscope": _check_dns_host("dashscope.aliyuncs.com"),
+    }
+
+
+def _dify_api_diagnostics() -> dict[str, str | int | bool]:
+    """诊断标书后端到 Dify API 的基础连通配置，只检查主机解析。"""
+    raw_url = os.environ.get("DIFY_API_URL", "http://localhost/v1").strip() or "http://localhost/v1"
+    parsed_url = raw_url if "://" in raw_url else f"http://{raw_url}"
+    parsed = urlparse(parsed_url)
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        return {
+            "url_env": "DIFY_API_URL",
+            "host": host,
+            "port": "",
+            "resolvable": False,
+            "status": "error",
+            "message": f"DIFY_API_URL 端口无效: {exc}",
+        }
+    if not host:
+        return {
+            "url_env": "DIFY_API_URL",
+            "host": "",
+            "port": port,
+            "resolvable": False,
+            "status": "error",
+            "message": "DIFY_API_URL 缺少可解析的主机名",
+        }
+    return {
+        "url_env": "DIFY_API_URL",
+        **_check_dns_host(host, port),
+    }
+
+
 def get_health_payload() -> dict[str, str]:
     return {"status": "ok", "service": "pipt-lite"}
 
 
-def get_workflow_status_payload() -> dict[str, dict[str, str | bool]]:
-    status: dict[str, dict[str, str | bool]] = {}
+def get_workflow_status_payload() -> dict[str, Any]:
+    status: dict[str, Any] = {}
     for name, env_var, label, managed, lifecycle in WORKFLOWS:
         configured, source = _get_workflow_key_source(name)
         source_value = source
-        if name == "diagram_generator" and not DIAGRAM_GENERATION_ENABLED:
+        if name in {"diagram_generator", "diagram_generator_mermaid"} and not _diagram_generation_enabled():
             configured = False
             source_value = "disabled"
         status[name] = {
@@ -199,6 +272,13 @@ def get_workflow_status_payload() -> dict[str, dict[str, str | bool]]:
             "managed": managed,
             "lifecycle": lifecycle,
         }
+    status["_diagnostics"] = {
+        "label": "外部依赖诊断",
+        "managed": False,
+        "lifecycle": "diagnostic",
+        "providers": _model_provider_diagnostics(),
+        "dify_api": _dify_api_diagnostics(),
+    }
     return status
 
 

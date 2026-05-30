@@ -322,28 +322,41 @@ workflow:
           \    s = re.sub(r'^```(?:svg|xml)?\\s*\\n?', '', s, flags=re.IGNORECASE)\n\
           \    s = re.sub(r'\\n?```\\s*$', '', s).strip()\n    m = re.search(r'(<svg[\\\
           s\\S]*?</svg>)', s, flags=re.IGNORECASE)\n    return m.group(1).strip()\
-          \ if m else s\n\ndef _has_main_chain(layout_text: str) -> bool:\n    try:\n\
-          \        data = json.loads(layout_text)\n    except Exception:\n       \
-          \ return False\n    edges = data.get(\"edges\") or []\n    if not isinstance(edges,\
-          \ list):\n        return False\n    return len(edges) >= 1\n\ndef _enforce_min_font_size(svg:\
-          \ str, min_px: int = 14) -> str:\n    def _sub(m: re.Match) -> str:\n  \
-          \      try:\n            n = float(m.group(1))\n        except Exception:\n\
-          \            return m.group(0)\n        n = max(n, float(min_px))\n    \
-          \    return f'font-size=\"{int(n)}\"'\n    return re.sub(r'font-size\\s*=\\\
-          s*[\"\\']\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(?:px)?\\s*[\"\\']', _sub, svg, flags=re.IGNORECASE)\n\
-          \ndef main(svg_text: str, layout_text: str, semantic_text: str) -> dict:\n\
-          \    svg = _extract_svg(svg_text)\n    issues = []\n\n    if not svg.lower().startswith('<svg'):\n\
-          \        issues.append('not_svg_root')\n    if 'foreignObject' in svg:\n\
-          \        issues.append('contains_foreignObject')\n    if 'marker id=\"arrow-blue\"\
-          ' not in svg:\n        issues.append('missing_arrow_blue')\n    if '<text'\
-          \ not in svg:\n        issues.append('missing_text')\n    if not _has_main_chain(layout_text):\n\
-          \        issues.append('missing_main_chain')\n\n    svg = _enforce_min_font_size(svg,\
-          \ min_px=14)\n\n    if issues:\n        return {\n            \"svg\": _FALLBACK_SVG,\n\
-          \            \"quality_report\": \"fallback:\" + \",\".join(issues),\n \
-          \           \"semantic_plan\": semantic_text,\n            \"layout_plan\"\
-          : layout_text,\n        }\n\n    return {\n        \"svg\": svg,\n     \
-          \   \"quality_report\": \"ok\",\n        \"semantic_plan\": semantic_text,\n\
-          \        \"layout_plan\": layout_text,\n    }\n"
+          \ if m else s\n\ndef _extract_json_object(text: str):\n    s = (text or\
+          \ \"\").strip()\n    s = re.sub(r'<think>[\\s\\S]*?</think>', '', s, flags=re.IGNORECASE).strip()\n\
+          \    fenced = re.search(r'```(?:json)?\\s*([\\s\\S]*?)```', s, flags=re.IGNORECASE)\n\
+          \    if fenced:\n        s = fenced.group(1).strip()\n    start = s.find('{')\n\
+          \    end = s.rfind('}')\n    if start >= 0 and end > start:\n        s =\
+          \ s[start:end + 1]\n    return json.loads(s)\n\ndef _has_main_chain(layout_text:\
+          \ str) -> bool:\n    try:\n        data = _extract_json_object(layout_text)\n\
+          \    except Exception:\n        return False\n    edges = data.get(\"edges\"\
+          ) or []\n    nodes = data.get(\"nodes\") or []\n    if not isinstance(edges,\
+          \ list) or not isinstance(nodes, list):\n        return False\n    node_ids\
+          \ = {str(node.get(\"id\")) for node in nodes if isinstance(node, dict) and\
+          \ node.get(\"id\")}\n    for edge in edges:\n        if not isinstance(edge,\
+          \ dict):\n            continue\n        src = str(edge.get(\"from\") or\
+          \ edge.get(\"source\") or \"\")\n        dst = str(edge.get(\"to\") or edge.get(\"\
+          target\") or \"\")\n        if src and dst and (not node_ids or (src in\
+          \ node_ids and dst in node_ids)):\n            return True\n    return False\n\
+          \ndef _enforce_min_font_size(svg: str, min_px: int = 14) -> str:\n    def\
+          \ _sub(m: re.Match) -> str:\n        try:\n            n = float(m.group(1))\n\
+          \        except Exception:\n            return m.group(0)\n        n = max(n,\
+          \ float(min_px))\n        return f'font-size=\"{int(n)}\"'\n    return re.sub(r'font-size\\\
+          s*=\\s*[\"\\']\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(?:px)?\\s*[\"\\']', _sub, svg,\
+          \ flags=re.IGNORECASE)\n\ndef main(svg_text: str, layout_text: str, semantic_text:\
+          \ str) -> dict:\n    svg = _extract_svg(svg_text)\n    issues = []\n\n \
+          \   if not svg.lower().startswith('<svg'):\n        issues.append('not_svg_root')\n\
+          \    if 'foreignObject' in svg:\n        issues.append('contains_foreignObject')\n\
+          \    if 'marker id=\"arrow-blue\"' not in svg:\n        issues.append('missing_arrow_blue')\n\
+          \    if '<text' not in svg:\n        issues.append('missing_text')\n   \
+          \ if not _has_main_chain(layout_text):\n        issues.append('missing_main_chain')\n\
+          \n    svg = _enforce_min_font_size(svg, min_px=14)\n\n    if issues:\n \
+          \       return {\n            \"svg\": _FALLBACK_SVG,\n            \"quality_report\"\
+          : \"fallback:\" + \",\".join(issues),\n            \"semantic_plan\": semantic_text,\n\
+          \            \"layout_plan\": layout_text,\n        }\n\n    return {\n\
+          \        \"svg\": svg,\n        \"quality_report\": \"ok\",\n        \"\
+          semantic_plan\": semantic_text,\n        \"layout_plan\": layout_text,\n\
+          \    }\n"
         code_language: python3
         outputs:
           layout_plan:

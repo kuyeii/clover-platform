@@ -128,6 +128,17 @@ def _inject_apps_web_platform_env(env: dict[str, str], port_plan: dict[str, Any]
     ws_url = backend_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
     env.setdefault("VITE_API_BASE_URL", f"{backend_url}/api/v1")
     env.setdefault("VITE_WS_BASE_URL", f"{ws_url}/ws/core")
+    _inject_bid_generator_diagram_vite_env(env)
+
+
+def _inject_bid_generator_diagram_vite_env(env: dict[str, str]) -> None:
+    diagram_enabled = os.getenv("VITE_ENABLE_DIAGRAM_GENERATION", os.getenv("ENABLE_DIAGRAM_GENERATION", "false"))
+    env.setdefault("VITE_ENABLE_DIAGRAM_GENERATION", diagram_enabled)
+    env.setdefault("VITE_MAX_DIAGRAMS", os.getenv("VITE_MAX_DIAGRAMS", os.getenv("MAX_DIAGRAMS", "3")))
+
+
+def _inject_bid_generator_dev_env(env: dict[str, str]) -> None:
+    _inject_bid_generator_diagram_vite_env(env)
 
 
 def _port_plan_include_codes(
@@ -258,6 +269,8 @@ def build_process_specs(
             frontend_command = _format_value(str(dev.get("frontend_command") or ""), app, plan)
             backend_cwd = REPO_ROOT / str(dev.get("backend_working_dir") or dev.get("working_dir"))
             frontend_cwd = REPO_ROOT / str(dev.get("frontend_working_dir") or dev.get("working_dir"))
+            if code == "bid-generator":
+                _inject_bid_generator_dev_env(env)
             if backend_command and with_legacy_backends and "backend_port" in plan:
                 specs.append(ProcessSpec(f"{code}:backend", backend_command, backend_cwd, env))
             if frontend_command and "frontend_port" in plan:

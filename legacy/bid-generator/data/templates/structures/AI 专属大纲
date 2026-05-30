@@ -4,32 +4,32 @@ description: 适用于绝大多数常规标书编排的通用划分结构。
 blocks:
 - id: tech_heading_1
   title: 对本项目的理解
-  instruction: 当前已识别的核心侧重点是：本章对应评分项‘对本项目的理解’（10分）。需深度解析《可信数据空间发展行动计划（2024—2028年）》政策导。围绕“对本项目的理解”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：江苏国际数据港、跨境数据流通监管、数据要素市场化、机密计算。需紧扣招标文件中的关键技术要求。
+  instruction: 本章为10分评分项核心响应章节。需系统呈现对项目战略背景、技术需求边界、交付目标与实施路径的深度理解。应立足长三角一体化与数据要素市场化改革双重视角，将跨境可信数据空间建设置于国际数据港功能升级的战略框架中；精准映射智能合约、可信送达、合规审查智能体、TEE四大技术能力与项目需求的对应关系；完整覆盖合同签订后30日中期汇报、60日终期报告及专家评审等硬性交付约束，体现从认知层到执行层的全面把握。
   keywords:
-  - 江苏国际数据港
-  - 跨境数据流通监管
+  - 长三角一体化
   - 数据要素市场化
-  - 机密计算
+  - 国际数据港
+  - 智能合约
   requires_search: false
   block_kind: group
   heading_level: 2
   generation_strategy: general
   generates_from_self: false
 - id: '1.1'
-  title: 1.1 政策环境与战略定位解析
-  instruction: 当前已识别的核心侧重点是：深入剖析国家数据要素市场化配置改革背景，解读《数据出境安全评估办法》等法规对跨境数据流转的硬性约束，结合江苏省数。围绕“1.1
-    政策环境与战略定位解析”撰写本节内容，在“对本项目的理解”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：数据出境安全评估、个人信息保护认证、江苏省数字经济规划。需紧扣招标文件中的关键技术要求。
+  title: 项目背景与战略定位
+  instruction: 当前已识别的核心侧重点是：阐述江苏国际数据港在长三角一体化战略中的定位，分析跨境数据流通对区域数字经济发展的支撑作用，结合国家数据要素市场。围绕“项目背景与战略定位”撰写本节内容，在“对本项目的理解”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：长三角一体化、数据要素市场化、国际数据港、顶层设计。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 数据出境安全评估
-  - 个人信息保护认证
-  - 江苏省数字经济规划
+  - 长三角一体化
+  - 数据要素市场化
+  - 国际数据港
+  - 顶层设计
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
     priority: 0
-  expected_word_count: 700
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -38,22 +38,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '1.2'
-  title: 1.2 核心技术需求与架构目标
-  instruction: 当前已识别的核心侧重点是：系统拆解招标文件核心技术指标，阐明基于智能合约的数据流通管控、可信送达、合规审查智能体及TEE环境的架构设计目标。围绕“1.2
-    核心技术需求与架构目标”撰写本节内容，在“对本项目的理解”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：智能合约管控、可信送达机制、合规审查智能体、TEE执行环境。需紧扣招标文件中的关键技术要求。
+  title: 技术需求与核心能力映射
+  instruction: 当前已识别的核心侧重点是：深入解析招标文件对跨境可信数据空间的技术能力要求，逐条对应智能合约自动化履约、可信送达机制、跨境数据合规审查智能。围绕“技术需求与核心能力映射”撰写本节内容，在“对本项目的理解”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：智能合约、可信送达、合规审查智能体、可信执行环境。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 智能合约管控
-  - 可信送达机制
+  - 智能合约
+  - 可信送达
   - 合规审查智能体
-  - TEE执行环境
+  - 可信执行环境
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: data-flow
     priority: 0
-  expected_word_count: 800
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -62,20 +60,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '1.3'
-  title: 1.3 咨询规划实施路径规划
-  instruction: 当前已识别的核心侧重点是：规划前期调研、中期架构设计、后期报告编制的三阶段实施路线，设定30日中期汇报与60日终期评审里程碑，说明如何通过。围绕“1.3
-    咨询规划实施路径规划”撰写本节内容，在“对本项目的理解”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：现状调研方法论、场景验证沙箱、专家评审验收标准。需紧扣招标文件中的关键技术要求。
+  title: 交付目标与实施路径
+  instruction: 当前已识别的核心侧重点是：明确项目三大交付物及其时间节点：合同签订后30日提交中期成果汇报PPT，60日内完成《江苏国际数据港跨境可信数据。围绕“交付目标与实施路径”撰写本节内容，在“对本项目的理解”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：咨询规划报告、中期成果汇报、专家评审、交付里程碑。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 现状调研方法论
-  - 场景验证沙箱
-  - 专家评审验收标准
+  - 咨询规划报告
+  - 中期成果汇报
+  - 专家评审
+  - 交付里程碑
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
     priority: 0
-  expected_word_count: 500
+  expected_word_count: 300
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -85,33 +83,32 @@ blocks:
   generates_from_self: false
 - id: tech_heading_2
   title: 对本项目重点难点分析
-  instruction: 当前已识别的核心侧重点是：本章对应评分项‘对本项目重点难点分析’（10分）。需聚焦跨境数据流通中的多法域监管冲突、数据可用不可见信任构建、。围绕“对本项目重点难点分析”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：多法域合规协调、数据主权边界、全链路审计追溯、沙箱试点验证。需紧扣招标文件中的关键技术要求。
+  instruction: 当前已识别的核心侧重点是：本章为10分评分项，需精准识别并深度剖析跨境可信数据空间建设的三类核心技术难点：一是多法域合规规则冲突与自动化审。围绕“对本项目重点难点分析”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：多法域合规冲突、隐私计算、可信执行环境、智能合约互操作。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 多法域合规协调
-  - 数据主权边界
-  - 全链路审计追溯
-  - 沙箱试点验证
+  - 多法域合规冲突
+  - 隐私计算
+  - 可信执行环境
+  - 智能合约互操作
   requires_search: false
   block_kind: group
   heading_level: 2
   generation_strategy: general
   generates_from_self: false
 - id: '2.1'
-  title: 2.1 多法域合规审查自动化挑战
-  instruction: 当前已识别的核心侧重点是：分析跨境数据流通面临的多法域监管协调难题，阐述如何通过合规审查智能体实现自动化合规判定，解决人工审查效率低、标准。围绕“2.1
-    多法域合规审查自动化挑战”撰写本节内容，在“对本项目重点难点分析”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：数据分类分级模型、合规规则引擎、自动化研判算法。需紧扣招标文件中的关键技术要求。
+  title: 跨境数据合规审查的复杂性
+  instruction: 当前已识别的核心侧重点是：聚焦跨境数据流通面临的多法域合规冲突难题，分析中国《数据安全法》《个人信息保护法》与欧盟GDPR、美国CLOUD。围绕“跨境数据合规审查的复杂性”撰写本节内容，在“对本项目重点难点分析”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：数据跨境合规、多法域冲突、GDPR、数据安全法。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 数据分类分级模型
-  - 合规规则引擎
-  - 自动化研判算法
+  - 数据跨境合规
+  - 多法域冲突
+  - GDPR
+  - 数据安全法
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: data-flow
     priority: 0
-  expected_word_count: 700
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -120,20 +117,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '2.2'
-  title: 2.2 跨域数据信任机制构建
-  instruction: 当前已识别的核心侧重点是：深入剖析跨境场景下可信数据空间构建的核心难点，包括数据主权边界界定、数据使用可控可计量的技术实现，说明如何通过T。围绕“2.2
-    跨域数据信任机制构建”撰写本节内容，在“对本项目重点难点分析”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：数据主权标识、使用计量探针、链上存证溯源。需紧扣招标文件中的关键技术要求。
+  title: 隐私计算与可信执行的技术瓶颈
+  instruction: 当前已识别的核心侧重点是：分析跨境数据空间中“数据可用不可见”的技术实现难点，对比TEE、MPC、联邦学习等隐私计算方案在跨境场景下的性能。围绕“隐私计算与可信执行的技术瓶颈”撰写本节内容，在“对本项目重点难点分析”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：可信执行环境、隐私计算、数据可用不可见、安全多方计算。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 数据主权标识
-  - 使用计量探针
-  - 链上存证溯源
+  - 可信执行环境
+  - 隐私计算
+  - 数据可用不可见
+  - 安全多方计算
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
     priority: 0
-  expected_word_count: 700
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -142,20 +139,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '2.3'
-  title: 2.3 典型场景技术适配与风险控制
-  instruction: 当前已识别的核心侧重点是：识别跨境电商、跨境科研合作等典型场景的技术适配难点，分析不同场景下数据敏感度与实时性要求的差异，提出通过数据沙箱。围绕“2.3
-    典型场景技术适配与风险控制”撰写本节内容，在“对本项目重点难点分析”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：跨境电商数据流、科研协作沙箱、动态权限策略。需紧扣招标文件中的关键技术要求。
+  title: 智能合约与可信送达的协同难点
+  instruction: 当前已识别的核心侧重点是：识别智能合约在跨境数据流通中的特殊挑战：多链环境下的合约互操作性、数据确权与合约条款的法律效力衔接、链上存证与链。围绕“智能合约与可信送达的协同难点”撰写本节内容，在“对本项目重点难点分析”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：智能合约、跨链互操作、数据确权、存证溯源。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 跨境电商数据流
-  - 科研协作沙箱
-  - 动态权限策略
+  - 智能合约
+  - 跨链互操作
+  - 数据确权
+  - 存证溯源
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
     priority: 0
-  expected_word_count: 600
+  expected_word_count: 300
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -165,33 +162,32 @@ blocks:
   generates_from_self: false
 - id: tech_heading_3
   title: 技术质量保障措施
-  instruction: 当前已识别的核心侧重点是：本章对应评分项‘技术质量保障措施’（10分）。需建立覆盖咨询全周期的质量管理体系，明确项目经理负责制与三级评审机。围绕“技术质量保障措施”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：ISO9001质量体系、PDCA过程控制、专家智库评审、保密分级管控。需紧扣招标文件中的关键技术要求。
+  instruction: 当前已识别的核心侧重点是：本章为10分评分项，需构建体系完备、过程可控、责任清晰的三层质量保障架构。顶层以ISO三体系认证为资质背书，中层。围绕“技术质量保障措施”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：ISO三体系认证、质量门控制、RACI责任矩阵、版本控制。需紧扣招标文件中的关键技术要求。
   keywords:
-  - ISO9001质量体系
-  - PDCA过程控制
-  - 专家智库评审
-  - 保密分级管控
+  - ISO三体系认证
+  - 质量门控制
+  - RACI责任矩阵
+  - 版本控制
   requires_search: false
   block_kind: group
   heading_level: 2
   generation_strategy: general
   generates_from_self: false
 - id: '3.1'
-  title: 3.1 咨询成果全流程质量控制
-  instruction: 当前已识别的核心侧重点是：建立覆盖咨询规划全周期的质量管理体系，明确需求分析、方案设计、报告编制、评审验收各阶段的质量控制标准与检查点，制。围绕“3.1
-    咨询成果全流程质量控制”撰写本节内容，在“技术质量保障措施”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：需求基线管理、架构设计校验、报告交叉复核。需紧扣招标文件中的关键技术要求。
+  title: 质量保障体系与资质支撑
+  instruction: 当前已识别的核心侧重点是：建立覆盖ISO9001质量管理体系、ISO20000信息技术服务体系、ISO27001信息安全管理体系的三标融合。围绕“质量保障体系与资质支撑”撰写本节内容，在“技术质量保障措施”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：质量管理体系、ISO9001、IT服务管理、ISO20000。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 需求基线管理
-  - 架构设计校验
-  - 报告交叉复核
+  - 质量管理体系
+  - ISO9001
+  - IT服务管理
+  - ISO20000
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: architecture
     priority: 0
-  expected_word_count: 700
+  expected_word_count: 300
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -200,21 +196,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '3.2'
-  title: 3.2 专家协同与里程碑评审机制
-  instruction: 当前已识别的核心侧重点是：设计项目经理负责制的质量责任体系，配置数据安全、跨境合规、可信计算等领域专家智库支持，建立周例会、里程碑评审、专。围绕“3.2
-    专家协同与里程碑评审机制”撰写本节内容，在“技术质量保障措施”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：周例会制度、中期PPT预审、终期专家答辩。需紧扣招标文件中的关键技术要求。
+  title: 过程质量保障措施
+  instruction: 当前已识别的核心侧重点是：设计咨询规划项目全生命周期的质量管控机制：需求调研阶段的双确认机制、方案编制阶段的三级审核（编制人-技术负责人-。围绕“过程质量保障措施”撰写本节内容，在“技术质量保障措施”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：阶段评审、专家把关、版本控制、变更管理。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 周例会制度
-  - 中期PPT预审
-  - 终期专家答辩
+  - 阶段评审
+  - 专家把关
+  - 版本控制
+  - 变更管理
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: data-flow
     priority: 0
-  expected_word_count: 700
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -223,20 +218,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '3.3'
-  title: 3.3 数据安全与知识产权防护
-  instruction: 当前已识别的核心侧重点是：针对招标文件保密条款要求，制定项目全周期保密管理方案，包括人员保密协议、数据分级访问控制、成果传输加密，明确咨询。围绕“3.3
-    数据安全与知识产权防护”撰写本节内容，在“技术质量保障措施”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：人员保密协议、成果水印加密、知识产权归属界定。需紧扣招标文件中的关键技术要求。
+  title: 质量管理责任分配
+  instruction: 当前已识别的核心侧重点是：建立RACI责任矩阵明确项目团队质量职责：项目经理对整体交付质量负总责，质量经理独立行使过程监督与审核权，技术负。围绕“质量管理责任分配”撰写本节内容，在“技术质量保障措施”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：项目经理、质量经理、技术负责人、责任矩阵。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 人员保密协议
-  - 成果水印加密
-  - 知识产权归属界定
+  - 项目经理
+  - 质量经理
+  - 技术负责人
+  - 责任矩阵
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
     priority: 0
-  expected_word_count: 600
+  expected_word_count: 250
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -246,33 +241,32 @@ blocks:
   generates_from_self: false
 - id: tech_heading_4
   title: 跨境可信数据空间技术能力
-  instruction: 当前已识别的核心侧重点是：本章对应评分项‘跨境可信数据空间技术能力’（10分）。作为核心竞争力展示，需详细拆解智能合约管控、可信送达保障、。围绕“跨境可信数据空间技术能力”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：智能合约部署、端到端加密传输、LLM合规推理、机密计算enclave。需紧扣招标文件中的关键技术要求。
+  instruction: 本章为10分评分项的核心技术响应章节，须对智能合约、可信送达、合规审查智能体、TEE四大技术能力进行深度功能描述，并逐一提出适配跨境数据流程场景的具体方案。技术描述应避免概念堆砌，须结合江苏国际数据港的贸易数字化、产业数据跨境流通等实际场景，建立“技术模块-功能特性-场景应用-价值产出”的完整论证链条。特别注意合规审查智能体作为评分标准中重复强调的技术点，应给予最充分的篇幅与场景适配说明。
   keywords:
-  - 智能合约部署
-  - 端到端加密传输
-  - LLM合规推理
-  - 机密计算enclave
+  - 智能合约自动化履约
+  - 可信送达存证
+  - 合规审查智能体
+  - TEE远程证明
   requires_search: false
   block_kind: group
   heading_level: 2
   generation_strategy: general
   generates_from_self: false
 - id: '4.1'
-  title: 4.1 智能合约驱动的数据流通管控
-  instruction: 当前已识别的核心侧重点是：详细描述智能合约在跨境数据空间中的应用架构，包括数据流通规则编码、访问权限自动判定、使用计费与跨境支付结算等核心。围绕“4.1
-    智能合约驱动的数据流通管控”撰写本节内容，在“跨境可信数据空间技术能力”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：规则模板库、链上执行引擎、跨链互操作协议。需紧扣招标文件中的关键技术要求。
+  title: 智能合约与可信送达技术实现
+  instruction: 当前已识别的核心侧重点是：详细描述智能合约在跨境数据空间中的功能设计：数据确权合约模板库、跨境流通条件触发机制、费用自动结算逻辑。阐述可信。围绕“智能合约与可信送达技术实现”撰写本节内容，在“跨境可信数据空间技术能力”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：智能合约、Solidity、Chaincode、自动化履约。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 规则模板库
-  - 链上执行引擎
-  - 跨链互操作协议
+  - 智能合约
+  - Solidity
+  - Chaincode
+  - 自动化履约
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: data-flow
     priority: 0
-  expected_word_count: 700
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -281,20 +275,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '4.2'
-  title: 4.2 可信送达与传输安全保障
-  instruction: 当前已识别的核心侧重点是：阐述可信送达机制的技术实现，包括数据端到端加密传输、发送方身份强认证、接收方完整性校验、传输过程不可否认性证明等。围绕“4.2
-    可信送达与传输安全保障”撰写本节内容，在“跨境可信数据空间技术能力”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：身份强认证、完整性校验算法、自适应重传机制。需紧扣招标文件中的关键技术要求。
+  title: 跨境数据合规审查智能体
+  instruction: 深度阐述合规审查智能体的技术架构：底层为覆盖中美欧等主要法域的合规知识图谱，中层为基于NLP的条款语义解析引擎，上层为可解释的规则推理与风险评估模块。重点描述智能体在跨境数据空间三类典型场景（个人信息出境、重要数据出境、国际贸易数据交换）中的适配应用：自动识别数据类型、匹配适用法规条款、生成合规建议报告、输出审查结论存证。明确回应评分标准中对“跨境数据合规审查智能体技术”功能描述与场景适配的10分评分要求。
   keywords:
-  - 身份强认证
-  - 完整性校验算法
-  - 自适应重传机制
+  - 合规审查智能体
+  - NLP
+  - 知识图谱
+  - 规则引擎
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
     priority: 0
-  expected_word_count: 600
+  expected_word_count: 400
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -303,21 +297,21 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: '4.3'
-  title: 4.3 合规审查智能体与大模型融合
-  instruction: 当前已识别的核心侧重点是：深入说明跨境数据合规审查智能体的技术架构，融合大语言模型、法律知识图谱、多法域规则引擎实现自动化合规研判，详细描。围绕“4.3
-    合规审查智能体与大模型融合”撰写本节内容，在“跨境可信数据空间技术能力”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：法律知识图谱、多法域规则匹配、审查结论存证。需紧扣招标文件中的关键技术要求。
+  title: 可信执行环境技术能力
+  instruction: 当前已识别的核心侧重点是：系统描述TEE技术在跨境数据空间中的部署方案：硬件层支持Intel SGX/ARM TrustZone/国产可信。围绕“可信执行环境技术能力”撰写本节内容，在“跨境可信数据空间技术能力”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：可信执行环境、Intel
+    SGX、ARM TrustZone、国密算法。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 法律知识图谱
-  - 多法域规则匹配
-  - 审查结论存证
+  - 可信执行环境
+  - Intel SGX
+  - ARM TrustZone
+  - 国密算法
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: data-flow
     priority: 0
-  expected_word_count: 700
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -327,33 +321,33 @@ blocks:
   generates_from_self: false
 - id: tech_heading_5
   title: 服务响应方案
-  instruction: 当前已识别的核心侧重点是：本章对应评分标准中10分服务响应方案项。需全面响应招标文件硬性要求，重点覆盖7×24小时值守机制、紧急情况2小时。围绕“服务响应方案”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：7×24小时值守、SLA分级保障、紧急现场支援、运维调度中心。需紧扣招标文件中的关键技术要求。
+  instruction: 当前已识别的核心侧重点是：本章对应10分评分项。需构建7×24小时全天候服务响应体系，明确紧急情况2小时到场、常规问题24小时解决的硬性时。围绕“服务响应方案”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：SLA保障、7×24小时响应、紧急调度机制、服务质量监控。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 7×24小时值守
-  - SLA分级保障
-  - 紧急现场支援
-  - 运维调度中心
+  - SLA保障
+  - 7×24小时响应
+  - 紧急调度机制
+  - 服务质量监控
   requires_search: false
   block_kind: group
   heading_level: 2
   generation_strategy: general
   generates_from_self: false
 - id: 2.1_dup1
-  title: 全天候服务响应机制设计
-  instruction: 当前已识别的核心侧重点是：详细阐述7×24小时值守体系的架构设计，包括服务热线、在线支持平台、值班工程师轮班制度。明确紧急情况2小时内到达。围绕“全天候服务响应机制设计”撰写本节内容，在“服务响应方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：7×24小时值守、SLA时效承诺、应急升级流程、地理覆盖网络。需紧扣招标文件中的关键技术要求。
+  title: 2.1 全天候服务响应机制设计
+  instruction: 当前已识别的核心侧重点是：详细阐述7×24小时服务响应体系的架构设计，包括服务响应中心设置、值班制度安排、多渠道接入方式（电话、邮件、即时。围绕“2.1
+    全天候服务响应机制设计”撰写本节内容，在“服务响应方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：7×24小时接入、智能调度中心、区域服务网点。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 7×24小时值守
-  - SLA时效承诺
-  - 应急升级流程
-  - 地理覆盖网络
+  - 7×24小时接入
+  - 智能调度中心
+  - 区域服务网点
   need_diagram: true
-  diagram_brief: 服务响应流程与时效保障机制图
+  diagram_brief: 围绕“2.1 全天候服务响应机制设计”绘制技术架构图，突出核心对象、关键模块、上下游衔接关系与本章节要回答的问题；重点覆盖：7×24小时接入、智能调度中心、区域服务网点。
   diagram_plan:
-    enabled: false
-    brief: ''
+    enabled: true
+    brief: 围绕“2.1 全天候服务响应机制设计”绘制技术架构图，突出核心对象、关键模块、上下游衔接关系与本章节要回答的问题；重点覆盖：7×24小时接入、智能调度中心、区域服务网点。
     typeHint: architecture
     priority: 132
-  expected_word_count: 1200
+  expected_word_count: 400
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -362,21 +356,21 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: 2.2_dup1
-  title: 专业服务团队与资源配置方案
-  instruction: 当前已识别的核心侧重点是：系统描述服务团队的组织架构、人员规模、专业资质及配置计划。重点说明针对本项目配备的专属服务团队，包括数据安全专家。围绕“专业服务团队与资源配置方案”撰写本节内容，在“服务响应方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：专属技术团队、本地化驻场配置、专家资质认证、备岗轮换制度。需紧扣招标文件中的关键技术要求。
+  title: 2.2 问题分级处理与质量监控体系
+  instruction: 当前已识别的核心侧重点是：建立问题分级分类标准（P1紧急/P2高优先级/P3中优先级/P4低优先级），明确各级问题的响应时效和解决时限，重。围绕“2.2
+    问题分级处理与质量监控体系”撰写本节内容，在“服务响应方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：P1-P4分级标准、KPI监控看板、工单全生命周期。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 专属技术团队
-  - 本地化驻场配置
-  - 专家资质认证
-  - 备岗轮换制度
+  - P1-P4分级标准
+  - KPI监控看板
+  - 工单全生命周期
   need_diagram: true
-  diagram_brief: 服务团队组织架构与资源配置图
+  diagram_brief: 围绕“2.2 问题分级处理与质量监控体系”绘制技术架构图，突出核心对象、关键模块、上下游衔接关系与本章节要回答的问题；重点覆盖：P1-P4分级标准、KPI监控看板、工单全生命周期。
   diagram_plan:
-    enabled: false
-    brief: ''
-    typeHint: data-flow
-    priority: 126
-  expected_word_count: 1000
+    enabled: true
+    brief: 围绕“2.2 问题分级处理与质量监控体系”绘制技术架构图，突出核心对象、关键模块、上下游衔接关系与本章节要回答的问题；重点覆盖：P1-P4分级标准、KPI监控看板、工单全生命周期。
+    typeHint: architecture
+    priority: 132
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -385,21 +379,21 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: 2.3_dup1
-  title: 服务质量保障与持续改进措施
-  instruction: 当前已识别的核心侧重点是：建立完善的服务质量保障体系，包括服务过程监控、客户满意度调查、定期服务报告等管理机制。设计服务质量KPI指标体系。围绕“服务质量保障与持续改进措施”撰写本节内容，在“服务响应方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：服务质量KPI监控、客户满意度评估、持续改进闭环、专项应急预案。需紧扣招标文件中的关键技术要求。
+  title: 2.3 专业服务团队与资源配置
+  instruction: 当前已识别的核心侧重点是：详细配置服务团队架构，包括项目经理、技术专家、合规顾问、现场工程师等角色及人员数量。重点突出跨境可信数据空间领域。围绕“2.3
+    专业服务团队与资源配置”撰写本节内容，在“服务响应方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：跨境数据专家库、CISP/CDMP资质、专项培训体系。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 服务质量KPI监控
-  - 客户满意度评估
-  - 持续改进闭环
-  - 专项应急预案
-  need_diagram: false
-  diagram_brief: ''
+  - 跨境数据专家库
+  - CISP/CDMP资质
+  - 专项培训体系
+  need_diagram: true
+  diagram_brief: 围绕“2.3 专业服务团队与资源配置”绘制数据流转图，突出核心对象、关键模块、上下游衔接关系与本章节要回答的问题；重点覆盖：跨境数据专家库、CISP/CDMP资质、专项培训体系。
   diagram_plan:
-    enabled: false
-    brief: ''
+    enabled: true
+    brief: 围绕“2.3 专业服务团队与资源配置”绘制数据流转图，突出核心对象、关键模块、上下游衔接关系与本章节要回答的问题；重点覆盖：跨境数据专家库、CISP/CDMP资质、专项培训体系。
     typeHint: data-flow
-    priority: 0
-  expected_word_count: 800
+    priority: 132
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -409,33 +403,32 @@ blocks:
   generates_from_self: false
 - id: tech_heading_6
   title: 售后服务方案
-  instruction: 当前已识别的核心侧重点是：本章对应评分标准中10分售后服务方案项。需提供全面化、合理化、可行性高的售后方案。重点覆盖质保期服务承诺、售后技。围绕“售后服务方案”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：质保期维保、技术咨询延续、知识转移培训、长效运营支持。需紧扣招标文件中的关键技术要求。
+  instruction: 当前已识别的核心侧重点是：本章对应10分评分项。需覆盖质保期及延保期全周期服务，建立标准化售后响应流程与三级升级机制。重点突出跨境可信数据。围绕“售后服务方案”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：质保期运维、三级升级机制、合规咨询支持、NPS满意度管理。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 质保期维保
-  - 技术咨询延续
-  - 知识转移培训
-  - 长效运营支持
+  - 质保期运维
+  - 三级升级机制
+  - 合规咨询支持
+  - NPS满意度管理
   requires_search: false
   block_kind: group
   heading_level: 2
   generation_strategy: general
   generates_from_self: false
 - id: 3.1_dup1
-  title: 售后服务体系与质保承诺
-  instruction: 当前已识别的核心侧重点是：构建完整的售后服务体系框架，明确质保期内的服务范围、服务内容及承诺标准。针对跨境可信数据空间咨询项目的交付成果。围绕“售后服务体系与质保承诺”撰写本节内容，在“售后服务方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：质保范围界定、超期延保策略、政策动态跟踪、成果迭代维护。需紧扣招标文件中的关键技术要求。
+  title: 3.1 全周期售后服务体系构建
+  instruction: 当前已识别的核心侧重点是：设计覆盖项目全生命周期的售后服务体系，明确质保期内外的服务边界和延续性保障机制。针对江苏国际数据港跨境可信数据空。围绕“3.1
+    全周期售后服务体系构建”撰写本节内容，在“售后服务方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：全生命周期服务、交付后技术支持、知识库沉淀。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 质保范围界定
-  - 超期延保策略
-  - 政策动态跟踪
-  - 成果迭代维护
+  - 全生命周期服务
+  - 交付后技术支持
+  - 知识库沉淀
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: data-flow
     priority: 0
-  expected_word_count: 1000
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -444,21 +437,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: 3.2_dup1
-  title: 售后技术支持与知识转移方案
-  instruction: 当前已识别的核心侧重点是：详细规划售后技术支持的具体形式与内容，包括技术咨询热线、远程技术支持、现场技术辅导等多元化支持渠道。设计系统性的。围绕“售后技术支持与知识转移方案”撰写本节内容，在“售后服务方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：多渠道技术支持、分层分类培训体系、核心技能转移、交付文档管理。需紧扣招标文件中的关键技术要求。
+  title: 3.2 售后响应流程与客户满意度管理
+  instruction: 当前已识别的核心侧重点是：建立标准化的售后响应流程，包括问题受理、诊断分析、方案制定、实施解决、效果验证、结案归档六个环节。设计清晰的问题。围绕“3.2
+    售后响应流程与客户满意度管理”撰写本节内容，在“售后服务方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：六步响应流程、一线至原厂升级、定期回访机制。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 多渠道技术支持
-  - 分层分类培训体系
-  - 核心技能转移
-  - 交付文档管理
-  need_diagram: true
-  diagram_brief: 售后技术支持与知识转移体系图
+  - 六步响应流程
+  - 一线至原厂升级
+  - 定期回访机制
+  need_diagram: false
+  diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: architecture
-    priority: 150
-  expected_word_count: 1000
+    priority: 0
+  expected_word_count: 300
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -467,21 +459,20 @@ blocks:
   generation_strategy: general
   generates_from_self: false
 - id: 3.3_dup1
-  title: 售后满意度管理与服务改进机制
-  instruction: 当前已识别的核心侧重点是：建立售后服务的满意度管理体系，设计定期客户回访、服务评价、投诉处理等机制。构建服务改进闭环，基于客户反馈持续优化。围绕“售后满意度管理与服务改进机制”撰写本节内容，在“售后服务方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：定期回访机制、投诉快速响应、服务评价闭环、长期合作规划。需紧扣招标文件中的关键技术要求。
+  title: 3.3 售后资源保障与现场服务承诺
+  instruction: 当前已识别的核心侧重点是：详细配置售后服务团队，包括售后经理、技术支持工程师、合规咨询顾问等角色，明确人员数量、资质要求和驻场安排。建立备。围绕“3.3
+    售后资源保障与现场服务承诺”撰写本节内容，在“售后服务方案”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：备件资源池、远程诊断平台、年度巡检承诺。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 定期回访机制
-  - 投诉快速响应
-  - 服务评价闭环
-  - 长期合作规划
+  - 备件资源池
+  - 远程诊断平台
+  - 年度巡检承诺
   need_diagram: false
   diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: architecture
     priority: 0
-  expected_word_count: 800
+  expected_word_count: 350
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -491,15 +482,14 @@ blocks:
   generates_from_self: false
 - id: tech_heading_7
   title: 响应情况
-  instruction: 当前已识别的核心侧重点是：本章对应评分标准中4分响应情况项。需严格遵循招标文件要求，采用逐条响应格式，明确标注‘完全响应’或‘正偏离’。内。围绕“响应情况”撰写本节内容，本章为直接成文章节，不再拆分子节，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：招标文件逐条响应、技术参数符合性、商务条款偏离表、实质性响应声明。需紧扣招标文件中的关键技术要求。
+  instruction: 当前已识别的核心侧重点是：本章对应4分评分项。采用单章直生结构，无三级标题。需完整呈现对招标文件第四章采购需求的响应偏离情况，确保零负偏离。围绕“响应情况”撰写本节内容，本章为直接成文章节，不再拆分子节，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：技术参数偏离表、实质性条款承诺、正偏离价值分析。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 招标文件逐条响应
-  - 技术参数符合性
-  - 商务条款偏离表
-  - 实质性响应声明
+  - 技术参数偏离表
+  - 实质性条款承诺
+  - 正偏离价值分析
   need_diagram: false
   diagram_brief: ''
-  expected_word_count: 3000
+  expected_word_count: 300
   requires_search: false
   block_kind: content
   heading_level: 2
@@ -507,33 +497,32 @@ blocks:
   generates_from_self: true
 - id: tech_heading_8
   title: 项目实施目标
-  instruction: 当前已识别的核心侧重点是：本章为评分标准中高分值综合章节（含对本项目理解10分、重点难点分析10分、技术质量保障措施10分、跨境可信数据空。围绕“项目实施目标”撰写本节内容，作为本章统筹提示，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：可信数据空间架构、机密计算融合、数据共享管理、远程认证服务。需紧扣招标文件中的关键技术要求。
+  instruction: 本章为项目总纲。需清晰阐述技术目标、实施路径和交付目标。技术目标紧密对接'长三角区域跨境可信数据空间示范港'建设需求，覆盖六大分析维度和关键技术能力。实施路径严格对应合同时间节点（30日中期汇报、60日最终验收）。交付目标明确三大交付物和专家评审通过的强制性要求。本章需同步衔接'对本项目的理解'、'重点难点分析'、'技术质量保障措施'及'跨境可信数据空间技术能力'等核心评分项的技术要求，确保整体方案逻辑闭环。
   keywords:
-  - 可信数据空间架构
-  - 机密计算融合
-  - 数据共享管理
-  - 远程认证服务
+  - 长三角示范港顶层设计
+  - 六大维度分析框架
+  - 智能合约架构
+  - 专家验收机制
   requires_search: false
   block_kind: group
   heading_level: 2
   generation_strategy: objective_special
   generates_from_self: false
 - id: '5.1'
-  title: 跨境可信数据空间技术能力解析
-  instruction: 当前已识别的核心侧重点是：深入剖析跨境可信数据空间技术能力要求，结合知识库中的软硬件销售模式与服务定制化场景，详细阐述身份权限、计算任务、。围绕“跨境可信数据空间技术能力解析”撰写本节内容，在“项目实施目标”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：机密计算安全隔离、数据流通平台架构、核心组件部署规划、可信交换同步。需紧扣招标文件中的关键技术要求。
+  title: 5.1 跨境可信数据空间技术目标
+  instruction: 当前已识别的核心侧重点是：明确项目核心技术目标，围绕为2026年形成'长三角区域跨境可信数据空间示范港'提供顶层设计和可行性验证的总体定位。围绕“5.1
+    跨境可信数据空间技术目标”撰写本节内容，在“项目实施目标”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：顶层架构设计、可信送达机制、跨境合规审查智能体。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 机密计算安全隔离
-  - 数据流通平台架构
-  - 核心组件部署规划
-  - 可信交换同步
-  need_diagram: true
-  diagram_brief: 可信数据空间技术能力架构图
+  - 顶层架构设计
+  - 可信送达机制
+  - 跨境合规审查智能体
+  need_diagram: false
+  diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: data-flow
-    priority: 150
-  expected_word_count: 1000
+    priority: 0
+  expected_word_count: 450
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -542,21 +531,20 @@ blocks:
   generation_strategy: objective_special
   generates_from_self: false
 - id: '5.2'
-  title: 技术质量保障体系与管控措施
-  instruction: 当前已识别的核心侧重点是：系统构建技术质量保障体系，覆盖需求分析、架构设计、开发实施、测试验收全生命周期。明确代码审计、架构评审、渗透测试。围绕“技术质量保障体系与管控措施”撰写本节内容，在“项目实施目标”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：全生命周期质量管控、代码与架构审计、性能与安全测试、标准化交付规范。需紧扣招标文件中的关键技术要求。
+  title: 5.2 分阶段实施路径与里程碑
+  instruction: 当前已识别的核心侧重点是：设计两阶段实施路径，与交付时间节点严格对应。第一阶段（合同签订后0-30日）：需求调研与现状分析，完成产业背景梳。围绕“5.2
+    分阶段实施路径与里程碑”撰写本节内容，在“项目实施目标”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：两阶段实施路径、里程碑甘特图、风险控制矩阵。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 全生命周期质量管控
-  - 代码与架构审计
-  - 性能与安全测试
-  - 标准化交付规范
-  need_diagram: true
-  diagram_brief: 技术质量保障全流程管控图
+  - 两阶段实施路径
+  - 里程碑甘特图
+  - 风险控制矩阵
+  need_diagram: false
+  diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: architecture
-    priority: 150
-  expected_word_count: 1000
+    priority: 0
+  expected_word_count: 450
   requires_search: true
   block_kind: content
   heading_level: 3
@@ -565,21 +553,20 @@ blocks:
   generation_strategy: objective_special
   generates_from_self: false
 - id: '5.3'
-  title: 实施重难点攻坚与落地路径规划
-  instruction: 当前已识别的核心侧重点是：聚焦60日短周期咨询项目的实施难点，包括时间紧任务重下的调研深度保障、多方利益主体诉求的协调平衡、专家评审共识的。围绕“实施重难点攻坚与落地路径规划”撰写本节内容，在“项目实施目标”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：60日工期并行推进、多方协同治理机制、场景验证与交付验收、风险预案与应对。需紧扣招标文件中的关键技术要求。
+  title: 5.3 交付目标与验收标准
+  instruction: 当前已识别的核心侧重点是：明确三大交付目标：中期成果汇报PPT（合同签订后30日，需通过建设方组织的专家评审）、《江苏国际数据港跨境可信数。围绕“5.3
+    交付目标与验收标准”撰写本节内容，在“项目实施目标”框架下，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。重点覆盖：中期汇报PPT、咨询规划报告、专家验收标准。需紧扣招标文件中的关键技术要求。
   keywords:
-  - 60日工期并行推进
-  - 多方协同治理机制
-  - 场景验证与交付验收
-  - 风险预案与应对
-  need_diagram: true
-  diagram_brief: 实施重难点攻坚与里程碑规划图
+  - 中期汇报PPT
+  - 咨询规划报告
+  - 专家验收标准
+  need_diagram: false
+  diagram_brief: ''
   diagram_plan:
     enabled: false
     brief: ''
-    typeHint: flowchart
-    priority: 126
-  expected_word_count: 800
+    priority: 0
+  expected_word_count: 400
   requires_search: true
   block_kind: content
   heading_level: 3

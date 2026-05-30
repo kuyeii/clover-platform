@@ -10,8 +10,11 @@ import os
 import re
 import json
 import math
+import socket
+import sys
 import html as _html
 from pathlib import Path
+from urllib.parse import urlparse
 
 # 加载项目根目录的 .env 文件
 PRO_ENGINE_ROOT = Path(__file__).parent.parent.parent.parent
@@ -53,14 +56,41 @@ from .database import (
     ImageRegistry,
     KnowledgeImageAsset,
 )
+from .bidder_pipt import (
+    BidderInfoRequiredError,
+    merge_bidder_pipt_context,
+    normalize_bidder_info_to_pipt,
+    validate_required_bidder_info,
+)
 from .content_placeholder_resolve import find_illegal_pipt_bidder_placeholders, resolve_body_placeholders
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["脱敏服务"])
 
-# SVG 图表生成当前产品态禁用：后端必须兜底，避免旧前端或脏配置继续触发图表工作流。
-DIAGRAM_GENERATION_ENABLED = False
+# SVG 图表生成默认关闭，需显式配置 ENABLE_DIAGRAM_GENERATION=true。
+def _diagram_generation_enabled() -> bool:
+    """运行时读取图表开关，避免状态接口与任务入口对环境变量理解不一致。"""
+    return os.environ.get("ENABLE_DIAGRAM_GENERATION", "false").strip().lower() == "true"
+
+
+# 兼容旧代码中仍直接引用常量的路径；新逻辑应使用 _diagram_generation_enabled()。
+DIAGRAM_GENERATION_ENABLED = _diagram_generation_enabled()
+
+
+def _get_diagram_generator_mode() -> str:
+    """返回当前图表工作流模式：svg 使用原工作流，mermaid 使用 Mermaid 专用工作流。"""
+    mode = os.environ.get("DIAGRAM_GENERATOR_MODE", "svg").strip().lower()
+    return "mermaid" if mode in {"mermaid", "mmd"} else "svg"
+
+
+def _get_diagram_workflow_name() -> str:
+    return "diagram_generator_mermaid" if _get_diagram_generator_mode() == "mermaid" else "diagram_generator"
+
+
+def _get_diagram_workflow_key() -> str:
+    return _get_workflow_key(_get_diagram_workflow_name())
+
 
 # 脱敏引擎单例
 _engine: DesensitizeEngine | None = None
@@ -145,6 +175,96 @@ def _resolve_content_workflow_name(generation_strategy: str = "") -> str:
     return "content_writer"
 
 
+def _check_dns_host(host: str, port: int = 443) -> dict:
+    """轻量 DNS 诊断，不发起模型请求，也不暴露任何密钥。"""
+    try:
+        socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        return {
+            "host": host,
+            "port": port,
+            "resolvable": False,
+            "status": "error",
+            "message": f"DNS 解析失败: {exc}",
+        }
+    except OSError as exc:
+        return {
+            "host": host,
+            "port": port,
+            "resolvable": False,
+            "status": "error",
+            "message": f"DNS 检查失败: {exc}",
+        }
+    return {
+        "host": host,
+        "port": port,
+        "resolvable": True,
+        "status": "ok",
+        "message": "DNS 可解析",
+    }
+
+
+def _model_provider_diagnostics() -> dict:
+    return {
+        "dashscope": _check_dns_host("dashscope.aliyuncs.com"),
+    }
+
+
+def _dify_api_diagnostics() -> dict:
+    """诊断标书后端到 Dify API 的基础连通配置，只检查主机解析。"""
+    raw_url = os.environ.get("DIFY_API_URL", "http://localhost/v1").strip() or "http://localhost/v1"
+    parsed_url = raw_url if "://" in raw_url else f"http://{raw_url}"
+    parsed = urlparse(parsed_url)
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        return {
+            "url_env": "DIFY_API_URL",
+            "host": host,
+            "port": "",
+            "resolvable": False,
+            "status": "error",
+            "message": f"DIFY_API_URL 端口无效: {exc}",
+        }
+    if not host:
+        return {
+            "url_env": "DIFY_API_URL",
+            "host": "",
+            "port": port,
+            "resolvable": False,
+            "status": "error",
+            "message": "DIFY_API_URL 缺少可解析的主机名",
+        }
+    return {
+        "url_env": "DIFY_API_URL",
+        **_check_dns_host(host, port),
+    }
+
+
+def _format_dify_runtime_error(exc: Exception) -> str:
+    """将 Dify/模型供应商底层错误转成可操作文案，避免只暴露 Python 异常串。"""
+    message = str(exc or "").strip()
+    lower = message.lower()
+    if "dashscope.aliyuncs.com" in lower and ("nameresolutionerror" in lower or "failed to resolve" in lower):
+        return (
+            "Dify 模型供应商 DashScope DNS 解析失败：dashscope.aliyuncs.com 无法解析。"
+            "请在 Dify API/Worker 运行环境检查 DNS、代理或出网策略；标书后端已成功调用 Dify，但模型节点不可用。"
+        )
+    if "[models]" in lower and "server unavailable" in lower:
+        return (
+            "Dify 模型节点不可用（[models] Server Unavailable）。"
+            "请检查 Dify 模型供应商配置、API Key、DNS/代理与出网策略。"
+            + (f" 原始错误：{message}" if message else "")
+        )
+    if "name or service not known" in lower or "failed to resolve" in lower:
+        return (
+            "Dify 工作流网络解析失败。请检查 DIFY_API_URL 或 Dify 运行环境的 DNS/代理配置。"
+            + (f" 原始错误：{message}" if message else "")
+        )
+    return message or "Dify 工作流调用失败"
+
+
 @router.get("/config/workflow-status", summary="工作流配置状态查询")
 async def workflow_status():
     """返回工作流配置状态，并标记是否属于当前 manifest 纳管范围。"""
@@ -154,7 +274,8 @@ async def workflow_status():
         ("content_group_writer", "DIFY_WORKFLOW_CONTENT_GROUP_WRITER", "H2分组正文生成", True, "managed"),
         ("content_rewrite", "DIFY_WORKFLOW_CONTENT_REWRITE", "单章节重生成", True, "managed"),
         ("response_content_writer", "DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER", "响应情况正文生成", True, "managed"),
-        ("diagram_generator", "DIFY_WORKFLOW_DIAGRAM_GENERATOR", "图表生成", True, "managed"),
+        ("diagram_generator", "DIFY_WORKFLOW_DIAGRAM_GENERATOR", "图表生成（SVG）", True, "managed"),
+        ("diagram_generator_mermaid", "DIFY_WORKFLOW_DIAGRAM_GENERATOR_MERMAID", "图表生成（Mermaid）", True, "managed"),
         ("doc_analysis", "DIFY_WORKFLOW_DOC_ANALYSIS", "文档分析", True, "managed"),
         ("requirement_extractor", "DIFY_WORKFLOW_REQUIREMENT_EXTRACTOR", "需求提取", False, "legacy"),
         ("blueprint_generator", "DIFY_WORKFLOW_BLUEPRINT_GENERATOR", "全局策略蓝图", False, "legacy"),
@@ -167,7 +288,7 @@ async def workflow_status():
         key, source = _get_workflow_key_with_source(name)
         configured = bool(key)
         source_value = source
-        if name == "diagram_generator" and not DIAGRAM_GENERATION_ENABLED:
+        if name in {"diagram_generator", "diagram_generator_mermaid"} and not _diagram_generation_enabled():
             configured = False
             source_value = "disabled"
         status[name] = {
@@ -178,6 +299,13 @@ async def workflow_status():
             "managed": managed,
             "lifecycle": lifecycle,
         }
+    status["_diagnostics"] = {
+        "label": "外部依赖诊断",
+        "managed": False,
+        "lifecycle": "diagnostic",
+        "providers": _model_provider_diagnostics(),
+        "dify_api": _dify_api_diagnostics(),
+    }
     return status
 
 
@@ -237,7 +365,7 @@ async def desensitize(request: DesensitizeRequest, db: Session = Depends(get_db)
         if target_entities is None or method is None:
             profile_config = load_profile_config(request.profile)
             if target_entities is None:
-                target_entities = profile_config.get("target_entities", ["name", "phone", "id_number", "email", "addr", "bank", "car_id", "ip", "org"])
+                target_entities = profile_config.get("target_entities", ["name", "phone", "id_number", "email", "addr", "bank", "car_id", "ip", "org", "credit_code"])
             if method is None:
                 method = profile_config.get("method", "mask")
 
@@ -248,6 +376,7 @@ async def desensitize(request: DesensitizeRequest, db: Session = Depends(get_db)
             target_entities=target_entities,
             method=method,
             placeholder_format=request.placeholder_format,
+            placeholder_protocol=request.placeholder_protocol,
             db_session=db,
             llm_mode=getattr(request, 'llm_mode', None),  # 覆盖 LLM 模式
             audit_context={"source": "api.desensitize", "session_id": request.session_id},
@@ -288,7 +417,7 @@ async def batch_desensitize(request: BatchDesensitizeRequest, db: Session = Depe
         if target_entities is None or method is None:
             profile_config = load_profile_config(request.profile)
             if target_entities is None:
-                target_entities = profile_config.get("target_entities", ["name", "phone", "id_number", "email", "addr", "bank", "car_id", "ip", "org"])
+                target_entities = profile_config.get("target_entities", ["name", "phone", "id_number", "email", "addr", "bank", "car_id", "ip", "org", "credit_code"])
             if method is None:
                 method = profile_config.get("method", "mask")
                 
@@ -305,6 +434,7 @@ async def batch_desensitize(request: BatchDesensitizeRequest, db: Session = Depe
                 target_entities=target_entities,
                 method=method,
                 placeholder_format=request.placeholder_format,
+                placeholder_protocol=request.placeholder_protocol,
                 llm_mode=getattr(request, 'llm_mode', None),
                 db_session=db,
                 audit_context={"source": "api.desensitize_batch", "session_id": request.session_id},
@@ -349,6 +479,20 @@ async def get_supported_entities():
     }
 
 
+@router.post("/bidder/normalize-pipt", summary="投标人信息匹配脱敏实体库")
+async def normalize_bidder_pipt_context(body: dict = Body(default={}), db: Session = Depends(get_db)):
+    """将投标人配置转为统一 strong token，返回结果不向外部模型暴露明文。"""
+    try:
+        bidder_info = body.get("bidder_info") if isinstance(body, dict) else {}
+        result = normalize_bidder_info_to_pipt(bidder_info if isinstance(bidder_info, dict) else {}, db)
+        db.commit()
+        return result
+    except Exception as exc:
+        db.rollback()
+        logger.error("投标人信息 PIPT 归一化失败: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="投标人信息脱敏匹配失败")
+
+
 @router.post("/restore", response_model=RestoreResponse, summary="文本还原")
 async def restore_text(request: RestoreRequest, db: Session = Depends(get_db)):
     """
@@ -356,11 +500,14 @@ async def restore_text(request: RestoreRequest, db: Session = Depends(get_db)):
     优先查全局 EntityRegistry（无需 session_id）；
     回退查 MappingRecord（兼容旧 session 级数据）。
     """
-    import re as _re
     from app.api_lite.database import EntityRegistry, FernetEncryptor
+    from app.api_lite.pipt_protocol import find_supported_placeholders, is_strong_pipt_token
 
-    # 正则提取所有占位符
-    placeholders = list(set(_re.findall(r'\{\{__PIPT_[a-z_]+_\d+__\}\}', request.text)))
+    # 正则提取所有 PIPT 占位符，兼容旧 token 与 strong token。
+    placeholders = [
+        p for p in find_supported_placeholders(request.text)
+        if p.startswith("{{__PIPT_") or is_strong_pipt_token(p)
+    ]
     if not placeholders:
         return RestoreResponse(restored_text=request.text, restored_count=0)
 
@@ -368,11 +515,18 @@ async def restore_text(request: RestoreRequest, db: Session = Depends(get_db)):
     mapping: dict[str, str] = {}
 
     # 优先查全局注册表
+    legacy_placeholders = [p for p in placeholders if p.startswith("{{__PIPT_")]
+    strong_placeholders = [p for p in placeholders if is_strong_pipt_token(p)]
     global_rows = db.query(EntityRegistry).filter(
-        EntityRegistry.placeholder.in_(placeholders)
+        (EntityRegistry.placeholder.in_(legacy_placeholders))
+        | (EntityRegistry.strong_placeholder.in_(strong_placeholders))
     ).all()
     for row in global_rows:
-        mapping[row.placeholder] = enc.decrypt(row.original_text_enc)
+        original = enc.decrypt(row.original_text_enc)
+        if row.placeholder in placeholders:
+            mapping[row.placeholder] = original
+        if row.strong_placeholder in placeholders:
+            mapping[row.strong_placeholder] = original
 
     # 未命中的占位符回退查 MappingRecord（兼容旧数据）
     missing = [p for p in placeholders if p not in mapping]
@@ -2017,9 +2171,10 @@ async def extract_project_requirements(
                 import asyncio
                 desen_result = await asyncio.to_thread(
                     engine.desensitize,
-                    text=raw_document[:300000],
+                    text=text_for_dify[:300000],
                     target_entities=target_entities,
                     method=method,
+                    placeholder_protocol="strong",
                     db_session=db,
                     llm_mode=os.environ.get('PIPT_LLM_MODE_EXTRACT', 'verify_only'),
                     audit_context={
@@ -2030,15 +2185,19 @@ async def extract_project_requirements(
                 text_for_dify = desen_result.desensitized_text
                 mapping_table = getattr(desen_result, "mapping_table", {}) or {}
                 entity_count = getattr(desen_result, "entity_count", 0) or 0
+                placeholder_manifest = getattr(desen_result, "placeholder_manifest", {}) or {}
+                placeholder_policy = getattr(desen_result, "placeholder_policy", {}) or {}
                 logger.info(
                     f"招标文件脱敏完成: profile={desensitize_profile}, "
                     f"识别实体 {entity_count} 处"
                 )
             except Exception as desen_err:
                 logger.warning(f"脱敏处理失败，使用原文继续: {desen_err}")
-                text_for_dify = raw_document[:300000]
+                text_for_dify = text_for_dify[:300000]
                 mapping_table = {}
                 entity_count = 0
+                placeholder_manifest = {}
+                placeholder_policy = {}
             finally:
                 if db is not None:
                     try:
@@ -2048,6 +2207,8 @@ async def extract_project_requirements(
         else:
             mapping_table = {}
             entity_count = 0
+            placeholder_manifest = {}
+            placeholder_policy = {}
 
         dify_key = _get_workflow_key("requirement_extractor")
         if not dify_key:
@@ -2095,6 +2256,8 @@ async def extract_project_requirements(
             analysis_report=analysis_report_raw,
             mapping_table=mapping_table,
             entity_count=entity_count,
+            placeholder_manifest=placeholder_manifest,
+            placeholder_policy=placeholder_policy,
             image_map=raw_image_map,
             required_attachments=structured_data.get("required_attachments", []),
             scoring_table_template=structured_data.get("scoring_table_template", []),
@@ -2185,6 +2348,8 @@ async def extract_project_requirements_stream(
             text_for_dify = _loc_text_for_dify  # 默认使用带定位符文本（DOCX）或原文（PDF）
             mapping_table = {}
             entity_count = 0
+            placeholder_manifest = {}
+            placeholder_policy = {}
 
             if enable_desensitize:
                 yield f"event: progress\ndata: {_json.dumps({'step': 1, 'label': '隐私脱敏处理中', 'percent': 20}, ensure_ascii=False)}\n\n"
@@ -2201,9 +2366,10 @@ async def extract_project_requirements_stream(
                     import asyncio
                     desen_result = await asyncio.to_thread(
                         engine.desensitize,
-                        text=raw_document[:300000],
+                        text=text_for_dify[:300000],
                         target_entities=target_entities,
                         method=method,
+                        placeholder_protocol="strong",
                         db_session=db,
                         llm_mode=os.environ.get('PIPT_LLM_MODE_EXTRACT', 'verify_only'),
                         audit_context={
@@ -2214,11 +2380,13 @@ async def extract_project_requirements_stream(
                     text_for_dify = desen_result.desensitized_text
                     mapping_table = getattr(desen_result, "mapping_table", {}) or {}
                     entity_count = getattr(desen_result, "entity_count", 0) or 0
+                    placeholder_manifest = getattr(desen_result, "placeholder_manifest", {}) or {}
+                    placeholder_policy = getattr(desen_result, "placeholder_policy", {}) or {}
 
                     yield f"event: progress\ndata: {_json.dumps({'step': 1, 'label': f'脱敏完成，识别 {entity_count} 处实体', 'percent': 50}, ensure_ascii=False)}\n\n"
                 except Exception as desen_err:
                     logger.warning(f"脱敏处理失败，使用原文继续: {desen_err}")
-                    text_for_dify = raw_document[:300000]
+                    text_for_dify = text_for_dify[:300000]
                     yield f"event: progress\ndata: {_json.dumps({'step': 1, 'label': '脱敏跳过（使用原文）', 'percent': 50}, ensure_ascii=False)}\n\n"
                 finally:
                     if db is not None:
@@ -2241,6 +2409,8 @@ async def extract_project_requirements_stream(
                 "analysis_report": [],
                 "mapping_table": mapping_table,
                 "entity_count": entity_count,
+                "placeholder_manifest": placeholder_manifest,
+                "placeholder_policy": placeholder_policy,
                 "image_map": raw_image_map,
                 "required_attachments": [],
                 "scoring_table_template": [],
@@ -3868,7 +4038,7 @@ async def generate_outline(request: GenerateOutlineRequest):
         inputs = dict(bundle["inputs"])
         inputs["bid_type"] = request.bid_type or "tech"
         inputs["use_knowledge"] = "true" if request.use_knowledge else "false"
-        enable_diagrams = bool(request.enable_diagrams and DIAGRAM_GENERATION_ENABLED)
+        enable_diagrams = bool(request.enable_diagrams and _diagram_generation_enabled())
         max_diagrams = int(request.max_diagrams if enable_diagrams else 0)
         inputs["enable_diagrams"] = "true" if enable_diagrams else "false"
         inputs["max_diagrams"] = max_diagrams
@@ -4043,7 +4213,98 @@ def _finalize_legacy_content_output(
     placeholder_issues = sorted(find_illegal_pipt_bidder_placeholders(content))
     if placeholder_issues:
         raise RuntimeError("占位符格式异常且无法可靠还原")
+    unresolved_placeholders = [
+        item["placeholder"]
+        for item in replace_report
+        if item.get("status") == "miss" and item.get("placeholder")
+    ]
+    if unresolved_placeholders:
+        raise RuntimeError("占位符缺少映射，无法可靠还原")
     return content, replace_report
+
+
+def _extract_content_diagram_specs(outputs: dict):
+    if not isinstance(outputs, dict):
+        return None
+    return (
+        outputs.get("diagram_specs")
+        or outputs.get("diagram_spec")
+        or outputs.get("diagram")
+        or None
+    )
+
+
+async def _run_inline_content_diagram(
+    request: GenerateContentRequest,
+    workflow_name: str,
+    content: str,
+    writing_hint: str,
+    outputs: dict,
+):
+    """正常正文生成链路内联执行图表工作流，避免只返回 diagram_request。"""
+    diagram_specs = _extract_content_diagram_specs(outputs)
+    if workflow_name != "content_writer":
+        return content, 0, None, diagram_specs
+
+    enable_diagrams = bool(request.enable_diagrams and _diagram_generation_enabled())
+    max_diagrams = int(request.max_diagrams if enable_diagrams else 0)
+    need_diagram = bool(request.need_diagram and enable_diagrams)
+    diagram_brief = str(request.diagram_brief or "") if enable_diagrams else ""
+    wants_diagram = enable_diagrams and need_diagram and bool(diagram_brief.strip()) and max_diagrams > 0
+    if not wants_diagram:
+        return content, 0, None, diagram_specs
+
+    diagram_key = _get_diagram_workflow_key()
+    if not diagram_key:
+        return content, 0, {
+            "code": "diagram_key_missing",
+            "message": f"{_get_diagram_workflow_name()} 工作流 API Key 未配置",
+            "section_title": request.section_title,
+        }, diagram_specs
+
+    from .task_manager import task_manager
+    from .task_routes import _build_diagram_reference_tag, _execute_diagram_for_section
+
+    project_id = str(request.project_id or "").strip() or "legacy-content"
+    task_id = task_manager.create_task("diagram", project_id, workflow_name=_get_diagram_workflow_name())
+    diagrams_generated = []
+    diagram_error = None
+    try:
+        diagrams_generated, diagram_slot_reserved, diagram_error = await _execute_diagram_for_section(
+            task_id,
+            project_id,
+            sys.modules[__name__],
+            diagram_key,
+            enable_diagrams,
+            need_diagram,
+            diagram_brief,
+            max_diagrams,
+            str(request.diagram_type_hint or "architecture"),
+            request.section_title,
+            writing_hint,
+            str(request.keywords or ""),
+            str(request.global_outline or ""),
+            content,
+            diagram_specs,
+        )
+        if not diagrams_generated and diagram_slot_reserved:
+            await task_manager.release_diagram_slot(project_id)
+        if diagrams_generated:
+            content = content + "\n" + "\n".join(_build_diagram_reference_tag(d) for d in diagrams_generated)
+        task_manager.set_result(task_id, {
+            "done": True,
+            "section_id": request.section_id,
+            "diagrams_count": len(diagrams_generated),
+            "diagram_error": diagram_error,
+        })
+    except Exception as exc:
+        diagram_error = {
+            "code": "diagram_inline_error",
+            "message": _format_dify_runtime_error(exc),
+            "section_title": request.section_title,
+        }
+        task_manager.set_error(task_id, diagram_error["message"])
+    return content, len(diagrams_generated), diagram_error, diagram_specs
 
 
 @router.post("/projects/generate-content", response_model=GenerateContentResponse, summary="AI 生成章节内容")
@@ -4055,6 +4316,7 @@ async def generate_section_content(request: GenerateContentRequest):
     - requires_search: 是否触发 SearXNG 联网检索分支
     """
     try:
+        validate_required_bidder_info(request.bidder_info or {})
         workflow_name = _resolve_content_workflow_name(request.generation_strategy)
         dify_key = _get_workflow_key(workflow_name)
         if not dify_key:
@@ -4079,6 +4341,22 @@ async def generate_section_content(request: GenerateContentRequest):
             section_outline_slice=request.section_outline_slice or "",
             analysis_context=request.analysis_context or "",
         )
+        db = SessionLocal()
+        try:
+            merged_mapping_table, merged_placeholder_hint, _bidder_context = merge_bidder_pipt_context(
+                mapping_table=request.mapping_table or {},
+                placeholder_hint=request.placeholder_hint or "",
+                bidder_info=request.bidder_info or {},
+                db=db,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.warning("投标人信息 PIPT 归一化失败，使用请求原始占位符上下文", exc_info=True)
+            merged_mapping_table = request.mapping_table or {}
+            merged_placeholder_hint = request.placeholder_hint or ""
+        finally:
+            db.close()
 
         dify_inputs = {
             "section_title": request.section_title,
@@ -4087,7 +4365,7 @@ async def generate_section_content(request: GenerateContentRequest):
             "expected_words": request.expected_words,
             "project_summary": combined_summary,
             "global_outline": request.global_outline or "",
-            "placeholder_hint": request.placeholder_hint or "",
+            "placeholder_hint": merged_placeholder_hint,
         }
         if workflow_name == "content_writer":
             dify_inputs["requires_search"] = "true" if request.requires_search else "false"
@@ -4096,7 +4374,7 @@ async def generate_section_content(request: GenerateContentRequest):
         dify_res = await _call_dify_workflow(dify_key, dify_inputs)
 
         outputs = dify_res.get("data", {}).get("outputs", {})
-        content, _replace_report = _finalize_legacy_content_output(
+        content, replace_report = _finalize_legacy_content_output(
             (
                 outputs.get("text")
                 or outputs.get("result")
@@ -4106,8 +4384,15 @@ async def generate_section_content(request: GenerateContentRequest):
             ),
             request.section_title,
             feedback=str(outputs.get("feedback") or ""),
-            request_mapping_flat=request.mapping_table or {},
+            request_mapping_flat=merged_mapping_table,
             strip_structural_numbering=workflow_name == "response_content_writer",
+        )
+        content, diagrams_count, diagram_error, diagram_specs = await _run_inline_content_diagram(
+            request,
+            workflow_name,
+            content,
+            writing_hint_merged,
+            outputs,
         )
 
         # 简单估算字数（中文 1 字/字符）
@@ -4130,13 +4415,19 @@ async def generate_section_content(request: GenerateContentRequest):
             word_count=word_count,
             quality_score=quality_score,
             feedback=feedback,
+            replace_report=replace_report,
+            diagrams_count=diagrams_count,
+            diagram_error=diagram_error,
+            diagram_specs=diagram_specs,
         )
 
+    except BidderInfoRequiredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to generate content for '{request.section_title}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=_format_dify_runtime_error(e))
 
 
 
@@ -4165,7 +4456,7 @@ async def generate_outline_stream(request: GenerateOutlineRequest):
     inputs = dict(bundle["inputs"])
     inputs["bid_type"] = request.bid_type or "tech"
     inputs["use_knowledge"] = "true" if request.use_knowledge else "false"
-    enable_diagrams = bool(request.enable_diagrams and DIAGRAM_GENERATION_ENABLED)
+    enable_diagrams = bool(request.enable_diagrams and _diagram_generation_enabled())
     max_diagrams = int(request.max_diagrams if enable_diagrams else 0)
     inputs["enable_diagrams"] = "true" if enable_diagrams else "false"
     inputs["max_diagrams"] = max_diagrams
@@ -4223,6 +4514,9 @@ async def generate_outline_stream(request: GenerateOutlineRequest):
                             bundle["seed_headings"],
                             max_diagrams=max_diagrams,
                         )
+                        from .outline_word_normalize import normalize_outline_word_budget_dict
+
+                        normalize_outline_word_budget_dict(sections, int(request.expected_total_words or 0))
                         yield f"data: {json.dumps({'done': True, 'sections': sections}, ensure_ascii=False)}\n\n"
                     elif chunk.get("__stage__"):
                         yield f"data: {json.dumps({'stage': chunk['__stage__']}, ensure_ascii=False)}\n\n"
@@ -4436,11 +4730,31 @@ async def generate_content_stream(request: GenerateContentRequest):
                             request_mapping_flat=request.mapping_table or {},
                             strip_structural_numbering=workflow_name == "response_content_writer",
                         )
+                        final_content, diagrams_count, diagram_error, diagram_specs = await _run_inline_content_diagram(
+                            request,
+                            workflow_name,
+                            final_content,
+                            writing_hint_merged,
+                            outputs,
+                        )
                         if final_content != full_content:
                             full_content = final_content
                             yield f"data: {json.dumps({'text': full_content, 'replace': True}, ensure_ascii=False)}\n\n"
                         word_count = len(full_content.replace(" ", "").replace("\n", ""))
-                        yield f"data: {json.dumps({'done': True, 'section_id': request.section_id, 'word_count': word_count, 'quality_score': quality_score, 'feedback': outputs.get('feedback')}, ensure_ascii=False)}\n\n"
+                        done_payload = {
+                            "done": True,
+                            "section_id": request.section_id,
+                            "word_count": word_count,
+                            "quality_score": quality_score,
+                            "feedback": outputs.get("feedback"),
+                            "replace_report": _replace_report,
+                            "diagrams_count": diagrams_count,
+                        }
+                        if diagram_error:
+                            done_payload["diagram_error"] = diagram_error
+                        if diagram_specs:
+                            done_payload["diagram_specs"] = diagram_specs
+                        yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
                     elif chunk.get("__stage__"):
                         yield f"data: {json.dumps({'stage': chunk['__stage__']}, ensure_ascii=False)}\n\n"
                 elif isinstance(chunk, str):
@@ -4479,7 +4793,7 @@ async def generate_content_stream(request: GenerateContentRequest):
                 yield f"data: {json.dumps({'text': buf}, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"SSE 流式生成失败 '{request.section_title}': {e}", exc_info=True)
-            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'error': _format_dify_runtime_error(e)}, ensure_ascii=False)}\n\n"
 
 
     return _StreamingResponse(
@@ -5384,7 +5698,7 @@ async def forge_document(request: _ForgeDocumentRequest, db: Session = Depends(g
     """
     将已生成的所有元素整合为最终 .docx 文件：
     - 内部应用 EntityRegistry 全局还原 PIPT 占位符
-    - request.mapping_table 用于还原 BIDDER 卵中的占位符
+    - request.mapping_table 用于还原 BIDDER 占位符
     - 各章节 Markdown 拼接转 Word
     - 自评评分表嵌入，附件追加
     """
@@ -5397,14 +5711,26 @@ async def forge_document(request: _ForgeDocumentRequest, db: Session = Depends(g
             [s.get("content", "") for s in request.sections]
             + [a.get("content", "") for a in request.attachments]
         )
-        pipt_placeholders = list(set(_re.findall(r'\{\{__PIPT_[a-z_]+_\d+__\}\}', all_content)))
+        from app.api_lite.pipt_protocol import find_supported_placeholders, is_strong_pipt_token
+        pipt_placeholders = [
+            p for p in find_supported_placeholders(all_content)
+            if p.startswith("{{__PIPT_") or is_strong_pipt_token(p)
+        ]
         pipt_mapping: dict[str, str] = {}
         if pipt_placeholders:
             enc = FernetEncryptor.get()
+            legacy_placeholders = [p for p in pipt_placeholders if p.startswith("{{__PIPT_")]
+            strong_placeholders = [p for p in pipt_placeholders if is_strong_pipt_token(p)]
             rows = db.query(EntityRegistry).filter(
-                EntityRegistry.placeholder.in_(pipt_placeholders)
+                (EntityRegistry.placeholder.in_(legacy_placeholders))
+                | (EntityRegistry.strong_placeholder.in_(strong_placeholders))
             ).all()
-            pipt_mapping = {row.placeholder: enc.decrypt(row.original_text_enc) for row in rows}
+            for row in rows:
+                original = enc.decrypt(row.original_text_enc)
+                if row.placeholder in pipt_placeholders:
+                    pipt_mapping[row.placeholder] = original
+                if row.strong_placeholder in pipt_placeholders:
+                    pipt_mapping[row.strong_placeholder] = original
             logger.info(f"forge-document: 查询到 {len(pipt_mapping)}/{len(pipt_placeholders)} 个 PIPT 占位符映射")
 
         # 步骤2：合并 PIPT 映射 + 前端传入的 BIDDER 映射

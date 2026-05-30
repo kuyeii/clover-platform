@@ -14,6 +14,10 @@ import html
 import logging
 import os
 import re
+import shlex
+import shutil
+import subprocess
+import sys
 import tempfile
 from io import BytesIO
 from pathlib import Path
@@ -37,6 +41,18 @@ _PRO_ENGINE_ROOT = Path(__file__).resolve().parents[2]
 _DIAGRAM_ARTIFACT_ROOT = Path(
     os.environ.get("DIAGRAM_ARTIFACT_DIR", str(_PRO_ENGINE_ROOT / "data" / "diagram_artifacts"))
 )
+_PUPPETEER_CACHE_DIR = os.environ.get(
+    "PUPPETEER_CACHE_DIR",
+    str(_PRO_ENGINE_ROOT / ".cache" / "puppeteer"),
+)
+_MERMAID_PUPPETEER_CONFIG = Path(
+    os.environ.get(
+        "MERMAID_PUPPETEER_CONFIG",
+        str(_PRO_ENGINE_ROOT / "tools" / "puppeteer.no-sandbox.json"),
+    )
+)
+_MERMAID_START_RE = re.compile(r"^```mermaid\s*$", re.IGNORECASE)
+_MERMAID_END_RE = re.compile(r"^```\s*$")
 
 
 # ── SVG 图表 → PNG 临时文件（供 DOCX 插图使用）───────────────────────────────
@@ -76,6 +92,91 @@ def _svg_to_temp_png(svg_text: str, title: str) -> Optional[str]:
     except Exception as e:
         logger.warning(f"SVG→PNG 转换失败（{title}）: {e}")
         return None
+
+
+def _find_mmdc_invocation() -> tuple[list[str], bool] | None:
+    """
+    查找 Mermaid CLI。仅使用已安装的本地或 PATH 工具，避免导出时隐式联网拉取依赖。
+    """
+    candidates = []
+    tools_dir = _PRO_ENGINE_ROOT / "tools"
+    root_dir = _PRO_ENGINE_ROOT
+    if sys.platform == "win32":
+        candidates.append(tools_dir / "node_modules" / ".bin" / "mmdc.cmd")
+        candidates.append(root_dir / "node_modules" / ".bin" / "mmdc.cmd")
+    else:
+        candidates.append(tools_dir / "node_modules" / ".bin" / "mmdc")
+        candidates.append(root_dir / "node_modules" / ".bin" / "mmdc")
+    for candidate in candidates:
+        if candidate.is_file():
+            return [str(candidate)], False
+
+    mmdc = shutil.which("mmdc")
+    if not mmdc:
+        return None
+    return [mmdc], Path(mmdc).suffix.lower() == ".ps1"
+
+
+def _mermaid_to_temp_png(mermaid_source: str, title: str) -> Optional[str]:
+    """
+    将 fenced mermaid 源码渲染为临时 PNG。失败返回 None，由调用方保留源码降级。
+    """
+    source = str(mermaid_source or "").strip()
+    if not source:
+        return None
+    invocation = _find_mmdc_invocation()
+    if not invocation:
+        logger.warning("Mermaid CLI(mmdc) 未安装，跳过图表渲染（%s）", title)
+        return None
+
+    mmdc_base, use_shell = invocation
+    slug = hashlib.md5(source.encode("utf-8", errors="replace")).hexdigest()[:16]
+    tmp_dir = Path(tempfile.gettempdir()) / "proengine_mermaid"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_mmd = tmp_dir / f"diagram_{slug}.mmd"
+    tmp_png = tmp_dir / f"diagram_{slug}.png"
+    if tmp_png.exists() and tmp_png.stat().st_size > 0:
+        return str(tmp_png)
+
+    tmp_mmd.write_text(source + "\n", encoding="utf-8")
+    parts = [
+        *mmdc_base,
+        "-i",
+        str(tmp_mmd),
+        "-o",
+        str(tmp_png),
+        "-b",
+        "white",
+        "-s",
+        os.environ.get("MERMAID_RENDER_SCALE", "2"),
+        "-w",
+        os.environ.get("MERMAID_RENDER_WIDTH", "1400"),
+        "-H",
+        os.environ.get("MERMAID_RENDER_HEIGHT", "1050"),
+    ]
+    if _MERMAID_PUPPETEER_CONFIG.is_file():
+        parts.extend(["-p", str(_MERMAID_PUPPETEER_CONFIG)])
+    try:
+        env = os.environ.copy()
+        env.setdefault("PUPPETEER_CACHE_DIR", _PUPPETEER_CACHE_DIR)
+        if use_shell:
+            cmd = " ".join(shlex.quote(p) for p in parts)
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=180, env=env)
+        else:
+            result = subprocess.run(parts, capture_output=True, text=True, timeout=180, env=env)
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "").strip()
+            logger.warning("Mermaid 渲染失败（%s）: %s", title, err[:1000])
+            return None
+        return str(tmp_png) if tmp_png.exists() and tmp_png.stat().st_size > 0 else None
+    except Exception as e:
+        logger.warning("Mermaid 渲染异常（%s）: %s", title, e)
+        return None
+    finally:
+        try:
+            tmp_mmd.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def _safe_artifact_token(value: str, fallback: str = "default") -> str:
@@ -131,6 +232,32 @@ def _read_diagram_artifact(project_id: str, diagram_id: str) -> str:
     return ""
 
 
+def _read_mermaid_artifact(project_id: str, diagram_id: str) -> str:
+    """从后端落盘 artifact 读取 Mermaid 源码。"""
+    safe_diagram_id = _safe_artifact_token(diagram_id, "")
+    if not safe_diagram_id or safe_diagram_id != str(diagram_id or "").strip():
+        return ""
+
+    candidates: list[Path] = []
+    safe_project_id = _safe_artifact_token(project_id, "")
+    if safe_project_id:
+        candidates.append(_DIAGRAM_ARTIFACT_ROOT / safe_project_id / f"{safe_diagram_id}.mmd")
+    candidates.extend(_DIAGRAM_ARTIFACT_ROOT.glob(f"*/{safe_diagram_id}.mmd"))
+
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+            try:
+                resolved.relative_to(_DIAGRAM_ARTIFACT_ROOT.resolve())
+            except ValueError:
+                continue
+            if resolved.exists() and resolved.is_file():
+                return resolved.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            logger.warning("读取 Mermaid artifact 失败（%s）: %s", safe_diagram_id, e)
+    return ""
+
+
 def _strip_diagrams_to_images(markdown: str, project_id: str = "") -> str:
     """
     扫描 Markdown 正文中的 <diagram> 块，将其转换为可被 md_to_docx 处理的格式：
@@ -148,6 +275,12 @@ def _strip_diagrams_to_images(markdown: str, project_id: str = "") -> str:
         raw_svg = _read_diagram_artifact(project_id, diagram_id) if diagram_id else ""
         if raw_svg:
             png_path = _svg_to_temp_png(raw_svg, title)
+            if png_path:
+                return f"\n\n**图：{title}**\n\n![{title}]({png_path})\n\n"
+
+        raw_mermaid = _read_mermaid_artifact(project_id, diagram_id) if diagram_id else ""
+        if raw_mermaid:
+            png_path = _mermaid_to_temp_png(raw_mermaid, title)
             if png_path:
                 return f"\n\n**图：{title}**\n\n![{title}]({png_path})\n\n"
 
@@ -171,6 +304,47 @@ def _strip_diagrams_to_images(markdown: str, project_id: str = "") -> str:
         markdown,
         flags=re.IGNORECASE,
     )
+
+
+def _strip_mermaid_fences_to_images(markdown: str) -> str:
+    """
+    将正文中的 ```mermaid 围栏转为 Markdown 图片，失败时保留源码。
+    参考 patent-disclosure-skill 的降级策略：单块失败不影响后续 DOCX 导出。
+    """
+    lines = str(markdown or "").splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    block_idx = 0
+    while i < len(lines):
+        line = lines[i]
+        if not _MERMAID_START_RE.match(line):
+            out.append(line)
+            i += 1
+            continue
+
+        fence_open = line
+        i += 1
+        body: list[str] = []
+        while i < len(lines) and not _MERMAID_END_RE.match(lines[i]):
+            body.append(lines[i])
+            i += 1
+        closing = lines[i] if i < len(lines) else "```\n"
+        if i < len(lines):
+            i += 1
+
+        block_idx += 1
+        title = f"图示 {block_idx}"
+        png_path = _mermaid_to_temp_png("".join(body), title)
+        if png_path:
+            out.append(f"\n\n**图：{title}**\n\n![{title}]({png_path})\n\n")
+            continue
+
+        out.append(fence_open)
+        out.extend(body)
+        if not closing.endswith("\n"):
+            closing += "\n"
+        out.append(closing)
+    return "".join(out)
 
 
 # 自评情况中文映射
@@ -467,6 +641,9 @@ class DocumentForge:
         # ── 步骤 1.5b：将正文内的 <diagram> SVG 块转为临时 PNG ──
         # 必须在 md_to_docx 之前处理，否则 <diagram> 标签会被当作乱码文本写入 Word
         full_markdown = _strip_diagrams_to_images(full_markdown, self.project_id)
+
+        # ── 步骤 1.5c：兼容 Dify/人工正文里的 fenced mermaid 图表 ──
+        full_markdown = _strip_mermaid_fences_to_images(full_markdown)
 
         # ── 步骤 2：Markdown → DOCX ──
         converter = MarkdownToDocxConverter(template_path=self.template_path)

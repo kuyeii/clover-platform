@@ -6,6 +6,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from .ddl import (
+    ALTER_BID_GENERATOR_TABLE_SQLS,
+    ALTER_CORE_TABLE_SQLS,
     BID_GENERATOR_INDEXES,
     BID_GENERATOR_TABLES,
     CONTRACT_REVIEW_INDEXES,
@@ -67,6 +69,8 @@ def init_database_schema(engine: Engine) -> InitResult:
             _execute(conn, statement)
         for statement in CREATE_CORE_TABLE_SQLS:
             _execute(conn, statement)
+        for statement in ALTER_CORE_TABLE_SQLS:
+            _execute(conn, statement)
         for statement in CREATE_CORE_INDEX_SQLS:
             _execute(conn, statement)
         for statement in CREATE_PORTAL_TABLE_SQLS:
@@ -78,6 +82,8 @@ def init_database_schema(engine: Engine) -> InitResult:
         for statement in CREATE_CONTRACT_REVIEW_INDEX_SQLS:
             _execute(conn, statement)
         for statement in CREATE_BID_GENERATOR_TABLE_SQLS:
+            _execute(conn, statement)
+        for statement in ALTER_BID_GENERATOR_TABLE_SQLS:
             _execute(conn, statement)
         for statement in CREATE_BID_GENERATOR_INDEX_SQLS:
             _execute(conn, statement)

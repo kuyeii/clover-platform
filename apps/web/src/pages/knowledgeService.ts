@@ -50,6 +50,14 @@ export function createFileDocument(file: File): Promise<CreateKnowledgeDocumentR
   );
 }
 
+export function syncDesensitizedKnowledgeDocument(documentId: string): Promise<CreateKnowledgeDocumentResult> {
+  return apiClient.post<CreateKnowledgeDocumentResult>(
+    `${RAG_KNOWLEDGE_API_PREFIX}/knowledge/documents/${encodeURIComponent(documentId)}/desensitized-sync`,
+    {},
+    { unwrapEnvelope: false },
+  );
+}
+
 export async function deleteKnowledgeDocument(documentId: string): Promise<void> {
   await apiClient.delete<void>(
     `${RAG_KNOWLEDGE_API_PREFIX}/knowledge/documents/${encodeURIComponent(documentId)}`,

@@ -11,6 +11,7 @@ from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from .database import get_db, ProjectRecord
@@ -200,27 +201,48 @@ def get_project_mappings(project_id: str, db: Session = Depends(get_db)):
 @router.post("/batch", status_code=201)
 def batch_create_projects(projects: list[ProjectCreate], db: Session = Depends(get_db)):
     """批量创建项目（用于 localStorage → PostgreSQL 同步）"""
-    created = 0
+    if not projects:
+        return {"created": 0, "updated": 0}
+
+    incoming: dict[str, ProjectCreate] = {}
     for proj in projects:
-        existing = db.query(ProjectRecord).filter(ProjectRecord.id == proj.id).first()
-        if existing:
-            # 已存在则更新
-            existing.name = proj.name
-            existing.status = proj.status
-            existing.data = json.dumps(proj.data, ensure_ascii=False)
-            existing.updated_at = _utc_now()
-        else:
-            record = ProjectRecord(
-                id=proj.id,
-                name=proj.name,
-                status=proj.status,
-                data=json.dumps(proj.data, ensure_ascii=False),
-            )
-            db.add(record)
-            created += 1
+        # 前端可能在短时间内重复同步同一个本地项目，按最后一次状态落库。
+        incoming[proj.id] = proj
+
+    existing_ids = {
+        row[0]
+        for row in db.query(ProjectRecord.id)
+        .filter(ProjectRecord.id.in_(incoming.keys()))
+        .all()
+    }
+    now = _utc_now()
+    rows = [
+        {
+            "id": proj.id,
+            "name": proj.name,
+            "status": proj.status,
+            "data": json.dumps(proj.data, ensure_ascii=False),
+            "created_at": now,
+            "updated_at": now,
+        }
+        for proj in incoming.values()
+    ]
+    stmt = insert(ProjectRecord).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[ProjectRecord.id],
+        set_={
+            "name": stmt.excluded.name,
+            "status": stmt.excluded.status,
+            "data": stmt.excluded.data,
+            "updated_at": stmt.excluded.updated_at,
+        },
+    )
+    db.execute(stmt)
     db.commit()
-    logger.info(f"批量导入完成: {created} 新建, {len(projects) - created} 更新")
-    return {"created": created, "updated": len(projects) - created}
+    created = len(set(incoming) - existing_ids)
+    updated = len(incoming) - created
+    logger.info(f"批量导入完成: {created} 新建, {updated} 更新")
+    return {"created": created, "updated": updated}
 
 
 # ── 工具函数 ──────────────────────────────────

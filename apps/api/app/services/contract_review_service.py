@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core.config import get_api_settings
+from app.services.pipt_gateway_service import preprocess_payload
 
 BASE_DIR = get_api_settings().repo_root / "legacy" / "contract_review"
 if str(BASE_DIR) not in sys.path:
@@ -52,6 +53,23 @@ _ACTIVE_REVIEW_RUN_ID: str | None = None
 _AI_REWRITE_LOCK = threading.Lock()
 _AI_REWRITE_IN_FLIGHT: set[str] = set()
 _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,96}$")
+
+
+def _contract_review_pipt_enabled() -> bool:
+    """合同审核 PIPT 适配开关；默认关闭，避免改变法律审查语义。"""
+    return str(os.environ.get("CONTRACT_REVIEW_PIPT_GATEWAY_ENABLED", "false")).strip().lower() == "true"
+
+
+def _contract_review_pipt_workflow_fields(text: str = "", mapping_table: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = preprocess_payload({
+        "text": text,
+        "mapping_table": mapping_table or {},
+        "module_code": "contract-review",
+        "purpose": "dify_rewrite",
+        "mode": "compatibility",
+        "enabled": _contract_review_pipt_enabled(),
+    })
+    return dict(payload.get("workflow_fields") or {})
 
 
 def _ensure_data_roots() -> None:
@@ -3639,6 +3657,7 @@ def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -
             "host_clause_id": str(aggregate_group.get("host_clause_id") or ""),
             "target_text_source": str(aggregate_group.get("target_text_source") or ""),
         }
+        inputs.update(_contract_review_pipt_workflow_fields(str(clause_text or target_text or "")))
         if len(multi_clause_risks) == 1 and isinstance(multi_clause_risks[0], dict):
             inputs["multi_clause_risk_json"] = json.dumps(multi_clause_risks[0], ensure_ascii=False)
         return inputs
@@ -3661,7 +3680,7 @@ def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -
     clause_text = _clause_text_window(clause_source, target_text, limit=1200)
 
     suggestion = str(risk.get("suggestion") or "").strip()
-    return {
+    inputs = {
         "target_text": str(target_text or ""),
         "suggestion": suggestion,
         "clause_text": str(clause_text or ""),
@@ -3670,6 +3689,8 @@ def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -
         "review_side": meta.get("review_side"),
         "contract_type_hint": meta.get("contract_type_hint"),
     }
+    inputs.update(_contract_review_pipt_workflow_fields(str(clause_text or target_text or "")))
+    return inputs
 
 
 def _generate_ai_rewrite(
@@ -4022,6 +4043,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
     env["REVIEW_SIDE"] = review_side
     env["CONTRACT_TYPE_HINT"] = contract_type_hint
     env["ANALYSIS_SCOPE"] = analysis_scope
+    env["PIPT_GATEWAY_ENABLED"] = "true" if _contract_review_pipt_enabled() else "false"
 
     _write_meta(
         run_id,
@@ -4032,6 +4054,11 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
             "contract_type_hint": contract_type_hint,
             "analysis_scope": analysis_scope,
             "analysis_scope_label": analysis_scope_label(analysis_scope),
+            "pipt_gateway": {
+                "enabled": _contract_review_pipt_enabled(),
+                "mode": "compatibility",
+                "stage": "adapter_only",
+            },
             "run_dir": str(run_dir),
             "step": "排队完成，准备开始审查",
             "progress": 15,

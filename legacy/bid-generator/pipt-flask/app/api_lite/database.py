@@ -186,6 +186,8 @@ class EntityRegistry(Base):
     original_text_enc = Column(String, nullable=False, doc="Fernet 加密后的原始明文")
     placeholder = Column(String, unique=True, nullable=False,
                          doc="{{__PIPT_org_1__}}，全局唯一")
+    strong_placeholder = Column(String, unique=True, nullable=True,
+                                doc="@@PIPT:v1:e000001:kxxxxxxxx@@，新协议强 token")
     global_index = Column(Integer, nullable=False, doc="同 entity_type 下的全局序号")
     first_seen_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
     hit_count = Column(Integer, nullable=False, server_default="1", default=1, doc="被引用次数，供审计")

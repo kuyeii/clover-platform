@@ -21,7 +21,7 @@ class RecognizeRequest(BaseModel):
     target_entities: list[str] = Field(
         default=[
             "name", "phone", "id_number", "email",
-            "addr", "bank", "car_id", "ip", "org"
+            "addr", "bank", "car_id", "ip", "org", "credit_code"
         ],
         description="目标识别实体类型",
     )
@@ -33,6 +33,9 @@ class EntityItem(BaseModel):
     entity_type: str = Field(..., description="实体类型（如 name, phone 等）")
     start: int = Field(..., description="起始位置")
     end: int = Field(..., description="结束位置")
+    source: str = Field(default="unknown", description="识别来源：regex / ner / llm / rule")
+    confidence: float = Field(default=0.0, description="识别置信度，0-1")
+    reason: str = Field(default="", description="命中原因或规则说明")
 
 
 class RecognizeResponse(BaseModel):
@@ -55,6 +58,10 @@ class DesensitizeRequest(BaseModel):
     placeholder_format: str = Field(
         default="{{__PIPT_{type}_{index}__}}",
         description="占位符格式模板",
+    )
+    placeholder_protocol: str = Field(
+        default="legacy",
+        description="占位符协议：legacy 使用 {{__PIPT_type_index__}}；strong 使用 @@PIPT:v1:e000001:kxxxxxxxx@@",
     )
     session_id: Optional[str] = Field(
         default=None,
@@ -80,6 +87,14 @@ class DesensitizeResponse(BaseModel):
     )
     entities: list[EntityItem] = Field(default_factory=list, description="识别到的实体列表")
     entity_count: int = Field(0, description="实体总数")
+    placeholder_manifest: dict[str, dict[str, str]] = Field(
+        default_factory=dict,
+        description="安全占位符 manifest，不包含敏感明文",
+    )
+    placeholder_policy: dict = Field(
+        default_factory=dict,
+        description="外部模型占位符保留策略",
+    )
 
 
 class BatchDesensitizeRequest(BaseModel):
@@ -96,6 +111,10 @@ class BatchDesensitizeRequest(BaseModel):
     placeholder_format: str = Field(
         default="{{__PIPT_{type}_{index}__}}",
         description="占位符格式模板",
+    )
+    placeholder_protocol: str = Field(
+        default="legacy",
+        description="占位符协议：legacy / strong",
     )
     session_id: Optional[str] = Field(
         default=None,
@@ -267,6 +286,8 @@ class ExtractRequirementsResponse(BaseModel):
     # 脱敏映射表
     mapping_table: dict = Field(default_factory=dict, description="脱敏占位符 → 原值映射表（本地保存，不上传）")
     entity_count: int = Field(default=0, description="脱敏识别实体数量")
+    placeholder_manifest: dict = Field(default_factory=dict, description="安全占位符 manifest，不包含敏感明文")
+    placeholder_policy: dict = Field(default_factory=dict, description="外部模型占位符保留策略")
     # 图片占位符映射表
     image_map: dict = Field(default_factory=dict, description="图片占位符 → 本地绝对路径映射表（只在后端生效）")
     # 招标文件要求提交的动态附件清单
@@ -390,6 +411,7 @@ class GenerateContentRequest(BaseModel):
     diagram_type_hint: str = Field(default="architecture", description="图表类型提示")
     diagram_priority: int = Field(default=0, description="图表优先级")
     mapping_table: dict[str, str] = Field(default_factory=dict, description="占位符映射表（主要用于 BIDDER 与补充兜底还原）")
+    bidder_info: dict = Field(default_factory=dict, description="投标人配置，服务端用于统一匹配 PIPT 实体库")
 
 class GenerateContentResponse(BaseModel):
     """章节内容生成响应"""
@@ -398,6 +420,11 @@ class GenerateContentResponse(BaseModel):
     word_count: int = Field(default=0, description="实际字数（估算）")
     quality_score: Optional[int] = Field(default=None, description="大模型评审节点给出的内容质量打分 (0-10)")
     feedback: Optional[str] = Field(default=None, description="大模型评审节点给出的修改建议或评语")
+    replace_report: list[dict] = Field(default_factory=list, description="占位符回填报告")
+    referenced_images: list[dict] = Field(default_factory=list, description="正文引用的图片占位符清单")
+    diagrams_count: int = Field(default=0, description="正文生成阶段实际生成的图表数量")
+    diagram_error: Optional[dict] = Field(default=None, description="图表生成失败时的非阻断错误信息")
+    diagram_specs: Optional[dict | list] = Field(default=None, description="正文工作流输出的结构化图表规格")
 
 
 class GenerateAttachmentRequest(BaseModel):

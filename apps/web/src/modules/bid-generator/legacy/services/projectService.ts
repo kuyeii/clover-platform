@@ -41,6 +41,28 @@ export interface GroupReviewState {
     updatedAt?: string;
 }
 
+type PlaceholderManifest = Record<string, Record<string, string>>;
+type PlaceholderPolicy = Record<string, unknown>;
+
+function buildPlaceholderContextRows(
+    tokens: string[],
+    manifest: PlaceholderManifest = {},
+): Array<Record<string, string>> {
+    return tokens.slice(0, 80).map((token) => {
+        const meta = manifest[token] || {};
+        const sourceContext = String(meta.source_context || '').trim();
+        const tokenContext = String(meta.source_context_with_token || '').trim();
+        const row: Record<string, string> = {
+            token,
+            entity_type: String(meta.entity_type || ''),
+            role: String(meta.role || ''),
+        };
+        if (sourceContext) row.source_context = sourceContext;
+        if (tokenContext) row.source_context_with_token = tokenContext;
+        return row;
+    });
+}
+
 export interface ProjectBusyMeta {
     busy: boolean;
     runtimeBusy: boolean;
@@ -1001,12 +1023,13 @@ async function runDiagramBatchQueue(
 /** 将 replace_report 中的占位符替换为原文（流式展示与落盘时与后端脱敏结果对齐） */
 export function applyPlaceholderReportToContent(
     text: string,
-    report?: { placeholder: string; original: string }[],
+    report?: { placeholder: string; original: string; status?: string }[],
 ): string {
     if (!text || !report?.length) return text;
     let out = text;
     for (const row of report) {
         if (!row?.placeholder) continue;
+        if (row.status && row.status !== 'success') continue;
         let original = String(row.original ?? '').trim();
         if (original.startsWith('**') && original.endsWith('**') && original.length > 4) {
             original = original.slice(2, -2).trim();
@@ -1027,6 +1050,16 @@ function extractDiagramErrorMessage(raw: any): string | undefined {
         return text || undefined;
     }
     return undefined;
+}
+
+function extractDiagramSkipMessage(raw: any): string | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const reasons = Array.isArray(raw.reasons)
+        ? raw.reasons.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : [];
+    if (!reasons.length) return undefined;
+    const workflow = String(raw.workflow || 'diagram_generator').trim();
+    return `图表未生成：${workflow} 跳过（${reasons.join('；')}）`;
 }
 
 // ─── 自评评分表行 ────────────────────────────────────────
@@ -1131,6 +1164,8 @@ export interface Project {
     outline?: OutlineSection[];          // AI 生成的大纲（含一级+二级标题）
     // ── 脱敏相关（绝不上传至外部服务）────────────────
     mappingTable?: Record<string, string>; // { '{{__PIPT_name_1__}}': '张三' }
+    placeholderManifest?: PlaceholderManifest; // 安全占位符说明，不含敏感明文
+    placeholderPolicy?: PlaceholderPolicy;     // 外部模型占位符保留策略
     imageMap?: Record<string, string | { abs_path: string; preview_url: string; description?: string }>;  // 图片映射表
     // 旧格式：{ '{{IMG_0001}}': '/abs/path' }
     // 新格式：{ '{{IMG_0001}}': {abs_path, preview_url, description} }
@@ -1657,6 +1692,15 @@ function pickLegacyActiveVersion(state: NonNullable<Project['generatedContent']>
     content: string;
     wordCount: number;
 } {
+    if (Array.isArray(state?.versions) && state.versions.length > 0) {
+        const active = state.versions.find((item) => item.id === state.activeVersionId);
+        if (active) {
+            return {
+                content: String(active.content || ''),
+                wordCount: Number(active.wordCount || 0),
+            };
+        }
+    }
     if (typeof state?.content === 'string' && state.content.trim()) {
         return {
             content: state.content,
@@ -1666,8 +1710,7 @@ function pickLegacyActiveVersion(state: NonNullable<Project['generatedContent']>
     if (!Array.isArray(state?.versions) || state.versions.length === 0) {
         return { content: '', wordCount: 0 };
     }
-    const active = state.versions.find((item) => item.id === state.activeVersionId);
-    const fallback = active || state.versions[state.versions.length - 1];
+    const fallback = state.versions[state.versions.length - 1];
     return {
         content: String(fallback?.content || ''),
         wordCount: Number(fallback?.wordCount || 0),
@@ -1695,8 +1738,66 @@ function normalizeGeneratedContentState(
     };
 }
 
+function coerceOutlineWordCount(item: any, fallback = 0): number {
+    const raw = item?.wordCount ?? item?.word_count ?? item?.expectedWordCount ?? item?.expected_word_count ?? fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
+function normalizeOutlineWordFields(outline?: OutlineSection[] | null): OutlineSection[] | undefined {
+    if (!Array.isArray(outline)) return outline || undefined;
+    return outline.map((section: any) => ({
+        ...section,
+        wordCount: coerceOutlineWordCount(section, 0),
+        children: Array.isArray(section.children)
+            ? section.children.map((child: any) => ({
+                ...child,
+                wordCount: coerceOutlineWordCount(child, 0),
+                children: Array.isArray(child.children)
+                    ? child.children.map((leaf: any) => ({
+                        ...leaf,
+                        wordCount: coerceOutlineWordCount(leaf, 0),
+                    }))
+                    : child.children,
+            }))
+            : section.children,
+    }));
+}
+
+function buildPrivacyPlaceholderHint(
+    mappingTable: Record<string, string> = {},
+    manifest: PlaceholderManifest = {},
+): string {
+    const tokens = Object.keys(manifest || {}).length ? Object.keys(manifest) : Object.keys(mappingTable || {});
+    if (!tokens.length) return '';
+    const sample = tokens.slice(0, 8).join('、');
+    const suffix = tokens.length > 8 ? ' ...' : '';
+    const contextRows = buildPlaceholderContextRows(tokens, manifest);
+    return [
+        `文中含 ${tokens.length} 个本地脱敏占位符，统一使用 @@PIPT:v1:e000001:kxxxxxxxx@@ 强 token 样式，兼容历史 {{__PIPT_类型_序号__}} 格式。`,
+        `这些 token 只代表安全语义，不包含真实敏感值；输出必须逐字原样保留，禁止改写、缩写、翻译、拆分或重新编号。`,
+        `可以参考 PIPT_TOKEN_CONTEXT_JSON 理解每个 token 的实体类型和上下文；引用时必须输出 token 本身。`,
+        `PIPT_ALLOWED_PLACEHOLDERS_JSON:${JSON.stringify(tokens)}`,
+        `PIPT_TOKEN_CONTEXT_JSON:${JSON.stringify(contextRows)}`,
+        `当前 token 示例：${sample}${suffix}`,
+    ].join('\n');
+}
+
+function buildContentPlaceholderContext(project?: Project) {
+    const mappingTable = project?.mappingTable || {};
+    const privacyHint = buildPrivacyPlaceholderHint(mappingTable, project?.placeholderManifest || {});
+    return {
+        mappingTable,
+        bidderMappingTable: {},
+        placeholderHint: privacyHint,
+    };
+}
+
 function normalizeProjectCachedData(project: Project): Project {
-    if (!project?.generatedContent) return project;
+    const outline = normalizeOutlineWordFields(project?.outline);
+    if (!project?.generatedContent) {
+        return outline === project?.outline ? project : { ...project, outline };
+    }
     const generatedContent = Object.fromEntries(
         Object.entries(project.generatedContent).map(([blockId, state]) => [
             blockId,
@@ -1705,6 +1806,7 @@ function normalizeProjectCachedData(project: Project): Project {
     );
     return {
         ...project,
+        outline,
         generatedContent,
     };
 }
@@ -2347,8 +2449,8 @@ export const projectService = {
             outline_batch_strategy: outlineBatchStrategy,
             outline_auto_parallel_threshold: 4,
             ...(targetConfig?.totalWords !== undefined && { expected_total_words: targetConfig.totalWords }),
-            enable_diagrams: false,
-            max_diagrams: 0,
+            enable_diagrams: DIAGRAM_GENERATION_ENABLED,
+            max_diagrams: DIAGRAM_GENERATION_ENABLED ? DIAGRAM_MAX_PER_PROJECT : 0,
         };
 
         const resp = await bidGeneratorFetch(`/tasks/start-outline`, {
@@ -2441,6 +2543,8 @@ export const projectService = {
                 bidType: response.bid_type,
                 summary: response.project_summary,
                 mappingTable: response.mapping_table || {},
+                placeholderManifest: response.placeholder_manifest || {},
+                placeholderPolicy: response.placeholder_policy || {},
                 imageMap: response.image_map || {},
                 entityCount: response.entity_count || 0,
                 requiredAttachments: response.required_attachments?.length
@@ -2598,6 +2702,8 @@ export const projectService = {
                 bidType: resultData.bid_type,
                 summary: resultData.project_summary,
                 mappingTable: resultData.mapping_table || {},
+                placeholderManifest: resultData.placeholder_manifest || {},
+                placeholderPolicy: resultData.placeholder_policy || {},
                 imageMap: resultData.image_map || {},
                 entityCount: resultData.entity_count || 0,
                 requiredAttachments: resultData.required_attachments?.length
@@ -3057,8 +3163,8 @@ export const projectService = {
             technical_targets_json: technicalTargetsJson,
             // undefined 时不附加字段，后端 default=0 自动触发 AI 自决逻辑
             ...(targetConfig?.totalWords !== undefined && { expected_total_words: targetConfig.totalWords }),
-            enable_diagrams: false,
-            max_diagrams: 0,
+            enable_diagrams: DIAGRAM_GENERATION_ENABLED,
+            max_diagrams: DIAGRAM_GENERATION_ENABLED ? DIAGRAM_MAX_PER_PROJECT : 0,
         });
         return response.sections || [];
     },
@@ -3088,38 +3194,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        // 根据脱敏映射表构建占位符说明，告知 LLM 保留占位符不得删除
-        const mappingTable = proj?.mappingTable || {};
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-
-        // 投标人信息：仅在章节内容自然提及公司/负责人称谓时按需引用，绝不在无关段落强行插入
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [
-                `【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现“投标单位”、“法定代表人”、“项目负责人”等称谓时，才在对应位置引用以下占位符。投标人信息的引用不是每个章节都需要的，请根据实际情况适当引用。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入这些占位符。`,
-                `占位符格式为双下划线包裹，严禁简写（如必须写 {{__BIDDER_ORG__}} 而非 {{BIDDER_ORG}}）：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
 
         // 优先用大纲中的 relatedAnalysisIds 精确查解析节点；无 ID 时降级为关键词模糊匹配
         let analysisContext = '';
@@ -3145,6 +3220,7 @@ export const projectService = {
 
         const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
+        const runtimeSectionOutlineSlice = scopedGlobalOutline || sectionOutlineSlice;
         const coreWritingHint = extractCoreWritingIntent(params.writingHint);
         const requiresSearch = resolveRequiresSearch(
             params.requiresSearch,
@@ -3165,7 +3241,7 @@ export const projectService = {
             expected_words: params.expectedWords,
             project_summary: projectSummary,
             global_outline: scopedGlobalOutline,
-            section_outline_slice: sectionOutlineSlice,
+            section_outline_slice: runtimeSectionOutlineSlice,
             requires_search: requiresSearch,
             placeholder_hint: placeholderHint,
             analysis_context: analysisContext,  // 注入匹配到的招标文件解析
@@ -3177,6 +3253,7 @@ export const projectService = {
             diagram_type_hint: diagramMeta.diagramTypeHint,
             diagram_priority: diagramMeta.diagramPriority,
             mapping_table: { ...mappingTable, ...bidderMappingTable },
+            bidder_info: proj?.bidderInfo ?? {},
         });
         return {
             content: response.content || '',
@@ -3223,33 +3300,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        const mappingTable = proj?.mappingTable || {};
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [`【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现"投标单位"、"法定代表人"等称谓时，才引用以下占位符。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入。`,
-                `占位符格式为双下划线包裹：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
 
         // 构建 image_map_hint：仅传占位符 + VLM 描述，不暴露服务器绝对路径给 Dify
         const imageMapHint = Object.entries(proj?.imageMap ?? {})
@@ -3292,6 +3343,7 @@ export const projectService = {
                 ? params.sectionOutlineSlice
                 : buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
+        const runtimeSectionOutlineSlice = scopedGlobalOutline || sectionOutlineSlice;
         const coreWritingHint = extractCoreWritingIntent(params.writingHint);
         const requiresSearch = resolveRequiresSearch(
             params.requiresSearch,
@@ -3312,7 +3364,7 @@ export const projectService = {
             expected_words: params.expectedWords,
             project_summary: projectSummary,
             global_outline: scopedGlobalOutline,
-            section_outline_slice: sectionOutlineSlice,
+            section_outline_slice: runtimeSectionOutlineSlice,
             requires_search: requiresSearch,
             placeholder_hint: placeholderHint,
             analysis_context: analysisContext,  // 精确注入招标文件解析上下文
@@ -3321,6 +3373,7 @@ export const projectService = {
             image_map_hint: imageMapHint,
             // 占位符回填兜底（后端优先查 DB，未命中则用该映射）
             mapping_table: { ...mappingTable, ...bidderMappingTable },
+            bidder_info: proj?.bidderInfo ?? {},
             // 结构化图表入参（来自大纲）
             enable_diagrams: enableDiagrams,
             max_diagrams: maxDiagrams,
@@ -3328,7 +3381,7 @@ export const projectService = {
             diagram_brief: enableDiagrams ? diagramMeta.diagramBrief : '',
             diagram_type_hint: diagramMeta.diagramTypeHint,
             diagram_priority: diagramMeta.diagramPriority,
-            defer_diagram: needDeferredDiagram,
+            defer_diagram: false,
         };
         const taskStorageKey = buildContentTaskStorageKey(params.projectId, params.sectionId);
 
@@ -3423,9 +3476,11 @@ export const projectService = {
                                 diagram_deferred?: boolean;
                                 diagram_request?: DiagramRequest;
                                 diagram_error?: unknown;
+                                diagram_skip?: unknown;
                                 diagram_specs?: unknown;
                             };
-                            const diagramError = extractDiagramErrorMessage(r.diagram_error);
+                            const diagramError = extractDiagramErrorMessage(r.diagram_error)
+                                || extractDiagramSkipMessage(r.diagram_skip);
                             if (diagramError) {
                                 console.warn('[content task] diagram generation degraded to text-only result', {
                                     projectId: params.projectId,
@@ -3457,7 +3512,7 @@ export const projectService = {
                                     writing_hint: coreWritingHint,
                                     keywords: params.keywords,
                                     global_outline: scopedGlobalOutline,
-                                    section_outline_slice: sectionOutlineSlice,
+                                    section_outline_slice: runtimeSectionOutlineSlice,
                                     expected_words: params.expectedWords,
                                     analysis_context: analysisContext,
                                     mapping_table: { ...mappingTable, ...bidderMappingTable },
@@ -3582,33 +3637,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        const mappingTable = proj?.mappingTable || {};
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [`【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现"投标单位"、"法定代表人"等称谓时，才引用以下占位符。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入。`,
-                `占位符格式为双下划线包裹：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
 
         let analysisContext = '';
         let generationStrategy = 'general';
@@ -3631,6 +3660,7 @@ export const projectService = {
 
         const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
+        const runtimeSectionOutlineSlice = scopedGlobalOutline || sectionOutlineSlice;
         const taskStorageKey = buildContentTaskStorageKey(params.projectId, params.sectionId);
         const requestBody = {
             project_id: params.projectId,
@@ -3641,11 +3671,12 @@ export const projectService = {
             expected_words: params.expectedWords,
             project_summary: projectSummary,
             global_outline: scopedGlobalOutline,
-            section_outline_slice: sectionOutlineSlice,
+            section_outline_slice: runtimeSectionOutlineSlice,
             placeholder_hint: placeholderHint,
             analysis_context: analysisContext,
             generation_strategy: generationStrategy,
             mapping_table: { ...mappingTable, ...bidderMappingTable },
+            bidder_info: proj?.bidderInfo ?? {},
         };
 
         (async () => {
@@ -3817,33 +3848,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        const mappingTable = proj?.mappingTable || {};
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [`【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现"投标单位"、"法定代表人"等称谓时，才引用以下占位符。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入。`,
-                `占位符格式为双下划线包裹：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
         const imageMapHint = Object.entries(proj?.imageMap ?? {})
             .map(([k, v]) => {
                 const desc = typeof v === 'string' ? '' : (v.description ?? '');
@@ -3873,6 +3878,7 @@ export const projectService = {
                 );
             }
             const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, block.id);
+            const scopedSectionOutlineSlice = buildOutlineNeighborhoodSlice(proj?.outline, block.id, sectionOutlineSlice);
             const coreWritingHint = extractCoreWritingIntent(block.writingHint);
             const requiresSearch = resolveRequiresSearch(
                 block.requiresSearch,
@@ -3889,7 +3895,7 @@ export const projectService = {
                 writing_hint: coreWritingHint,
                 keywords: block.keywords || block.title,
                 expected_words: block.expectedWords,
-                section_outline_slice: sectionOutlineSlice,
+                section_outline_slice: scopedSectionOutlineSlice || sectionOutlineSlice,
                 analysis_context: analysisContext,
                 requires_search: requiresSearch,
                 generation_strategy: generationStrategy,
@@ -3910,6 +3916,7 @@ export const projectService = {
             placeholder_hint: placeholderHint,
             image_map_hint: imageMapHint,
             mapping_table: { ...mappingTable, ...bidderMappingTable },
+            bidder_info: proj?.bidderInfo ?? {},
             requires_search: normalizedChildren.some(item => item.requires_search),
             enable_diagrams: enableDiagrams,
             max_diagrams: maxDiagrams,
@@ -3966,7 +3973,8 @@ export const projectService = {
                     qualityScore: row.quality_score ?? row.qualityScore,
                     feedback: row.feedback,
                     replaceReport: row.replace_report || row.replaceReport || [],
-                    diagramError: extractDiagramErrorMessage(row.diagram_error ?? row.diagramError),
+                    diagramError: extractDiagramErrorMessage(row.diagram_error ?? row.diagramError)
+                        || extractDiagramSkipMessage(row.diagram_skip ?? row.diagramSkip),
                     diagramRequest: row.diagram_request ?? row.diagramRequest,
                 });
                 const deliverPartialSection = (row: any) => {
@@ -4282,7 +4290,8 @@ export const projectService = {
                     }
                     if (taskStatus.status === 'done' && taskStatus.result) {
                         const r = taskStatus.result;
-                        const diagramError = extractDiagramErrorMessage(r.diagram_error);
+                        const diagramError = extractDiagramErrorMessage(r.diagram_error)
+                            || extractDiagramSkipMessage(r.diagram_skip);
                         if (diagramError) {
                             console.warn('[content resume] recovered text-only result after diagram failure', {
                                 projectId,
@@ -4408,7 +4417,7 @@ export const projectService = {
         /** 外部取消信号：abort 后中断后续 block 的生成 */
         signal?: AbortSignal,
     ): Promise<void> {
-        const maxConcurrency = 2;
+        const maxConcurrency = 1;
         let cursor = 0;
         const activeCtrls = new Map<string, AbortController>();
         const units = buildContentGenerationUnits(blocks);

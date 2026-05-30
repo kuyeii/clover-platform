@@ -63,6 +63,26 @@ export interface KnowledgeDocumentItem {
   enabled?: boolean | null;
   created_at?: number | null;
   updated_at?: number | null;
+  source_type?: string | null;
+  mime_type?: string | null;
+  file_size?: number | null;
+  parse_status?: "pending" | "parsed" | "failed" | string | null;
+  privacy_status?: "pending" | "recognized" | "failed" | string | null;
+  has_sensitive?: boolean | null;
+  sensitive_count?: number | null;
+  sensitive_types?: string[] | null;
+  recognition_summary?: {
+    counts_by_type?: Record<string, number>;
+    truncated?: boolean;
+    [key: string]: unknown;
+  } | null;
+  sync_status?: "pending" | "syncing" | "synced" | "failed" | string | null;
+  dify_document_id?: string | null;
+  pipt_request_id?: string | null;
+  pipt_mapping_count?: number | null;
+  last_error?: string | null;
+  parsed_at?: number | null;
+  synced_at?: number | null;
 }
 
 export interface KnowledgeDocumentsResponse {
@@ -122,4 +142,10 @@ export interface CreateKnowledgeDocumentResult {
   name: string;
   batch: string;
   indexing_status: string;
+  document?: KnowledgeDocumentItem;
+  skipped?: boolean;
+  desensitized?: boolean;
+  dify_document_id?: string | null;
+  mapping_table_count?: number;
+  request_id?: string | null;
 }

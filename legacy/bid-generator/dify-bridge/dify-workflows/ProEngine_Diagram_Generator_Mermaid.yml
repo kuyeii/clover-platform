@@ -1,0 +1,389 @@
+app:
+  description: 根据 content_writer 提供的图表规格生成 Mermaid 图表源码
+  icon: 🤖
+  icon_background: '#EFF1F5'
+  mode: workflow
+  name: ProEngine_Diagram_Generator_Mermaid
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.35@bb81bce2b7e04af8178eb2fb36cc6e1eb75aadbc98d31bc2c858b4648ba63c26
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions: []
+      allowed_file_types: []
+      allowed_file_upload_methods: []
+      enabled: false
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: start-to-planner
+      source: start_node
+      sourceHandle: source
+      target: llm_planner
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: planner-to-render
+      source: llm_planner
+      sourceHandle: source
+      target: llm_renderer
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: render-to-validate
+      source: llm_renderer
+      sourceHandle: source
+      target: code_validate_mermaid
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: validate-to-end
+      source: code_validate_mermaid
+      sourceHandle: source
+      target: end_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 图表规格输入
+        type: start
+        variables:
+        - default: architecture
+          hint: 图表类型 architecture / flowchart / org-chart / data-flow / logic
+          label: diagram_type
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: diagram_type
+        - default: ''
+          hint: 图表中文标题（建议 12 字以内）
+          label: diagram_title
+          options: []
+          placeholder: 系统整体架构
+          required: true
+          type: text-input
+          variable: diagram_title
+        - default: ''
+          hint: 图表上下文（来自写作引导与大纲节选）
+          label: source_excerpt
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: source_excerpt
+        - default: '[]'
+          hint: 节点列表 JSON，可为空
+          label: elements
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: elements
+        - default: '[]'
+          hint: 关系列表 JSON，可为空
+          label: flows
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: flows
+        - default: '[]'
+          hint: 需要强调节点 ID 列表 JSON
+          label: emphasis
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: emphasis
+        - default: consulting
+          hint: 风格预设 consulting
+          label: style_preset
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: style_preset
+      height: 265
+      id: start_node
+      position:
+        x: 60
+        y: 200
+      positionAbsolute:
+        x: 60
+        y: 200
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.08
+            top_p: 0.7
+          mode: chat
+          name: qwen3.6-flash
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: planner-system
+          role: system
+          text: "你是图规划与布局一体化引擎。请基于输入直接输出“可渲染布局 JSON”，禁止解释文本。\n\n输出必须是一个 JSON 对象：\n\
+            {\n  \"canvas\": {\"width\":1400,\"height\":800,\"viewBox\":\"0 0 1400\
+            \ 800\"},\n  \"title\": \"...\",\n  \"layout_hint\": \"top_down|left_right|hub_spoke|pipeline\"\
+            ,\n  \"nodes\": [\n    {\"id\":\"A\",\"x\":120,\"y\":140,\"w\":220,\"\
+            h\":72,\"level\":1,\"group\":\"核心层\",\"label\":\"\",\"sub\":\"\",\"emphasis\"\
+            :false}\n  ],\n  \"groups\": [\n    {\"id\":\"G1\",\"name\":\"核心层\",\"\
+            x\":80,\"y\":100,\"w\":1240,\"h\":220}\n  ],\n  \"edges\": [\n    {\"\
+            from\":\"A\",\"to\":\"B\",\"label\":\"\",\"style\":\"primary|support|constraint|data\"\
+            ,\"path\":\"orthogonal\"}\n  ]\n}\n\n规则：\n1. 若 elements/flows 非空，优先使用，禁止无依据重写。\n\
+            2. 若为空，可从 source_excerpt 推断，但必须输出至少 1 条主链边。\n3. 层级默认 2 层，最多 3 层；信息不足时输出\
+            \ 3-5 节点简图。\n4. 同层对齐，节点间距 >=24，尽量避免线交叉。\n5. edges 的 from/to 必须命中 nodes.id。\n\
+            6. 仅输出 JSON。\n"
+        - id: planner-user
+          role: user
+          text: '图类型: {{#start_node.diagram_type#}}
+
+            图标题: {{#start_node.diagram_title#}}
+
+            上下文: {{#start_node.source_excerpt#}}
+
+            节点草稿: {{#start_node.elements#}}
+
+            连线草稿: {{#start_node.flows#}}
+
+            强调节点: {{#start_node.emphasis#}}
+
+            '
+        selected: true
+        structured_output:
+          schema: {}
+        structured_output_enabled: false
+        title: LLM 规划布局
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm_planner
+      position:
+        x: 360
+        y: 200
+      positionAbsolute:
+        x: 360
+        y: 200
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.12
+            top_p: 0.75
+          mode: chat
+          name: Kimi-K2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: renderer-system
+          role: system
+          text: '你是 Mermaid 渲染器。输入为布局 JSON，必须输出合法 Mermaid flowchart 代码。
+
+
+            硬性要求：
+
+            1. 只输出 Mermaid 源码，禁止 Markdown 围栏和解释文本。
+
+            2. 第一行必须是 flowchart TD 或 flowchart LR。
+
+            3. 节点 ID 使用 A、B、C 或 N1、N2 这类 ASCII 标识，节点文案使用中文。
+
+            4. 必须包含至少 1 条主链路边，边标签表达调用、数据、约束或支撑关系。
+
+            5. 可使用 subgraph 表达分层边界，但禁止使用 Mermaid 不稳定语法。
+
+            6. 不输出 SVG、HTML、JSON 或自然语言说明。
+
+            '
+        - id: renderer-user
+          role: user
+          text: '图标题: {{#start_node.diagram_title#}}
+
+            强调节点: {{#start_node.emphasis#}}
+
+            布局 JSON:
+
+            {{#llm_planner.text#}}
+
+            '
+        selected: false
+        structured_output:
+          schema: {}
+        structured_output_enabled: false
+        title: LLM Mermaid 渲染
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm_renderer
+      position:
+        x: 960
+        y: 200
+      positionAbsolute:
+        x: 960
+        y: 200
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\nimport re\n\n_FALLBACK_MERMAID = '''flowchart TD
+  A[上游模块] -->|主链路| B[核心处理]
+  B -->|输出| C[下游模块]'''\n\ndef _strip_fence(text: str) -> str:\n    s = (text or \"\").strip()\n    s = re.sub(r'<think>[\\s\\S]*?</think>', '', s, flags=re.IGNORECASE).strip()\n    s = re.sub(r'^```(?:mermaid)?\\s*\\n?', '', s, flags=re.IGNORECASE)\n    s = re.sub(r'\\n?```\\s*$', '', s).strip()\n    return s\n\ndef _extract_mermaid(text: str) -> str:\n    s = _strip_fence(text)\n    fenced = re.search(r'```mermaid\\s*([\\s\\S]*?)```', text or '', flags=re.IGNORECASE)\n    if fenced:\n        s = fenced.group(1).strip()\n    return s\n\ndef _valid_mermaid(source: str) -> list[str]:\n    issues = []\n    first = (source.splitlines()[0].strip().lower() if source.splitlines() else '')\n    if not first.startswith(('flowchart td', 'flowchart lr', 'graph td', 'graph lr')):\n        issues.append('missing_flowchart_header')\n    if '<svg' in source.lower() or '<html' in source.lower():\n        issues.append('contains_markup')\n    if '-->' not in source and '---' not in source:\n        issues.append('missing_edge')\n    if len(source) > 6000:\n        issues.append('too_long')\n    return issues\n\ndef main(mermaid_text: str, layout_text: str, semantic_text: str) -> dict:\n    mermaid = _extract_mermaid(mermaid_text)\n    issues = _valid_mermaid(mermaid)\n    if issues:\n        return {\n            \"mermaid\": _FALLBACK_MERMAID,\n            \"quality_report\": \"fallback:\" + \",\".join(issues),\n            \"semantic_plan\": semantic_text,\n            \"layout_plan\": layout_text,\n        }\n    return {\n        \"mermaid\": mermaid,\n        \"quality_report\": \"ok\",\n        \"semantic_plan\": semantic_text,\n        \"layout_plan\": layout_text,\n    }\n"
+        code_language: python3
+        outputs:
+          layout_plan:
+            children: null
+            type: string
+          quality_report:
+            children: null
+            type: string
+          semantic_plan:
+            children: null
+            type: string
+          mermaid:
+            children: null
+            type: string
+        selected: false
+        title: 校验清洗与降级
+        type: code
+        variables:
+        - value_selector:
+          - llm_renderer
+          - text
+          value_type: string
+          variable: mermaid_text
+        - value_selector:
+          - llm_planner
+          - text
+          value_type: string
+          variable: layout_text
+        - value_selector:
+          - llm_planner
+          - text
+          value_type: string
+          variable: semantic_text
+      height: 52
+      id: code_validate_mermaid
+      position:
+        x: 1260
+        y: 200
+      positionAbsolute:
+        x: 1260
+        y: 200
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - code_validate_mermaid
+          - mermaid
+          value_type: string
+          variable: mermaid
+        - value_selector:
+          - code_validate_mermaid
+          - quality_report
+          value_type: string
+          variable: quality_report
+        - value_selector:
+          - code_validate_mermaid
+          - semantic_plan
+          value_type: string
+          variable: semantic_plan
+        - value_selector:
+          - code_validate_mermaid
+          - layout_plan
+          value_type: string
+          variable: layout_plan
+        selected: false
+        title: 输出
+        type: end
+      height: 170
+      id: end_node
+      position:
+        x: 1560
+        y: 200
+      positionAbsolute:
+        x: 1560
+        y: 200
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 50
+      y: 169
+      zoom: 0.8
+  rag_pipeline_variables: []
