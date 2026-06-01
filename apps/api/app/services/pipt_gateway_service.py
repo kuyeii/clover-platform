@@ -6,6 +6,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.errors import PlatformError
+from app.services.pipt_redaction_service import apply_current_document_global_redactions
 from packages.py_common.db.session import get_engine
 
 
@@ -763,6 +765,22 @@ def _preprocess_strong_payload(
         if isinstance(result.placeholder_policy, dict) and result.placeholder_policy
         else build_placeholder_policy()
     )
+    desensitized_text, mapping_table, placeholder_manifest, historical_reuse_count = _reuse_historical_mappings(
+        module_code=module_code,
+        purpose=purpose,
+        source_text=source_text,
+        desensitized_text=desensitized_text,
+        mapping_table=mapping_table,
+        placeholder_manifest=placeholder_manifest,
+    )
+    global_redaction = apply_current_document_global_redactions(
+        source_text=source_text,
+        redacted_text=desensitized_text,
+        mapping_table=mapping_table,
+        replacement_mode="placeholder",
+    )
+    desensitized_text = global_redaction.text
+    current_document_global_replace_count = global_redaction.replacement_count
     vault_persisted = _persist_mapping_vault(
         request_id=request_id,
         module_code=module_code,
@@ -810,6 +828,8 @@ def _preprocess_strong_payload(
                 "mode": "strong",
                 "enabled": True,
                 "mapping_table_count": len(mapping_table),
+                "historical_reuse_count": historical_reuse_count,
+                "current_document_global_replace_count": current_document_global_replace_count,
                 "placeholder_count": validation["supported_count"],
                 "unsupported_count": validation["unsupported_count"],
                 "unexpected_count": validation["unexpected_count"],
@@ -818,6 +838,116 @@ def _preprocess_strong_payload(
     }
     result_payload["audit"]["event_persisted"] = _persist_event_from_result(result_payload)
     return result_payload
+
+
+def _reuse_historical_mappings(
+    *,
+    module_code: str,
+    purpose: str,
+    source_text: str,
+    desensitized_text: str,
+    mapping_table: dict[str, Any],
+    placeholder_manifest: dict[str, Any],
+) -> tuple[str, dict[str, Any], dict[str, Any], int]:
+    """
+    复用同模块同用途的历史映射，补偿本次识别器漏识别的既有实体。
+    只在 strong 模式内使用；复用后的映射会重新写入当前 request vault。
+    """
+    text_value = str(desensitized_text or "")
+    if not text_value:
+        return text_value, mapping_table, placeholder_manifest, 0
+
+    merged_mapping = dict(mapping_table or {})
+    merged_manifest = dict(placeholder_manifest or {})
+    reused_count = 0
+    seen_originals = {str(value or "") for value in merged_mapping.values() if str(value or "")}
+
+    for item in _load_historical_mapping_candidates(module_code=module_code, purpose=purpose):
+        token = str(item.get("placeholder") or "").strip()
+        original = str(item.get("original_text") or "").strip()
+        entity_type = str(item.get("entity_type") or "unknown").strip() or "unknown"
+        if not token or not original:
+            continue
+        if token in merged_mapping and str(merged_mapping.get(token) or "") != original:
+            continue
+        if original in seen_originals:
+            continue
+        if original not in source_text or original not in text_value:
+            continue
+
+        next_text = text_value.replace(original, token)
+        if next_text == text_value:
+            continue
+        text_value = next_text
+        merged_mapping[token] = original
+        merged_manifest.setdefault(token, _build_reused_manifest_row(token=token, entity_type=entity_type))
+        seen_originals.add(original)
+        reused_count += 1
+
+    return text_value, merged_mapping, merged_manifest, reused_count
+
+
+def _load_historical_mapping_candidates(*, module_code: str, purpose: str) -> list[dict[str, str]]:
+    limit = _historical_mapping_reuse_limit()
+    permanent = purpose in _permanent_mapping_purposes()
+    try:
+        with get_engine().begin() as conn:
+            exists = conn.execute(text("SELECT to_regclass('core.pipt_gateway_mappings') IS NOT NULL")).scalar_one()
+            if not exists:
+                return []
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT placeholder, entity_type, original_text_enc, encryption_status, created_at
+                    FROM core.pipt_gateway_mappings
+                    WHERE module_code = :module_code
+                      AND purpose = :purpose
+                      AND (:permanent OR expires_at IS NULL OR expires_at > now())
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"module_code": module_code[:100], "purpose": purpose[:100], "permanent": permanent, "limit": limit},
+            ).mappings().all()
+    except PlatformError:
+        raise
+    except (SQLAlchemyError, RuntimeError) as exc:
+        logger.warning("PIPT gateway historical mapping reuse skipped: %s", exc)
+        return []
+
+    candidates: list[dict[str, str]] = []
+    seen_originals: set[str] = set()
+    for row in rows:
+        original, decrypt_status = _decrypt_mapping_original(
+            str(row.get("original_text_enc") or ""),
+            str(row.get("encryption_status") or "plaintext"),
+        )
+        original = str(original or "").strip()
+        token = str(row.get("placeholder") or "").strip()
+        if decrypt_status == "failed" or not original or not token:
+            continue
+        if original in seen_originals:
+            continue
+        seen_originals.add(original)
+        candidates.append(
+            {
+                "placeholder": token,
+                "original_text": original,
+                "entity_type": str(row.get("entity_type") or "unknown")[:100],
+            }
+        )
+
+    candidates.sort(key=lambda item: len(item["original_text"]), reverse=True)
+    return candidates
+
+
+def _build_reused_manifest_row(*, token: str, entity_type: str) -> dict[str, str]:
+    normalized_type = str(entity_type or "").strip() or _infer_entity_type(token)
+    return {
+        "entity_type": normalized_type,
+        "role": _role_for_entity_type(normalized_type),
+        "usage_hint": "历史映射复用的敏感实体 token，必须原样保留。",
+    }
 
 
 def _batch_items(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -855,6 +985,7 @@ def _persist_mapping_vault(
                 logger.warning("PIPT gateway mapping table is missing; vault skipped")
                 return False
             for placeholder, original in mapping_table.items():
+                ttl_seconds = _vault_ttl_seconds(module_code=module_code, purpose=purpose)
                 token = str(placeholder or "").strip()
                 original_text = str(original or "")
                 if not token or not original_text:
@@ -874,7 +1005,7 @@ def _persist_mapping_vault(
                         VALUES (
                           :request_id, :module_code, :purpose, :placeholder, :entity_type,
                           :original_text_enc, :original_text_hash, :placeholder_protocol,
-                          :encryption_status, now() + (:ttl_seconds * interval '1 second')
+                          :encryption_status, :expires_at
                         )
                         ON CONFLICT (request_id, placeholder) DO UPDATE SET
                           original_text_enc = EXCLUDED.original_text_enc,
@@ -894,7 +1025,7 @@ def _persist_mapping_vault(
                         "original_text_hash": _hash_text(original_text),
                         "placeholder_protocol": "strong" if STRONG_PIPT_RE.fullmatch(token) else "legacy",
                         "encryption_status": _vault_encryption_status(),
-                        "ttl_seconds": _vault_ttl_seconds(),
+                        "expires_at": _vault_expires_at(ttl_seconds),
                     },
                 )
             return True
@@ -987,11 +1118,32 @@ def _llm_mode(value: Any) -> str | None:
     return mode if mode in {"verify_only", "augment", "full"} else None
 
 
-def _vault_ttl_seconds() -> int:
+def _historical_mapping_reuse_limit() -> int:
+    try:
+        return max(1, min(int(os.environ.get("PIPT_GATEWAY_HISTORICAL_REUSE_LIMIT", "5000")), 50000))
+    except ValueError:
+        return 5000
+
+
+def _permanent_mapping_purposes() -> set[str]:
+    raw = os.environ.get("PIPT_GATEWAY_PERMANENT_PURPOSES", "knowledge_sync")
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
+def _vault_ttl_seconds(*, module_code: str, purpose: str) -> int | None:
+    _ = module_code
+    if purpose in _permanent_mapping_purposes():
+        return None
     try:
         return max(60, int(os.environ.get("PIPT_GATEWAY_VAULT_TTL_SECONDS", "86400")))
     except ValueError:
         return 86400
+
+
+def _vault_expires_at(ttl_seconds: int | None) -> datetime | None:
+    if ttl_seconds is None:
+        return None
+    return datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
 
 
 def _vault_encryption_status() -> str:
@@ -1143,6 +1295,8 @@ def _safe_event_details(raw_details: Any) -> dict[str, Any]:
         "placeholder_count",
         "entity_count",
         "restored_count",
+        "historical_reuse_count",
+        "current_document_global_replace_count",
     }
     safe: dict[str, Any] = {}
     for key, value in raw_details.items():
