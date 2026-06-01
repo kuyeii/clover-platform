@@ -1,0 +1,12 @@
+flowchart TD
+    subgraph G1["硬件信任与运行环境层"]
+        A["芯片级加密密钥管理模块"]
+        B["Guest OS镜像压缩与安全加载"]
+    end
+    subgraph G2["审计与验证链路层"]
+        C["分布式Audit Agent"]
+        D["集中式Verify Server"]
+    end
+    A -->|"密钥绑定/解密加载"| B
+    B -->|"探针注入/数据采集"| C
+    C -->|"加密上报/审计流"| D

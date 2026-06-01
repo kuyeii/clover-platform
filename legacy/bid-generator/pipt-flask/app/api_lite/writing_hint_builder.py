@@ -46,7 +46,11 @@ def build_outline_slice_block(section_outline_slice: str) -> str:
     slice_text = _normalize_text(section_outline_slice)
     if not slice_text:
         return ""
-    return "【本节目录层级定位（勿用 # 标题重复以下编号）】\n" + slice_text
+    return (
+        "【本节目录层级定位（只用于理解，不得输出）】\n"
+        + slice_text
+        + "\n- 上述目录编号和标题由外部编辑器统一渲染，正文中不得复述、改写或另起同级/下级标题。"
+    )
 
 
 def build_analysis_context_block(analysis_context: str) -> str:
@@ -128,9 +132,11 @@ def build_content_expansion_constraints(
     return (
         "【正文扩写与技术深度约束（必须遵守）】\n"
         f"- 本节标题：{_normalize_text(section_title) or '未命名章节'}\n"
+        "- 输出边界：只输出本节标题下面应出现的正文内容，第一行必须直接进入正文句子；\n"
+        "- 禁止在正文开头或段落独立行输出本节标题、章节编号、Markdown 标题、加粗标题；\n"
+        "- 禁止输出“一、/二、/三、”“1.1/1.2/1.1.1”这类独立小标题行；如需分层，只能在自然段内承接或使用普通列表项说明措施；\n"
         f"- 目标篇幅：约 {target if target > 0 else 800} 字，建议控制在目标值的 90%-110%，不得明显短于用户设置字数；\n"
-        "- 严禁输出任何 Markdown 标题（如 # / ## / ###）以及“一、/1.1/1.1.1”式自拟小节标题；\n"
-        "- 允许的组织形式仅限：常规正文段落、编号项、有序/无序列表；\n"
+        "- 允许的组织形式仅限：常规正文段落、普通有序/无序列表；列表项必须是具体措施或论证内容，不能退化成目录标题清单；\n"
         "- 不得重复输出章节名或目录结构，不得把目录当正文写出；\n"
         f"- 内容密度：{density}；\n"
         "- 每个要点优先使用“技术方案 → 实施步骤 → 验证方式/度量指标”结构；\n"

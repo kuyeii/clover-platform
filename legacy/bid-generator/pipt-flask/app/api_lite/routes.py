@@ -4164,6 +4164,14 @@ def _strip_response_section_numbering_legacy(text: str) -> str:
     return out
 
 
+def _finalize_legacy_body(content: str, section_title: str, *, strip_structural_numbering: bool = False) -> str:
+    content = _clean_content_writer_artifacts(content)
+    content = _normalize_content_writer_output(content, section_title)
+    if strip_structural_numbering:
+        content = _strip_response_section_numbering_legacy(content)
+    return content.strip()
+
+
 def _finalize_legacy_content_output(
     raw_content,
     section_title: str,
@@ -4176,18 +4184,20 @@ def _finalize_legacy_content_output(
     if isinstance(raw_content, list):
         raw_content = "\n\n".join(str(item) for item in raw_content)
     content = re.sub(r"<think>.*?</think>", "", str(raw_content or ""), flags=re.DOTALL).strip()
-    content = _clean_content_writer_artifacts(content)
-    content = _normalize_content_writer_output(content, section_title)
-    if strip_structural_numbering:
-        content = _strip_response_section_numbering_legacy(content)
+    content = _finalize_legacy_body(
+        content,
+        section_title,
+        strip_structural_numbering=strip_structural_numbering,
+    )
 
     fb_clean = str(feedback or "").strip()
     if fb_clean and len(fb_clean) > 10 and content.startswith(fb_clean):
         content = content[len(fb_clean):].strip()
-        content = _clean_content_writer_artifacts(content)
-        content = _normalize_content_writer_output(content, section_title)
-        if strip_structural_numbering:
-            content = _strip_response_section_numbering_legacy(content)
+        content = _finalize_legacy_body(
+            content,
+            section_title,
+            strip_structural_numbering=strip_structural_numbering,
+        )
 
     replace_map: dict[str, str] = {}
     db = SessionLocal()

@@ -10,7 +10,10 @@ import time
 import sys
 import ast
 import hashlib
-from datetime import datetime
+import shutil
+import subprocess
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 import re
@@ -63,6 +66,7 @@ PRO_ENGINE_ROOT = Path(__file__).resolve().parents[3]
 DIAGRAM_ARTIFACT_DIR = Path(
     os.environ.get("DIAGRAM_ARTIFACT_DIR", str(PRO_ENGINE_ROOT / "data" / "diagram_artifacts"))
 )
+_MERMAID_PUPPETEER_CONFIG = PRO_ENGINE_ROOT / "tools" / "puppeteer.no-sandbox.json"
 
 # SVG 图表生成默认关闭，需显式配置 ENABLE_DIAGRAM_GENERATION=true。
 DIAGRAM_GENERATOR_MODE = os.environ.get("DIAGRAM_GENERATOR_MODE", "svg").strip().lower()
@@ -214,6 +218,112 @@ def _build_diagram_reference_tag(diagram: dict[str, Any]) -> str:
     title = str(diagram.get("title") or "架构图").replace('"', "&quot;")
     dtype = str(diagram.get("type") or "architecture").replace('"', "&quot;")
     return f'<diagram data-diagram-id="{did}" type="{dtype}" title="{title}"></diagram>'
+
+
+def _escape_svg_text(text: str) -> str:
+    return (
+        str(text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _mermaid_to_fallback_svg(mermaid: str, title: str = "数据流图") -> str:
+    """
+    Mermaid artifact 的轻量预览兜底。
+    前端编辑器只消费 SVG；当图表工作流返回 .mmd 时，后端提供可读 SVG，DOCX 导出仍走 mmdc 渲染。
+    """
+    lines = [line.strip() for line in str(mermaid or "").splitlines() if line.strip()]
+    body_lines = [line for line in lines if not re.match(r"^(?:flowchart|graph)\s+", line, flags=re.IGNORECASE)]
+    if not body_lines:
+        body_lines = ["Mermaid 图表源码已生成"]
+    body_lines = body_lines[:18]
+    width = 1120
+    row_h = 30
+    height = max(180, 92 + len(body_lines) * row_h)
+    escaped_title = _escape_svg_text(title or "数据流图")
+    rows = []
+    for idx, line in enumerate(body_lines):
+        y = 88 + idx * row_h
+        rows.append(
+            f'<text x="40" y="{y}" font-size="16" fill="#334155" font-family="monospace">{_escape_svg_text(line[:118])}</text>'
+        )
+    footer_y = height - 28
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+        '<rect width="100%" height="100%" rx="16" fill="#f8fafc"/>'
+        '<rect x="24" y="22" width="1072" height="44" rx="10" fill="#e0f2fe" stroke="#bae6fd"/>'
+        f'<text x="40" y="50" font-size="20" font-weight="700" fill="#0369a1" font-family="Arial, sans-serif">{escaped_title}</text>'
+        f'{"".join(rows)}'
+        f'<text x="40" y="{footer_y}" font-size="13" fill="#64748b" font-family="Arial, sans-serif">Mermaid 源码预览；导出 DOCX 时会渲染为正式图片。</text>'
+        '</svg>'
+    )
+
+
+def _find_mmdc_command() -> list[str] | None:
+    """查找本地 Mermaid CLI；不隐式安装依赖。"""
+    candidates: list[Path] = []
+    if sys.platform == "win32":
+        candidates.extend([
+            PRO_ENGINE_ROOT / "node_modules" / ".bin" / "mmdc.cmd",
+            PRO_ENGINE_ROOT / "tools" / "node_modules" / ".bin" / "mmdc.cmd",
+        ])
+    else:
+        candidates.extend([
+            PRO_ENGINE_ROOT / "node_modules" / ".bin" / "mmdc",
+            PRO_ENGINE_ROOT / "tools" / "node_modules" / ".bin" / "mmdc",
+        ])
+    for candidate in candidates:
+        if candidate.is_file():
+            return [str(candidate)]
+    found = shutil.which("mmdc")
+    return [found] if found else None
+
+
+def _render_mermaid_to_svg_file(mermaid_path: Path, svg_path: Path) -> bool:
+    """将 .mmd 渲染为同名 .svg，失败时由调用方走预览兜底。"""
+    command = _find_mmdc_command()
+    if not command:
+        logger.warning("Mermaid CLI(mmdc) 未安装，使用 SVG 预览兜底: %s", mermaid_path.name)
+        return False
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="proengine_mmdc_") as tmp_dir:
+        tmp_svg = Path(tmp_dir) / f"{mermaid_path.stem}.svg"
+        parts = [
+            *command,
+            "-i",
+            str(mermaid_path),
+            "-o",
+            str(tmp_svg),
+            "-b",
+            "white",
+            "-w",
+            os.environ.get("MERMAID_RENDER_WIDTH", "1400"),
+            "-H",
+            os.environ.get("MERMAID_RENDER_HEIGHT", "1050"),
+        ]
+        if _MERMAID_PUPPETEER_CONFIG.is_file():
+            parts.extend(["-p", str(_MERMAID_PUPPETEER_CONFIG)])
+        try:
+            env = os.environ.copy()
+            env.setdefault("PUPPETEER_CACHE_DIR", str(PRO_ENGINE_ROOT / "node_modules" / ".cache" / "puppeteer"))
+            result = subprocess.run(parts, capture_output=True, text=True, timeout=120, env=env)
+            if result.returncode != 0:
+                err = (result.stderr or result.stdout or "").strip()
+                logger.warning("Mermaid SVG 渲染失败: %s", err[:1000])
+                return False
+            if not tmp_svg.exists() or tmp_svg.stat().st_size <= 0:
+                return False
+            svg_text = tmp_svg.read_text(encoding="utf-8").strip()
+            if not svg_text.lower().startswith("<svg"):
+                return False
+            svg_path.write_text(svg_text, encoding="utf-8")
+            return True
+        except Exception as exc:
+            logger.warning("Mermaid SVG 渲染异常: %s", exc)
+            return False
 
 
 def _build_diagram_task_result(
@@ -691,20 +801,22 @@ def _finalize_single_content_result(
         or ""
     )
     content = re.sub(r"<think>.*?</think>", "", str(raw_content or ""), flags=re.DOTALL).strip()
-    content = _clean_markdown_artifacts(content)
-    content = normalize_generated_markdown(content, section_title)
-    if strip_structural_numbering:
-        content = _strip_response_section_numbering(content)
+    content = _finalize_generated_body(
+        content,
+        section_title,
+        strip_structural_numbering=strip_structural_numbering,
+    )
 
     feedback = outputs.get("feedback") or ""
     if feedback:
         fb_clean = str(feedback).strip()
         if fb_clean and len(fb_clean) > 10 and content.startswith(fb_clean):
             content = content[len(fb_clean):].strip()
-            content = _clean_markdown_artifacts(content)
-            content = normalize_generated_markdown(content, section_title)
-            if strip_structural_numbering:
-                content = _strip_response_section_numbering(content)
+            content = _finalize_generated_body(
+                content,
+                section_title,
+                strip_structural_numbering=strip_structural_numbering,
+            )
 
     raw_score = outputs.get("quality_score")
     quality_score = None
@@ -849,6 +961,115 @@ def _parse_group_content_results(
         "failed_sections": failed_sections,
         "parse_error": parse_error,
     }
+
+
+async def _repair_group_failed_sections(
+    *,
+    task_id: str,
+    _r,
+    children: list[dict],
+    failed_sections: list[dict],
+    request: dict,
+    request_mapping_flat: dict[str, str],
+    group_placeholder_hint: str,
+    group_outline_slice: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """批量正文漏回个别子章节时，使用单章节工作流补偿生成。"""
+    if not failed_sections:
+        return [], []
+
+    failed_ids = [str(row.get("section_id") or "").strip() for row in failed_sections if row.get("section_id")]
+    failed_id_set = {sid for sid in failed_ids if sid}
+    if not failed_id_set:
+        return [], failed_sections
+
+    child_by_id = {child["section_id"]: child for child in children}
+    repaired: list[dict[str, Any]] = []
+    still_failed: list[dict[str, Any]] = []
+    for failed in failed_sections:
+        section_id = str(failed.get("section_id") or "").strip()
+        child = child_by_id.get(section_id)
+        if not child:
+            still_failed.append(failed)
+            continue
+
+        workflow_name = _r._resolve_content_workflow_name(child.get("generation_strategy", "general"))
+        dify_key = _r._get_workflow_key(workflow_name)
+        if not dify_key:
+            still_failed.append({
+                **failed,
+                "error": f"{workflow_name} 工作流 API Key 未配置，无法补生成",
+            })
+            continue
+
+        task_manager.update_stage(task_id, f"🩹 子章节补生成中：{child['section_title']}")
+        repair_writing_hint = compose_runtime_writing_hint(
+            str(child.get("writing_hint") or ""),
+            child["section_title"],
+            int(child.get("expected_words") or 0),
+            str(child.get("keywords") or ""),
+            section_outline_slice=str(child.get("section_outline_slice") or group_outline_slice),
+            analysis_context=str(child.get("analysis_context") or ""),
+        )
+        inputs: dict[str, Any] = {
+            "section_title": child["section_title"],
+            "writing_hint": repair_writing_hint,
+            "keywords": child["keywords"] if str(child.get("keywords") or "").strip() else child["section_title"],
+            "expected_words": child["expected_words"],
+            "project_summary": request.get("project_summary", ""),
+            "global_outline": group_outline_slice,
+            "placeholder_hint": group_placeholder_hint,
+        }
+        if workflow_name == "content_writer":
+            inputs["requires_search"] = "true" if bool(child.get("requires_search", False)) else "false"
+            inputs["image_map_hint"] = request.get("image_map_hint", "")
+
+        try:
+            outputs = await _collect_workflow_outputs(
+                task_id,
+                dify_key,
+                inputs,
+                _r=_r,
+                initial_stage=f"🩹 子章节补生成中：{child['section_title']}",
+            )
+            payload = _finalize_single_content_result(
+                child["section_title"],
+                outputs,
+                request_mapping_flat,
+                strip_structural_numbering=workflow_name == "response_content_writer",
+            )
+            placeholder_issues = payload.get("placeholder_issues") or []
+            if placeholder_issues:
+                still_failed.append({
+                    **failed,
+                    "error": "补生成结果占位符格式异常且无法可靠还原: "
+                    + "、".join(str(item) for item in placeholder_issues[:5]),
+                })
+                continue
+            diagram_specs = outputs.get("diagram_specs") or outputs.get("diagram_spec") or outputs.get("diagram")
+            if diagram_specs:
+                payload["diagram_specs"] = diagram_specs
+            payload.update({
+                "section_id": section_id,
+                "section_title": child["section_title"],
+                "repaired": True,
+                "repair_source": "single_content_writer",
+            })
+            repaired.append(payload)
+            task_manager.update_stage(task_id, f"✅ 子章节补生成完成：{child['section_title']}")
+        except Exception as exc:
+            still_failed.append({
+                **failed,
+                "error": "批量正文缺失且补生成失败: " + _format_dify_runtime_error(exc),
+            })
+            logger.warning(
+                "[Task %s] H2 子章节补生成失败: section=%s; error=%s",
+                task_id,
+                child["section_title"],
+                _format_dify_runtime_error(exc),
+            )
+
+    return repaired, still_failed
 
 
 def _parse_group_review_result(outputs: dict[str, Any]) -> dict[str, Any]:
@@ -1570,6 +1791,83 @@ def _persist_project_runtime(
         logger.warning(f"[{project_id}] 持久化 taskRuntime 失败: {e}")
     finally:
         db.close()
+
+
+def _persist_content_result_to_project(
+    project_id: str,
+    section_id: str,
+    payload: dict[str, Any],
+    *,
+    status: str = "done",
+    error: str = "",
+) -> None:
+    """将正文任务结果幂等写回项目，避免前端轮询中断导致 generatedContent 停在 idle。"""
+    if not project_id or not section_id:
+        return
+    db = SessionLocal()
+    try:
+        record = db.query(ProjectRecord).filter(ProjectRecord.id == project_id).first()
+        if not record:
+            return
+        data = json.loads(record.data or "{}")
+        generated = data.get("generatedContent")
+        if not isinstance(generated, dict):
+            generated = {}
+        existing = generated.get(section_id) if isinstance(generated.get(section_id), dict) else {}
+        if status == "done":
+            content = str(payload.get("content") or "")
+            next_state = {
+                **existing,
+                "status": "done",
+                "content": content,
+                "wordCount": int(payload.get("word_count") or payload.get("wordCount") or _count_visible_chars(content)),
+                "qualityScore": payload.get("quality_score"),
+                "feedback": payload.get("feedback"),
+                "diagramError": payload.get("diagram_error"),
+                "previousContent": None,
+                "previousWordCount": None,
+            }
+            next_state.pop("error", None)
+            next_state.pop("stage", None)
+            generated[section_id] = next_state
+        else:
+            generated[section_id] = {
+                **existing,
+                "status": "error",
+                "content": str(existing.get("content") or ""),
+                "wordCount": int(existing.get("wordCount") or existing.get("word_count") or 0),
+                "error": error or "生成失败",
+                "stage": None,
+            }
+        data["generatedContent"] = generated
+        record.data = json.dumps(data, ensure_ascii=False)
+        record.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("[%s] 持久化正文结果失败: section=%s; error=%s", project_id, section_id, exc)
+    finally:
+        db.close()
+
+
+def _persist_group_content_result_to_project(
+    project_id: str,
+    sections: list[dict[str, Any]],
+    failed_sections: list[dict[str, Any]],
+) -> None:
+    """批量正文任务结束时写回所有成功/失败子章节。"""
+    for row in sections or []:
+        section_id = str(row.get("section_id") or row.get("sectionId") or "").strip()
+        _persist_content_result_to_project(project_id, section_id, row, status="done")
+    for row in failed_sections or []:
+        section_id = str(row.get("section_id") or row.get("sectionId") or "").strip()
+        _persist_content_result_to_project(
+            project_id,
+            section_id,
+            row,
+            status="error",
+            error=str(row.get("error") or "分组生成失败"),
+        )
 
 
 def _task_status_to_runtime_state(status: str) -> str:
@@ -2300,6 +2598,15 @@ def _strip_response_section_numbering(text: str) -> str:
     out = "\n".join(cleaned_lines)
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
     return out
+
+
+def _finalize_generated_body(content: str, section_title: str, *, strip_structural_numbering: bool = False) -> str:
+    """正文保存前只做确定性格式清理，不删除疑似标题行。"""
+    body = _clean_markdown_artifacts(content)
+    body = normalize_generated_markdown(body, section_title)
+    if strip_structural_numbering:
+        body = _strip_response_section_numbering(body)
+    return body.strip()
 
 
 def _get_deps():
@@ -3148,10 +3455,11 @@ async def start_content_task(request: dict):
             # 去除 <think>...</think> 标签（完整字符串，无跨 chunk 问题）
             import re
             content = re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL).strip()
-            content = _clean_markdown_artifacts(content)
-            content = normalize_generated_markdown(content, section_title)
-            if strip_structural_numbering:
-                content = _strip_response_section_numbering(content)
+            content = _finalize_generated_body(
+                content,
+                section_title,
+                strip_structural_numbering=strip_structural_numbering,
+            )
 
             feedback = outputs.get("feedback") or ""
             diagram_specs = (
@@ -3167,10 +3475,11 @@ async def start_content_task(request: dict):
                 if fb_clean and len(fb_clean) > 10 and content.startswith(fb_clean):
                     logger.info(f"[Task {task_id}] 检测到 content 混入 feedback（{len(fb_clean)} 字符），已清除")
                     content = content[len(fb_clean):].strip()
-                    content = _clean_markdown_artifacts(content)
-                    content = normalize_generated_markdown(content, section_title)
-                    if strip_structural_numbering:
-                        content = _strip_response_section_numbering(content)
+                    content = _finalize_generated_body(
+                        content,
+                        section_title,
+                        strip_structural_numbering=strip_structural_numbering,
+                    )
 
             # 提取质量评分
             raw_score = outputs.get("quality_score")
@@ -3302,6 +3611,7 @@ async def start_content_task(request: dict):
                         done_payload["diagram_specs"] = diagram_specs
                 elif diagram_specs:
                     done_payload["diagram_specs"] = diagram_specs
+            _persist_content_result_to_project(project_id, section_id, done_payload, status="done")
             task_manager.set_result(task_id, done_payload)
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except asyncio.CancelledError:
@@ -3315,6 +3625,13 @@ async def start_content_task(request: dict):
             if project_id:
                 await task_manager.release_diagram_slot(project_id)
             logger.error(f"[Task {task_id}] 内容生成后台任务失败: {e}", exc_info=True)
+            _persist_content_result_to_project(
+                project_id,
+                section_id,
+                {},
+                status="error",
+                error=_format_dify_runtime_error(e),
+            )
             task_manager.set_error(task_id, _format_dify_runtime_error(e))
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
 
@@ -3542,6 +3859,25 @@ async def start_content_group_task(request: dict):
                 else:
                     task_manager.update_stage(task_id, "⚠️ 批量结果无可用正文，已标记章节失败")
 
+            repaired_sections, failed_sections = await _repair_group_failed_sections(
+                task_id=task_id,
+                _r=_r,
+                children=children,
+                failed_sections=failed_sections,
+                request=request,
+                request_mapping_flat=request_mapping_flat,
+                group_placeholder_hint=group_placeholder_hint,
+                group_outline_slice=group_outline_slice,
+            )
+            if repaired_sections:
+                repaired_ids = {str(row.get("section_id") or "") for row in repaired_sections}
+                results = [row for row in results if str(row.get("section_id") or "") not in repaired_ids]
+                results.extend(repaired_sections)
+                task_manager.update_stage(
+                    task_id,
+                    f"🩹 已补生成缺失子章节（{len(repaired_sections)} 个）",
+                )
+
             child_map = {child["section_id"]: child for child in children}
             ordered_results = sorted(
                 results,
@@ -3634,6 +3970,7 @@ async def start_content_group_task(request: dict):
                 "failed_count": len(failed_sections),
                 "partial_success": bool(results) and bool(failed_sections),
             })
+            _persist_group_content_result_to_project(project_id, results, failed_sections)
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except asyncio.CancelledError:
             await _best_effort_stop_dify_by_task_id(task_id)
@@ -4098,7 +4435,27 @@ async def get_diagram_artifact(diagram_id: str, project_id: str = Query(default=
             path = candidate
             break
     if not path.exists():
-        raise HTTPException(status_code=404, detail="图表 artifact 不存在")
+        mermaid_path = DIAGRAM_ARTIFACT_DIR / project / f"{safe_id}.mmd"
+        if not mermaid_path.exists():
+            for candidate in DIAGRAM_ARTIFACT_DIR.glob(f"*/{safe_id}.mmd"):
+                mermaid_path = candidate
+                break
+        if not mermaid_path.exists():
+            raise HTTPException(status_code=404, detail="图表 artifact 不存在")
+        rendered_svg_path = mermaid_path.with_suffix(".svg")
+        if rendered_svg_path.exists() or _render_mermaid_to_svg_file(mermaid_path, rendered_svg_path):
+            return StreamingResponse(
+                iter([rendered_svg_path.read_text(encoding="utf-8")]),
+                media_type="image/svg+xml",
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+        mermaid = mermaid_path.read_text(encoding="utf-8")
+        svg = _mermaid_to_fallback_svg(mermaid, title="Mermaid 数据流图")
+        return StreamingResponse(
+            iter([svg]),
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
     return StreamingResponse(
         iter([path.read_text(encoding="utf-8")]),
         media_type="image/svg+xml",

@@ -970,6 +970,7 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                                                     {item?.content ? (
                                                         <ContentPreview
                                                             content={item.content}
+                                                            projectId={project.id}
                                                             className={`${CONTENT_PREVIEW_PROSE_CLASS} mt-3`}
                                                         />
                                                     ) : (

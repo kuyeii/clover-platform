@@ -3820,6 +3820,7 @@ export const projectService = {
             diagramUpdate?: boolean;
             diagramRequest?: DiagramRequest;
         }) => void;
+        onSectionFailed?: (sectionId: string, error: string) => void;
         onDone: (result: {
             sections: Array<{
                 sectionId: string;
@@ -4061,6 +4062,10 @@ export const projectService = {
                                 if (deliveredSections.has(section.sectionId)) return;
                                 deliveredSections.add(section.sectionId);
                                 callbacks.onSectionDone(section);
+                            });
+                            failedSections.forEach((failed: any) => {
+                                if (deliveredSections.has(failed.sectionId)) return;
+                                callbacks.onSectionFailed?.(failed.sectionId, failed.error || '分组生成失败');
                             });
                             setLocalTaskRuntime(params.projectId, {
                                 state: 'succeeded',
@@ -4471,6 +4476,11 @@ export const projectService = {
                                             diagramUpdate: section.diagramUpdate,
                                             diagramRequest: section.diagramRequest,
                                         });
+                                    },
+                                    onSectionFailed: (sectionId, error) => {
+                                        if (!sectionId || deliveredInUnit.has(sectionId)) return;
+                                        deliveredInUnit.add(sectionId);
+                                        onProgress(sectionId, 'error', undefined, error || '分组生成失败');
                                     },
                                     onDone: (res) => {
                                         activeCtrls.delete(unit.key);

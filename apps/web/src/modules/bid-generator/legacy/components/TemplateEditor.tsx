@@ -443,14 +443,14 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                 },
             });
         };
-        const resetToIdle = () => {
+        const markGenerationError = (message: string) => {
             immediatelyPersist({
                 [block.id]: {
                     ...existing,
-                    status: 'idle',
+                    status: 'error',
                     content: '',
                     wordCount: 0,
-                    error: undefined,
+                    error: message || '生成失败',
                     stage: undefined,
                 },
             });
@@ -560,7 +560,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                     delete streamControllersRef.current[`${block.id}_retry`];
                     delete streamControllersRef.current[block.id];
                     console.warn(`[content generate] ${block.title} 失败:`, err);
-                    resetToIdle();
+                    markGenerationError(err || '生成失败');
                 },
             });
 
@@ -852,7 +852,16 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             },
                         });
                     } else {
-                        immediatelyPersist({ [blockId]: { ...previous, status: 'idle', error: undefined, stage: undefined } });
+                        immediatelyPersist({
+                            [blockId]: {
+                                ...previous,
+                                status: 'error',
+                                content: previous?.content || '',
+                                wordCount: previous?.wordCount || 0,
+                                error: error || '生成失败',
+                                stage: undefined,
+                            },
+                        });
                     }
                     setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
                 }
@@ -971,7 +980,16 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             },
                         });
                     } else {
-                        immediatelyPersist({ [blockId]: { ...previous, status: 'idle', error: undefined, stage: undefined } });
+                        immediatelyPersist({
+                            [blockId]: {
+                                ...previous,
+                                status: 'error',
+                                content: previous?.content || '',
+                                wordCount: previous?.wordCount || 0,
+                                error: error || '生成失败',
+                                stage: undefined,
+                            },
+                        });
                     }
                     setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
                 }
@@ -2061,6 +2079,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                         <ContentEditor
                                             key={`${selectedBlockId}-${showOriginal}`}
                                             content={displayContent}
+                                            projectId={projectId}
                                             onChange={handleContentEdit}
                                             readOnly={
                                                 isLocked ||

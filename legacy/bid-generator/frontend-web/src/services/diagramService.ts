@@ -1,5 +1,4 @@
 import { bidGeneratorFetch } from './apiBase';
-
 export interface PlaceholderReplaceRow {
     placeholder: string;
     original: string;
@@ -64,6 +63,64 @@ export interface DiagramTaskStatus {
     timed_out?: boolean;
 }
 
+function escapeSvgText(text: string): string {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function mermaidToPreviewSvg(source: string, title = '数据流图'): string {
+    const lines = String(source || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .filter(line => !/^(flowchart|graph)\s+/i.test(line))
+        .slice(0, 18);
+    const rows = lines.length ? lines : ['Mermaid 图表源码已生成'];
+    const width = 1120;
+    const rowHeight = 30;
+    const height = Math.max(180, 92 + rows.length * rowHeight);
+    const body = rows.map((line, index) => {
+        const y = 88 + index * rowHeight;
+        return `<text x="40" y="${y}" font-size="16" fill="#334155" font-family="monospace">${escapeSvgText(line.slice(0, 118))}</text>`;
+    }).join('');
+    return [
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+        '<rect width="100%" height="100%" rx="16" fill="#f8fafc"/>',
+        '<rect x="24" y="22" width="1072" height="44" rx="10" fill="#e0f2fe" stroke="#bae6fd"/>',
+        `<text x="40" y="50" font-size="20" font-weight="700" fill="#0369a1" font-family="Arial, sans-serif">${escapeSvgText(title)}</text>`,
+        body,
+        `<text x="40" y="${height - 28}" font-size="13" fill="#64748b" font-family="Arial, sans-serif">Mermaid 源码预览；导出 DOCX 时会渲染为正式图片。</text>`,
+        '</svg>',
+    ].join('');
+}
+
+function isMermaidFallbackSvg(svg: string): boolean {
+    return /Mermaid\s*源码预览/i.test(String(svg || ''));
+}
+
+let mermaidInitialized = false;
+let mermaidRenderSeq = 0;
+
+async function renderMermaidToSvg(source: string): Promise<string> {
+    const text = String(source || '').trim();
+    if (!text) return '';
+    const { default: mermaid } = await import('mermaid');
+    if (!mermaidInitialized) {
+        mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: 'default',
+        });
+        mermaidInitialized = true;
+    }
+    const renderId = `proengine-mermaid-${Date.now()}-${mermaidRenderSeq++}`;
+    const result = await mermaid.render(renderId, text);
+    return result.svg || '';
+}
+
 export class DiagramServiceError extends Error {
     status: number;
     detail: unknown;
@@ -92,7 +149,18 @@ export const diagramService = {
         const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
         try {
             const resp = await bidGeneratorFetch(`/diagram-artifacts/${encodeURIComponent(id)}.svg${query}`);
-            return resp.ok ? await resp.text() : '';
+            if (resp.ok) {
+                const svg = await resp.text();
+                if (!isMermaidFallbackSvg(svg)) return svg;
+                const mmdResp = await bidGeneratorFetch(`/diagram-artifacts/${encodeURIComponent(id)}.mmd${query}`);
+                if (!mmdResp.ok) return svg;
+                const source = await mmdResp.text();
+                return await renderMermaidToSvg(source).catch(() => svg);
+            }
+            const mmdResp = await bidGeneratorFetch(`/diagram-artifacts/${encodeURIComponent(id)}.mmd${query}`);
+            if (!mmdResp.ok) return '';
+            const mermaid = await mmdResp.text();
+            return await renderMermaidToSvg(mermaid).catch(() => mermaidToPreviewSvg(mermaid));
         } catch {
             return '';
         }
