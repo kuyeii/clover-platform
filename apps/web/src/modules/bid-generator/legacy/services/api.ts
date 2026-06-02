@@ -1,86 +1,98 @@
-import axios, { AxiosHeaders, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import {
-    getApiBaseUrl,
-    isSafeFallbackMethod,
-    resolveBidGeneratorApiTarget,
-    warnLegacyFallback,
-} from './apiBase';
-import { shouldUseLegacyFallbackTarget } from './apiBasePolicy';
+import { bidGeneratorFetch } from './apiBase';
 
-type BidGeneratorAxiosConfig = InternalAxiosRequestConfig & {
-    bidGeneratorTargetIsPlatformApi?: boolean;
-    bidGeneratorRetriedLegacy?: boolean;
+type LegacyApiRequestConfig = {
+    params?: Record<string, string | number | boolean | null | undefined>;
+    headers?: HeadersInit;
+    responseType?: 'blob' | 'json' | string;
+    signal?: AbortSignal;
 };
 
-export const baseURL = getApiBaseUrl();
-
-function isTopLevelUnifiedFrontend(): boolean {
-    return typeof window !== 'undefined' && window.parent === window;
-}
-
-const api = axios.create({
-    // 因为引入了多模态打标和 PIPT 实体本地校验，并发量大时后端模型推理以及Dify生成可能需要长达 1小时
-    timeout: 3600000,
-});
-
-api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-    const nextConfig = config as BidGeneratorAxiosConfig;
-    const headers = AxiosHeaders.from(config.headers);
-
-    if (nextConfig.bidGeneratorRetriedLegacy) {
-        headers.delete('Authorization');
-        headers.delete('X-Portal-Client-Id');
-        nextConfig.baseURL = getApiBaseUrl();
-        nextConfig.headers = headers;
-        nextConfig.bidGeneratorTargetIsPlatformApi = false;
-        return nextConfig;
-    }
-
-    const target = await resolveBidGeneratorApiTarget();
-
-    for (const [name, value] of Object.entries(target.headers)) {
-        headers.set(name, value);
-    }
-
-    nextConfig.baseURL = target.baseUrl;
-    nextConfig.headers = headers;
-    nextConfig.bidGeneratorTargetIsPlatformApi = target.isPlatformApi;
-    return nextConfig;
-});
-
-function shouldFallbackToLegacy(error: AxiosError) {
-    const config = error.config as BidGeneratorAxiosConfig | undefined;
-    if (!config?.bidGeneratorTargetIsPlatformApi || config.bidGeneratorRetriedLegacy) {
-        return false;
-    }
-    if (!shouldUseLegacyFallbackTarget(isTopLevelUnifiedFrontend())) {
-        return false;
-    }
-    if (error.response?.status === 502 || error.response?.status === 503) {
-        return isSafeFallbackMethod({ method: config.method });
-    }
-    return !error.response && error.code !== 'ERR_CANCELED' && isSafeFallbackMethod({ method: config.method });
-}
-
-api.interceptors.response.use(
-    (response) => response.data,
-    async (error: AxiosError) => {
-        if (shouldFallbackToLegacy(error)) {
-            warnLegacyFallback(error);
-            const retryConfig = error.config as BidGeneratorAxiosConfig;
-            const headers = AxiosHeaders.from(retryConfig.headers);
-            headers.delete('Authorization');
-            headers.delete('X-Portal-Client-Id');
-            retryConfig.baseURL = getApiBaseUrl();
-            retryConfig.headers = headers;
-            retryConfig.bidGeneratorTargetIsPlatformApi = false;
-            retryConfig.bidGeneratorRetriedLegacy = true;
-            return api.request(retryConfig);
+function appendQuery(path: string, params?: LegacyApiRequestConfig['params']): string {
+    if (!params) return path;
+    const [pathname, rawSearch = ''] = path.split('?', 2);
+    const search = new URLSearchParams(rawSearch);
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+            search.set(key, String(value));
         }
+    });
+    const query = search.toString();
+    return query ? `${pathname}?${query}` : pathname;
+}
 
-        console.error('API Error:', error.response?.data || error.message);
-        return Promise.reject(error);
+function buildRequestInit(method: string, body?: unknown, config: LegacyApiRequestConfig = {}): RequestInit {
+    const headers = new Headers(config.headers);
+    const init: RequestInit = {
+        method,
+        headers,
+        signal: config.signal,
+    };
+    if (body !== undefined) {
+        if (body instanceof FormData || body instanceof Blob) {
+            init.body = body;
+        } else {
+            if (!headers.has('Content-Type')) {
+                headers.set('Content-Type', 'application/json');
+            }
+            init.body = JSON.stringify(body);
+        }
     }
-);
+    return init;
+}
 
+async function readErrorDetail(response: Response): Promise<string> {
+    try {
+        const payload = await response.clone().json();
+        return String(payload?.detail || payload?.message || payload?.error?.message || `HTTP ${response.status}`);
+    } catch {
+        const text = await response.clone().text().catch(() => '');
+        return text || `HTTP ${response.status}`;
+    }
+}
+
+async function request<T = unknown>(
+    method: string,
+    path: string,
+    body?: unknown,
+    config: LegacyApiRequestConfig = {},
+): Promise<T> {
+    const response = await bidGeneratorFetch(
+        appendQuery(path, config.params),
+        buildRequestInit(method, body, config),
+    );
+    if (!response.ok) {
+        throw new Error(await readErrorDetail(response));
+    }
+    if (config.responseType === 'blob') {
+        return await response.blob() as T;
+    }
+    if (response.status === 204) {
+        return undefined as T;
+    }
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+        return await response.json() as T;
+    }
+    return await response.text() as T;
+}
+
+const api = {
+    get<T = unknown>(path: string, config?: LegacyApiRequestConfig): Promise<T> {
+        return request<T>('GET', path, undefined, config);
+    },
+    post<T = unknown>(path: string, body?: unknown, config?: LegacyApiRequestConfig): Promise<T> {
+        return request<T>('POST', path, body, config);
+    },
+    put<T = unknown>(path: string, body?: unknown, config?: LegacyApiRequestConfig): Promise<T> {
+        return request<T>('PUT', path, body, config);
+    },
+    patch<T = unknown>(path: string, body?: unknown, config?: LegacyApiRequestConfig): Promise<T> {
+        return request<T>('PATCH', path, body, config);
+    },
+    delete<T = unknown>(path: string, config?: LegacyApiRequestConfig): Promise<T> {
+        return request<T>('DELETE', path, undefined, config);
+    },
+};
+
+export const baseURL = '';
 export default api;

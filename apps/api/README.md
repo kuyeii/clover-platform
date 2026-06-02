@@ -1,6 +1,6 @@
 # apps/api
 
-`apps/api` 是 Clover Platform 统一后端基座。第 9-E 阶段完成四个业务模块后端迁移收口，并将 legacy 业务后端调整为非默认启动。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块继续具备统一业务入口和 iframe auth bridge 接入。当前 `apps/api` 是主业务后端：竞对分析、RAG、合同审查和标书生成主要业务已由 `apps/api` direct 承载，legacy 后端进程仅作为回滚 / 调试路径保留。
+`apps/api` 是 Clover Platform 统一后端基座。第 9-E 阶段完成四个业务模块后端迁移收口，并将 legacy 业务后端调整为非默认启动。Portal 核心平台能力继续使用 `/api/v1/core`，四个业务模块继续具备统一业务入口和 iframe auth bridge 接入。当前 `apps/api` 是主业务后端：竞对分析、RAG 和合同审查主要业务已由 `apps/api` direct 承载；标书生成仍处在 native route、legacy adapter 和 legacy-owned 路由并存的迁移态，legacy 后端进程仅作为回滚 / 调试路径保留。
 
 ## 当前职责
 
@@ -13,7 +13,7 @@
 - 为 Portal 前端提供 auth、users、app-usage、runtime apps、feedback 和 `/ws/core/app-usage`。
 - 为 `competitor-analysis`、`rag-web-search`、`contract-review` 和 `bid-generator` 提供鉴权后的业务 API 入口。
 - 支持业务 iframe 前端通过 Portal auth bridge 获取内存态 token 和 `apiBaseUrl` 后调用 `apps/api`；token 不通过 iframe URL 传递。
-- 当前不持有统一文件存储，也不是统一任务调度器；合同审查 direct API 仍读写原 legacy 本地目录，标书生成 direct API 仍复用 legacy `api_lite` 业务实现、本地 `data/*` 目录和进程内 `TaskManager`，任务状态继续沿用各模块现有机制。
+- 当前不持有统一文件存储，也不是统一任务调度器；合同审查 direct API 仍读写原 legacy 本地目录，标书生成已迁移的 native route 仍复用 legacy 本地 `data/*` 目录，任务状态、KB sync status 和项目缓存清理仍有 legacy adapter 边界。
 
 第 8-A 回归基线见 `docs/stage-8-a-regression-and-dev-baseline.md`，其中包含业务代理入口、fallback 安全边界、上传/下载/stream 约束，以及 `dev.py` / `preflight` 的必跑检查。第 8-B 文件系统和任务状态边界见 `docs/stage-8-b-local-files-and-task-boundary.md`。第 8-C 诊断和部署边界见 `docs/stage-8-c-diagnostics-and-local-fs-deployment.md`。第 8-D 低风险 direct API 批次 1 见 `docs/stage-8-d-low-risk-direct-api-batch-1.md`。第 8-E 低风险查询类 direct API 批次 2 见 `docs/stage-8-e-low-risk-query-direct-batch-2.md`。第 8-F 第 8 阶段收口见 `docs/stage-8-f-stage-8-rollup.md`。第 9-A 竞对分析完整迁移见 `docs/stage-9-a-competitor-analysis-full-migration.md`。第 9-B RAG 问答完整迁移见 `docs/stage-9-b-rag-full-migration.md`。第 9-C 合同审查完整迁移见 `docs/stage-9-c-contract-review-full-migration.md`。第 9-D 标书生成完整迁移见 `docs/stage-9-d-bid-generator-full-migration.md`。第 9-E 四模块迁移收口见 `docs/stage-9-e-post-migration-startup-rollup.md`。
 
@@ -29,7 +29,7 @@ Direct / proxy 混合状态：
 - `competitor-analysis`：`/api/health`、`/api/history*`、`/api/analysis`、`/api/analysis/stream` 和 `/api/workflows/*` 已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
 - `rag-web-search`：`/api/v1/health`、`/api/v1/sessions`、`/api/v1/conversations`、`/api/v1/conversations/sync`、`/api/v1/chat/stream` 和 `/api/v1/knowledge/**` 已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
 - `contract-review`：`/api/health`、`/api/config`、`/api/diagnostics/converters`、`/api/reviews/**`、DOCX document/download 和 AI 改写相关接口已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
-- `bid-generator`：`/health`、`/api/health`、`/api/config/**`、脱敏/还原、项目 CRUD、文件预览/下载、需求提取、Dify workflow、SSE task、forge/export、knowledge/kb 和解析报告相关接口已 direct 到 `apps/api`；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
+- `bid-generator`：`/health`、`/api/health`、`/api/config/**`、PIPT bid 公开兼容路由、项目 CRUD/mappings/doc-blocks、analysis-report 快照读写、文件/图片/diagram 读取、PDF 缓存上传、forge/export 文件产物、knowledge documents/images、kb sync jobs/status、任务启动、任务状态查询、任务进度 SSE、任务取消和 PIPT audit logs 已由 `apps/api` native route 承载，其中 PIPT 识别、任务启动/状态/进度/取消、forge/export、DOCX locator、生成链路和项目缓存清理仍通过 legacy adapter 读取、透传、执行或清理进程内状态；PIPT restore/vault 已改为 native SQL 读取。知识同步触发由统一知识库入口承载，不作为标书 native route 目标；catch-all proxy 仍保留，仅作为未知路径或临时回滚兜底。
 
 业务 proxy 会在访问 legacy 后端前完成 Portal session 和应用权限校验。代理不会向 legacy 后端转发 `Authorization`、`Cookie` 或 `Set-Cookie`，只转发 `X-Portal-User-Id`、`X-Portal-User-Account`、`X-Portal-User-Role`、`X-Portal-Client-Id`、`X-Request-ID` 等非敏感上下文。multipart、SSE/NDJSON、DOCX/PDF/Excel/图片下载响应通过流式请求和流式响应保留，`Content-Type` 与 `Content-Disposition` 会透传。
 
@@ -43,7 +43,7 @@ Direct / proxy 混合状态：
 - 代理日志只记录安全路径，不记录敏感 query，不打印 token、key、密码、Cookie 或文件内容。
 - legacy 后端返回的业务错误响应会保持原状态码和响应体流式透传；代理只包装自身无法完成转发时的错误 envelope。
 
-竞对分析 `analysis/stream` 当前由 `apps/api` direct 输出 NDJSON；RAG `chat/stream` 当前由 `apps/api` direct 输出 SSE，并在完成后写入 `rag.chat_turns`；RAG knowledge API 当前由 `apps/api` direct 调用 Dify Dataset，文件上传仍使用本地临时文件并在请求结束后清理。合同审查 reviews、DOCX 下载和 AI 改写当前由 `apps/api` direct 执行，文件产物仍写入 `legacy/contract_review/data/uploads` 与 `legacy/contract_review/data/runs`。标书生成当前由 `apps/api` direct 加载 legacy `api_lite` 业务路由，继续使用 PostgreSQL `bid_generator` schema、legacy `TaskManager`、SSE progress、Dify workflow、DocumentForge 和 `legacy/bid-generator/data/*` 本地目录。当前不引入 MinIO / S3 SDK，不引入 Celery / RQ，也不新增统一任务表。
+竞对分析 `analysis/stream` 当前由 `apps/api` direct 输出 NDJSON；RAG `chat/stream` 当前由 `apps/api` direct 输出 SSE，并在完成后写入 `rag.chat_turns`；RAG knowledge API 当前由 `apps/api` direct 调用 Dify Dataset，文件上传仍使用本地临时文件并在请求结束后清理。合同审查 reviews、DOCX 下载和 AI 改写当前由 `apps/api` direct 执行，文件产物仍写入 `legacy/contract_review/data/uploads` 与 `legacy/contract_review/data/runs`。标书生成当前通过 `apps/api` 统一入口暴露 native route 和过滤后的 legacy `api_lite` 路由；native route 已覆盖低风险读写、部分文件能力、公开 bid PIPT 兼容路由、任务启动、任务状态、任务进度 SSE、任务取消和 forge/export 文件产物，PIPT restore/vault 已 native SQL 化，但 PIPT 识别引擎、任务与文件产物生成仍透传 legacy adapter、TaskManager、Dify 编排或 DocumentForge 语义。知识同步触发由统一知识库入口承载。当前不引入 MinIO / S3 SDK，不引入 Celery / RQ，也不新增统一任务表。
 
 ## 当前接口
 
@@ -134,13 +134,10 @@ Direct / proxy 混合状态：
 - `POST /api/v1/bid-generator/api/projects/generate-blueprint`
 - `POST /api/v1/bid-generator/api/projects/forge-document`
 - `GET /api/v1/bid-generator/api/knowledge/documents`
-- `POST /api/v1/bid-generator/api/knowledge/sync`
-- `POST /api/v1/bid-generator/api/knowledge/sync/{doc_name}`
 - `POST /api/v1/bid-generator/api/projects/analyze`
 - `POST /api/v1/bid-generator/api/projects/{project_id}/analyze-node`
 - `POST /api/v1/bid-generator/api/projects/{project_id}/analysis-report`
 - `GET /api/v1/bid-generator/api/projects/{project_id}/analysis-report`
-- `POST /api/v1/bid-generator/api/kb/sync`
 - `GET /api/v1/bid-generator/api/kb/sync-status/{job_id}`
 - `GET /api/v1/bid-generator/api/kb/sync-jobs`
 - `POST /api/v1/bid-generator/api/projects/export-report`
@@ -232,7 +229,7 @@ WebSocket 不使用统一 envelope。`/ws/core/app-usage` 保持 legacy `/ws/app
 
 ## 本地文件系统版部署边界
 
-`apps/api` 负责统一鉴权、平台 API、运行时应用列表、业务代理，并在第 9-D 后直接执行合同审查与标书生成主要业务 API。合同审查和标书生成文件产物仍保存在 legacy 本地目录；`apps/api` 不是统一对象存储。第 10-F 后，默认前端主入口是 `apps/web`，部署和本地开发默认不再启动 legacy Portal 或四个 legacy 业务前端；legacy 前端、iframe 和 legacy 后端仍作为回滚 / 调试路径保留。生产部署需要为 `apps/api`、`apps/web`、PostgreSQL、Dify / workflow key、本地持久化目录、日志目录和反向代理 / CORS 做独立配置。
+`apps/api` 负责统一鉴权、平台 API、运行时应用列表、业务代理，并直接执行合同审查主要业务 API。标书生成当前是统一入口下的分阶段迁移：低风险读写、部分文件能力、公开 bid PIPT 兼容路由、复杂任务入口、生成入口和导出入口已由 `apps/api` native route 承载，但执行层仍有 legacy adapter 边界。合同审查和标书生成文件产物仍保存在 legacy 本地目录；`apps/api` 不是统一对象存储。第 10-F 后，默认前端主入口是 `apps/web`，部署和本地开发默认不再启动 legacy Portal 或四个 legacy 业务前端；legacy 前端、iframe 和 legacy 后端仍作为回滚 / 调试路径保留。生产部署需要为 `apps/api`、`apps/web`、PostgreSQL、Dify / workflow key、本地持久化目录、日志目录和反向代理 / CORS 做独立配置。
 
 第 10-F 后，本地开发默认不再启动 legacy Portal、四个 legacy 业务前端或四个 legacy 业务后端进程；生产或联调部署也应把 `apps/api` 视为主业务后端，把 `apps/web` 视为主前端。legacy 源码目录仍可能是 `apps/api` 运行依赖，例如合同审查复用 `legacy/contract_review/src`，标书生成复用 `legacy/bid-generator/pipt-flask/app/api_lite`、`gateway-out` 和 `dify-bridge`。这些目录不能仅因为 legacy 前端 / 后端进程不默认启动就删除。
 

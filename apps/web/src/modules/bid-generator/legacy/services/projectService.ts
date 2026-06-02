@@ -3,10 +3,46 @@
  * 数据结构与后端接口对齐，联调时只需替换此文件的实现
  */
 
-import api from './api';
 import { bidGeneratorFetch } from './apiBase';
 import { extractCoreWritingIntent } from './writingHintService';
 import { DiagramServiceError, diagramService, type DiagramRequest, type DiagramSectionResult } from './diagramService';
+import {
+    buildScoringTable as buildScoringTableApi,
+    batchUpsertProjects as batchUpsertProjectsApi,
+    createProject as createProjectApi,
+    deleteProject as deleteProjectApi,
+    deleteProjectCaches as deleteProjectCachesApi,
+    extractBidAttachment as extractBidAttachmentApi,
+    extractBidAttachmentByBlocks as extractBidAttachmentByBlocksApi,
+    extractBidAttachmentDocxByBlocks as extractBidAttachmentDocxByBlocksApi,
+    extractRequirements as extractRequirementsApi,
+    exportScoringTable as exportScoringTableApi,
+    exportReport as exportReportApi,
+    fillScoringRow as fillScoringRowApi,
+    fetchAnalysisFramework as fetchAnalysisFrameworkApi,
+    fetchKnowledgeDocuments as fetchKnowledgeDocumentsApi,
+    fetchProjectDocBlocks as fetchProjectDocBlocksApi,
+    fetchSourceDocx as fetchSourceDocxApi,
+    fetchWorkflowStatus as fetchWorkflowStatusApi,
+    forgeDocument as forgeDocumentApi,
+    generateAttachment as generateAttachmentApi,
+    generateBlueprint as generateBlueprintApi,
+    generateContent as generateContentApi,
+    generateOutline as generateOutlineApi,
+    getProject as getProjectApi,
+    getTaskStatus as getTaskStatusApi,
+    listProjects as listProjectsApi,
+    loadAnalysisReport as loadAnalysisReportApi,
+    patchProject as patchProjectApi,
+    reExtractRequirements as reExtractRequirementsApi,
+    rebuildLocator as rebuildLocatorApi,
+    saveAnalysisReport as saveAnalysisReportApi,
+    saveBlobToDisk,
+    startAnalyzeTask as startAnalyzeTaskApi,
+    startOutlineTask as startOutlineTaskApi,
+    testBidAttachmentLocators as testBidAttachmentLocatorsApi,
+    updateProject as updateProjectApi,
+} from '../../services/bidGeneratorApi';
 
 const DIAGRAM_GENERATION_ENABLED = String(import.meta.env.VITE_ENABLE_DIAGRAM_GENERATION || '').toLowerCase() === 'true';
 const _diagramMaxFromEnv = Number(import.meta.env.VITE_MAX_DIAGRAMS || 3);
@@ -1142,6 +1178,15 @@ export interface DocBlocksResponse {
     snapshotOnly: boolean;
 }
 
+export interface KnowledgeDocumentInfo {
+    id: string;
+    name: string;
+    size: string;
+    uploadTime: string;
+    status: 'success' | 'indexing' | 'failed';
+    chunks: number;
+}
+
 export interface Project {
     id: string;
     name: string;                        // 项目名（通常取自招标文件名）
@@ -1206,6 +1251,113 @@ export interface Project {
         originalVersionId?: string; // 首次生成版本 ID，用于一键复原
         lockedVersionId?: string;   // 章节锁定版本（导出优先使用）
     }>;
+}
+
+function toBidProjectRecord(project: Project) {
+    return {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        data: project as unknown as Record<string, unknown>,
+    };
+}
+
+function toProjectDataPayload(project: Project): Record<string, unknown> {
+    return project as unknown as Record<string, unknown>;
+}
+
+function toAnalysisNodeList(nodes: unknown[] | undefined): AnalysisNode[] {
+    if (!Array.isArray(nodes)) return [];
+    return nodes.map((node: any) => ({
+        id: String(node?.id || ''),
+        label: String(node?.label || node?.title || ''),
+        content: String(node?.content || ''),
+        parentId: node?.parentId ? String(node.parentId) : undefined,
+        extractionPrompt: node?.extractionPrompt ? String(node.extractionPrompt) : undefined,
+        numbered: node?.numbered === true,
+        children: Array.isArray(node?.children) ? toAnalysisNodeList(node.children) : undefined,
+    })).filter((node) => node.id);
+}
+
+function toRequirementItems(items: unknown[] | undefined): RequirementItem[] {
+    if (!Array.isArray(items)) return [];
+    return items.map((item: any, index: number) => ({
+        id: String(item?.id || `req_${index + 1}`),
+        type: item?.type === 'biz' || item?.type === 'score' ? item.type : 'tech',
+        content: String(item?.content || ''),
+        points: typeof item?.points === 'number' ? item.points : undefined,
+    })).filter((item) => item.content);
+}
+
+function toAttachmentRequirements(items: unknown[] | undefined): AttachmentRequirement[] | undefined {
+    if (!Array.isArray(items) || items.length === 0) return undefined;
+    return items.map((item: any, index) => ({
+        id: String(item?.id || `attachment_${index + 1}`),
+        name: String(item?.name || item?.attachment_name || `附件${index + 1}`),
+        description: String(item?.description || item?.attachment_desc || ''),
+        type: String(item?.type || item?.attachment_type || 'generic'),
+    }));
+}
+
+function toKnowledgeDocumentInfoList(items: unknown[] | undefined): KnowledgeDocumentInfo[] {
+    if (!Array.isArray(items)) return [];
+    return items.map((item: any) => ({
+        id: String(item?.id || ''),
+        name: String(item?.name || ''),
+        size: String(item?.size || ''),
+        uploadTime: String(item?.uploadTime || item?.upload_time || ''),
+        status: (String(item?.status || 'indexing') as KnowledgeDocumentInfo['status']),
+        chunks: Number(item?.chunks || 0),
+    })).filter((item) => item.id && item.name);
+}
+
+function toOutlineSections(sections: unknown[] | undefined): OutlineSection[] {
+    if (!Array.isArray(sections)) return [];
+    return sections.map((section: any) => ({
+        id: String(section?.id || ''),
+        title: String(section?.title || ''),
+        wordCount: Number(section?.wordCount ?? section?.word_count ?? 0),
+        writingHint: String(section?.writingHint ?? section?.writing_hint ?? ''),
+        keywords: Array.isArray(section?.keywords) ? section.keywords.map((item: unknown) => String(item)) : [],
+        relatedAnalysisIds: Array.isArray(section?.relatedAnalysisIds) ? section.relatedAnalysisIds.map((item: unknown) => String(item)) : undefined,
+        needDiagram: Boolean(section?.needDiagram ?? section?.need_diagram ?? false),
+        diagramBrief: String(section?.diagramBrief ?? section?.diagram_brief ?? ''),
+        headingLevel: Number(section?.headingLevel ?? section?.heading_level ?? 2),
+        generationStrategy: String(section?.generationStrategy ?? section?.generation_strategy ?? 'general'),
+        generatesFromSelf: Boolean(section?.generatesFromSelf ?? section?.generates_from_self ?? false),
+        children: Array.isArray(section?.children)
+            ? section.children.map((child: any) => ({
+                id: String(child?.id || ''),
+                title: String(child?.title || ''),
+                wordCount: Number(child?.wordCount ?? child?.word_count ?? 0),
+                writingHint: String(child?.writingHint ?? child?.writing_hint ?? ''),
+                keywords: Array.isArray(child?.keywords) ? child.keywords.map((item: unknown) => String(item)) : [],
+                relatedAnalysisIds: Array.isArray(child?.relatedAnalysisIds) ? child.relatedAnalysisIds.map((item: unknown) => String(item)) : undefined,
+                needDiagram: Boolean(child?.needDiagram ?? child?.need_diagram ?? false),
+                diagramBrief: String(child?.diagramBrief ?? child?.diagram_brief ?? ''),
+                headingLevel: Number(child?.headingLevel ?? child?.heading_level ?? 2),
+                generationStrategy: String(child?.generationStrategy ?? child?.generation_strategy ?? 'general'),
+                generatesFromSelf: Boolean(child?.generatesFromSelf ?? child?.generates_from_self ?? false),
+                children: Array.isArray(child?.children)
+                    ? child.children.map((grandChild: any) => ({
+                        id: String(grandChild?.id || ''),
+                        title: String(grandChild?.title || ''),
+                    })).filter((grandChild: any) => grandChild.id)
+                    : undefined,
+            })).filter((child: any) => child.id)
+            : [],
+    })).filter((section) => section.id);
+}
+
+function toBidderInfoRecord(value: BidderInfo | undefined): Record<string, unknown> | undefined {
+    if (!value) return undefined;
+    return {
+        orgName: value.orgName,
+        legalRep: value.legalRep,
+        projectLead: value.projectLead,
+        phone: value.phone,
+        docDate: value.docDate,
+    };
 }
 
 function normalizeLocator(value: string): string {
@@ -1899,26 +2051,17 @@ function mapExtractStageProgress(stage: string): { step: number; label: string; 
 /** 整项目快照同步（仅用于创建/迁移场景） */
 function syncProjectSnapshotToServer(project: Project): void {
     enqueueWrite(async () => {
-        const payload = { id: project.id, name: project.name, status: project.status, data: project };
-        let resp = await bidGeneratorFetch(`/projects/${project.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        if (!resp.ok) {
-            // PUT 失败（项目不存在）→ 尝试 POST 创建
-            resp = await bidGeneratorFetch(`/projects`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+        let proj: any;
+        try {
+            proj = await createProjectApi(toProjectDataPayload(project) as any);
+        } catch {
+            proj = await updateProjectCompat(project.id, {
+                name: project.name,
+                status: project.status,
+                data: toProjectDataPayload(project),
             });
         }
-        if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`);
-        }
-        const body: any = await resp.json().catch(() => null);
-        const proj = (body?.data || body) as Project | undefined;
-        if (proj?.id) applyServerProjectToLocal(proj);
+        if (proj?.id) applyServerProjectToLocal(normalizeProjectFromServer((proj?.data || proj) as Project));
     }, '[sync] 后端同步失败:');
 }
 
@@ -1929,22 +2072,13 @@ function syncProjectPatchToServer(
     fallbackMeta?: { name?: string; status?: string },
 ): void {
     enqueueWrite(async () => {
-        const body = {
-            name: fallbackMeta?.name,
-            status: fallbackMeta?.status,
-            data_patch: patch,
-        };
-        const resp = await bidGeneratorFetch(`/projects/${projectId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`);
-        }
-        const result: any = await resp.json().catch(() => null);
-        const proj = (result?.data || result) as Project | undefined;
-        if (proj?.id) applyServerProjectToLocal(proj);
+        const proj = await patchProjectApi(
+            projectId,
+            patch as unknown as any,
+            fallbackMeta?.status,
+            fallbackMeta?.name,
+        );
+        if (proj?.id) applyServerProjectToLocal(normalizeProjectFromServer((proj?.data || proj) as Project));
     }, '[sync] 项目 patch 失败:');
 }
 
@@ -1954,10 +2088,12 @@ function deleteProjectFromServer(id: string): void {
         // 1) 删除 SQLite 项目记录（project_routes.py），短重试应对瞬时锁冲突
         let projectDeleteOk = false;
         for (let i = 0; i < 3; i += 1) {
-            const pr = await bidGeneratorFetch(`/projects/${id}`, { method: 'DELETE' });
-            if (pr.ok || pr.status === 404) {
+            try {
+                await deleteProjectApi(id);
                 projectDeleteOk = true;
                 break;
+            } catch {
+                // ignore and retry
             }
             if (i < 2) {
                 await new Promise(resolve => setTimeout(resolve, 250 * (i + 1)));
@@ -1966,9 +2102,12 @@ function deleteProjectFromServer(id: string): void {
         if (!projectDeleteOk) throw new Error('project delete failed after retries');
 
         // 2) 删除文件/内存缓存（routes.py）
-        const cr = await bidGeneratorFetch(`/projects/${id}/caches`, { method: 'DELETE' });
-        if (!cr.ok && cr.status !== 404) {
-            throw new Error(`cache delete HTTP ${cr.status}`);
+        try {
+            await deleteProjectCachesApi(id);
+        } catch (error) {
+            if (!(error instanceof Error)) {
+                throw error;
+            }
         }
         // 删除后回读一次后端，确保本地缓存与后端最终一致
         const serverProjects = await fetchServerProjects({ waitForWrites: false });
@@ -2001,9 +2140,7 @@ async function fetchServerProjects(options?: { waitForWrites?: boolean }): Promi
         if (options?.waitForWrites !== false) {
             await writeQueue;
         }
-        const resp = await bidGeneratorFetch(`/projects`);
-        if (!resp.ok) return null;
-        const rows: any[] = await resp.json();
+        const rows: any[] = await listProjectsApi();
         return rows.map((sp: any) => normalizeProjectFromServer((sp?.data || sp) as Project));
     } catch {
         return null;
@@ -2013,9 +2150,7 @@ async function fetchServerProjects(options?: { waitForWrites?: boolean }): Promi
 async function fetchServerProject(id: string): Promise<Project | null> {
     try {
         await writeQueue;
-        const resp = await bidGeneratorFetch(`/projects/${encodeURIComponent(id)}`);
-        if (!resp.ok) return null;
-        const row: any = await resp.json();
+        const row: any = await getProjectApi(id);
         return normalizeProjectFromServer((row?.data || row) as Project);
     } catch {
         return null;
@@ -2079,15 +2214,18 @@ async function migrateToServer(): Promise<{ created: number; updated: number } |
     try {
         const all = loadAll();
         if (!all.length) return null;
-        const payload = all.map(p => ({ id: p.id, name: p.name, status: p.status, data: p }));
-        const resp = await bidGeneratorFetch(`/projects/batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        if (resp.ok) return await resp.json();
+        const payload = all.map(p => ({ id: p.id, name: p.name, status: p.status, data: p })) as any[];
+        const result = await batchUpsertProjectsApi(payload);
+        return {
+            created: Number(result.created || 0),
+            updated: Number(result.updated || 0),
+        };
     } catch { /* 静默 */ }
     return null;
+}
+
+async function updateProjectCompat(projectId: string, patch: { name?: string; status?: string; data?: Record<string, unknown> }) {
+    return updateProjectApi(projectId, patch as any);
 }
 
 // ────────────────────── Service API ──────────────────────
@@ -2218,12 +2356,7 @@ export const projectService = {
 
     /** 查询任务状态（后端标准状态机） */
     async getTaskStatus(taskId: string, projectId?: string): Promise<any> {
-        const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        const resp = await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/status${qs}`);
-        if (!resp.ok) {
-            throw new Error(`任务状态查询失败: ${resp.status}`);
-        }
-        const data = await resp.json().catch(() => ({} as any));
+        const data = await getTaskStatusApi(taskId, projectId);
         if (!data?.state && data?.status) {
             data.state = normalizeRuntimeState(data.status);
         }
@@ -2436,61 +2569,54 @@ export const projectService = {
             return 'auto';
         })();
 
-        const body = {
-            project_id: projectId,
-            requirements,
-            bid_type: bidType,
-            use_knowledge: true,
-            analysis_context: analysisContext,
-            scoring_details_json: scoringDetailsJson,
-            structure_heading_seed_json: structureHeadingSeedJson,
-            technical_h2_bindings_json: technicalH2BindingsJson,
-            technical_targets_json: technicalTargetsJson,
-            outline_batch_strategy: outlineBatchStrategy,
-            outline_auto_parallel_threshold: 4,
-            ...(targetConfig?.totalWords !== undefined && { expected_total_words: targetConfig.totalWords }),
-            enable_diagrams: DIAGRAM_GENERATION_ENABLED,
-            max_diagrams: DIAGRAM_GENERATION_ENABLED ? DIAGRAM_MAX_PER_PROJECT : 0,
-        };
+        try {
+            const resp = await startOutlineTaskApi(
+                toBidProjectRecord({
+                    ...proj,
+                    requirements,
+                    bidType,
+                    analysisReport: proj.analysisReport,
+                    analysisV2: proj.analysisV2,
+                    outlineTaskOverrides: {
+                        scoring_details_json: scoringDetailsJson,
+                        outline_batch_strategy: outlineBatchStrategy,
+                        outline_auto_parallel_threshold: 4,
+                    },
+                } as Project & { outlineTaskOverrides: Record<string, unknown> }),
+                targetConfig?.totalWords || 0,
+            );
+            const taskId = String(resp?.task_id || '').trim();
+            if (!taskId) throw new Error('启动大纲任务失败：后端未返回 task_id');
 
-        const resp = await bidGeneratorFetch(`/tasks/start-outline`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
+            localStorage.setItem(`outline_task_${projectId}`, taskId);
+            this.update(projectId, {
+                status: 'generating_outline',
+                taskRuntime: {
+                    state: 'running',
+                    taskId,
+                    taskType: 'outline',
+                    message: outlineBatchStrategy === 'single' ? '大纲生成中' : '大纲并发生成中',
+                    progress: 0,
+                    startedAt: new Date().toISOString(),
+                    cancellable: true,
+                    updatedAt: new Date().toISOString(),
+                },
+            });
+            return { taskId };
+        } catch (error) {
             this.update(projectId, {
                 taskRuntime: {
                     ...(this.getById(projectId)?.taskRuntime || {}),
                     state: 'failed',
                     taskType: 'outline',
-                    message: `启动大纲任务失败: HTTP ${resp.status}`,
+                    message: error instanceof Error ? error.message : '启动大纲任务失败',
                     progress: 0,
                     cancellable: false,
                     updatedAt: new Date().toISOString(),
                 },
             });
-            throw new Error(`启动大纲任务失败: HTTP ${resp.status}`);
+            throw error;
         }
-        const data = await resp.json().catch(() => ({} as any));
-        const taskId = String(data?.task_id || '').trim();
-        if (!taskId) throw new Error('启动大纲任务失败：后端未返回 task_id');
-
-        localStorage.setItem(`outline_task_${projectId}`, taskId);
-        this.update(projectId, {
-            status: 'generating_outline',
-            taskRuntime: {
-                state: 'running',
-                taskId,
-                taskType: 'outline',
-                message: outlineBatchStrategy === 'single' ? '大纲生成中' : '大纲并发生成中',
-                progress: 0,
-                startedAt: new Date().toISOString(),
-                cancellable: true,
-                updatedAt: new Date().toISOString(),
-            },
-        });
-        return { taskId };
     },
 
     /** 请求取消任务：等待后端完成取消收敛 */
@@ -2524,17 +2650,23 @@ export const projectService = {
             const useVision = localStorage.getItem('proengine_use_vision_parsing') === 'true';
             formData.append('use_vision_parsing', String(useVision));
 
-            const response: any = await api.post('/projects/extract', formData);
+            const response = await extractRequirementsApi({
+                file,
+                projectName: file.name.replace(/\.\w+$/, ''),
+                enableDesensitize: deenSettings.enabled !== false,
+                desensitizeProfile: deenSettings.profile || 'tender',
+                useVisionParsing: useVision,
+            });
 
             return this.update(projectId, {
                 status: 'report_done',        // 进入新工作流：解析完成，等待进入技术方案
-                requirements: response.requirements || [],
+                requirements: toRequirementItems(response.requirements),
                 // 结构化解析报告（新）
                 analysisReport: response.analysis_report?.length
-                    ? response.analysis_report
+                    ? toAnalysisNodeList(response.analysis_report)
                     : undefined,
                 analysisV2: response.analysis_v2?.schema_version
-                    ? response.analysis_v2
+                    ? response.analysis_v2 as unknown as AnalysisV2
                     : undefined,
                 // PDF 预览 URL — 后端返回相对路径，需拼上后端 origin 才能在 iframe 加载
                 pdfUrl: response.pdf_url
@@ -2545,10 +2677,10 @@ export const projectService = {
                 mappingTable: response.mapping_table || {},
                 placeholderManifest: response.placeholder_manifest || {},
                 placeholderPolicy: response.placeholder_policy || {},
-                imageMap: response.image_map || {},
+                imageMap: response.image_map as Record<string, string | { abs_path: string; preview_url: string; description?: string }> || {},
                 entityCount: response.entity_count || 0,
                 requiredAttachments: response.required_attachments?.length
-                    ? response.required_attachments
+                    ? toAttachmentRequirements(response.required_attachments)
                     : undefined,
                 scoringTableTemplate: response.scoring_table_template?.length
                     ? response.scoring_table_template
@@ -2745,21 +2877,21 @@ export const projectService = {
             const proj = loadAll().find(p => p.id === projectId);
             if (!proj) throw new Error('Project not found');
 
-            const response: any = await api.post('/projects/re-extract', {
-                project_id: projectId,
-                project_name: proj.name,
+            const response = await reExtractRequirementsApi({
+                projectId,
+                projectName: proj.name,
             });
 
             return this.update(projectId, {
                 status: 'reviewing',
-                requirements: response.requirements || [],
+                requirements: toRequirementItems(response.requirements),
                 bidType: response.bid_type,
                 summary: response.project_summary,
                 // 这里 mappingTable 那些通常不变，或者按后端返回更新也行
                 // 后端 re-extract 会透传返回空的 mapping_table，前端这里选择不覆盖之前的（这很重要）
                 // 我们就不在此更新 mappingTable 和 entityCount 了，保留 extract 时留下的状态
                 requiredAttachments: response.required_attachments?.length
-                    ? response.required_attachments
+                    ? toAttachmentRequirements(response.required_attachments)
                     : undefined,
                 scoringTableTemplate: response.scoring_table_template?.length
                     ? response.scoring_table_template
@@ -2779,7 +2911,7 @@ export const projectService = {
     /** 获取预设解析框架配置（含每个节点的 extractionPrompt）*/
     async getAnalysisFramework(): Promise<{ framework: AnalysisNode[], raw: any }> {
         try {
-            const resp: any = await api.get('/config/analysis-framework');
+            const resp: any = await fetchAnalysisFrameworkApi();
             // 将后端 JSON 转换为前端 AnalysisNode 格式
             const convert = (nodes: any[]): AnalysisNode[] =>
                 (nodes || []).map(n => ({
@@ -2800,22 +2932,7 @@ export const projectService = {
 
     /** 导出解析报告 PDF（后端生成） */
     async exportReportPdf(projectName: string, nodes: any[]): Promise<void> {
-        const resp = await bidGeneratorFetch(`/projects/export-report`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_name: projectName, nodes }),
-        });
-        if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        // 从 Content-Disposition 取文件名，取不到则用默认
-        const cd = resp.headers.get('Content-Disposition') || '';
-        const fnMatch = cd.match(/filename\*?=(?:UTF-8'')?(.+)/i);
-        a.download = fnMatch ? decodeURIComponent(fnMatch[1]) : `解析报告_${projectName}.pdf`;
-        a.click();
-        URL.revokeObjectURL(url);
+        saveBlobToDisk(await exportReportApi(projectName, nodes));
     },
 
     /**
@@ -2860,44 +2977,40 @@ export const projectService = {
             formData.append('selected_node_ids', selectedNodeIds.join(','));
         }
 
-        const startRes = await bidGeneratorFetch(`/tasks/start-analyze`, {
-            method: 'POST',
-            body: formData,
-            signal,
-        });
-        if (!startRes.ok) {
+        try {
+            const { task_id } = await startAnalyzeTaskApi(projectId, selectedNodeIds || [], { signal });
+
+            // 存 task_id 供断线重连
+            localStorage.setItem(storageKey, task_id);
+            this.update(projectId, {
+                taskRuntime: {
+                    state: 'running',
+                    taskId: task_id,
+                    taskType: 'analyze',
+                    message: '解析报告生成中',
+                    progress: 0,
+                    startedAt: new Date().toISOString(),
+                    cancellable: true,
+                    updatedAt: new Date().toISOString(),
+                },
+            });
+
+            // ── 2. 监听 progress SSE（复用通用进度流） ──
+            await this._listenAnalyzeProgress(task_id, storageKey, projectId, callbacks, signal);
+        } catch (error) {
             this.update(projectId, {
                 taskRuntime: {
                     ...(this.getById(projectId)?.taskRuntime || {}),
                     state: 'failed',
                     taskType: 'analyze',
-                    message: `解析任务启动失败: ${startRes.status}`,
+                    message: error instanceof Error ? error.message : '解析任务启动失败',
                     progress: 0,
                     cancellable: false,
                     updatedAt: new Date().toISOString(),
                 },
             });
-            throw new Error(`解析任务启动失败: ${startRes.status}`);
+            throw error;
         }
-        const { task_id } = await startRes.json();
-
-        // 存 task_id 供断线重连
-        localStorage.setItem(storageKey, task_id);
-        this.update(projectId, {
-            taskRuntime: {
-                state: 'running',
-                taskId: task_id,
-                taskType: 'analyze',
-                message: '解析报告生成中',
-                progress: 0,
-                startedAt: new Date().toISOString(),
-                cancellable: true,
-                updatedAt: new Date().toISOString(),
-            },
-        });
-
-        // ── 2. 监听 progress SSE（复用通用进度流） ──
-        await this._listenAnalyzeProgress(task_id, storageKey, projectId, callbacks, signal);
     },
 
     /** 重连已有 analyze 任务（刷新/切换后恢复） */
@@ -3103,11 +3216,7 @@ export const projectService = {
     /** 持久化解析报告到后端 */
     async saveAnalysisReport(projectId: string, nodes: AnalysisNode[]): Promise<void> {
         try {
-            await bidGeneratorFetch(`/projects/${projectId}/analysis-report`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ analysis_report: nodes }),
-            });
+            await saveAnalysisReportApi(projectId, nodes);
         } catch (e) {
             console.warn('[persist] 解析报告保存失败（可忽略）:', e);
         }
@@ -3116,13 +3225,11 @@ export const projectService = {
     /** 从后端读取解析报告 */
     async loadAnalysisReport(projectId: string): Promise<AnalysisNode[]> {
         try {
-            const res = await bidGeneratorFetch(`/projects/${projectId}/analysis-report`);
-            if (!res.ok) return [];
-            const data = await res.json();
+            const data = await loadAnalysisReportApi(projectId);
             if (data.analysis_v2?.schema_version) {
-                projectService.update(projectId, { analysisV2: data.analysis_v2 });
+                projectService.update(projectId, { analysisV2: data.analysis_v2 as unknown as AnalysisV2 });
             }
-            return data.analysis_report || [];
+            return toAnalysisNodeList(data.analysis_report);
         } catch {
             return [];
         }
@@ -3151,22 +3258,21 @@ export const projectService = {
             technicalH2BindingsJson = buildTechnicalH2BindingsJson(proj?.analysisV2);
             technicalTargetsJson = buildTechnicalTargetsJson(proj?.analysisV2);
         }
-        const response: any = await api.post('/projects/generate-outline', {
-            project_id: projectId,
+        const response = await generateOutlineApi({
+            projectId,
             requirements,
-            bid_type: bidType,
-            dify_api_key: outlineDifyApiKey,
-            use_knowledge: useKnowledgeBase,
-            analysis_context: analysisContext,
-            structure_heading_seed_json: structureHeadingSeedJson,
-            technical_h2_bindings_json: technicalH2BindingsJson,
-            technical_targets_json: technicalTargetsJson,
-            // undefined 时不附加字段，后端 default=0 自动触发 AI 自决逻辑
-            ...(targetConfig?.totalWords !== undefined && { expected_total_words: targetConfig.totalWords }),
-            enable_diagrams: DIAGRAM_GENERATION_ENABLED,
-            max_diagrams: DIAGRAM_GENERATION_ENABLED ? DIAGRAM_MAX_PER_PROJECT : 0,
+            bidType,
+            difyApiKey: outlineDifyApiKey,
+            useKnowledge: useKnowledgeBase,
+            analysisContext,
+            structureHeadingSeedJson,
+            technicalH2BindingsJson,
+            technicalTargetsJson,
+            expectedTotalWords: targetConfig?.totalWords,
+            enableDiagrams: DIAGRAM_GENERATION_ENABLED,
+            maxDiagrams: DIAGRAM_GENERATION_ENABLED ? DIAGRAM_MAX_PER_PROJECT : 0,
         });
-        return response.sections || [];
+        return toOutlineSections(response.sections);
     },
 
     /** 调用后端 Dify content_writer 工作流生成章节正文 */
@@ -3232,28 +3338,28 @@ export const projectService = {
             generationStrategy,
         );
 
-        const response: any = await api.post('/projects/generate-content', {
-            project_id: params.projectId,
-            section_id: params.sectionId,
-            section_title: params.sectionTitle,
-            writing_hint: coreWritingHint,
+        const response = await generateContentApi({
+            projectId: params.projectId,
+            sectionId: params.sectionId,
+            sectionTitle: params.sectionTitle,
+            writingHint: coreWritingHint,
             keywords: params.keywords,
-            expected_words: params.expectedWords,
-            project_summary: projectSummary,
-            global_outline: scopedGlobalOutline,
-            section_outline_slice: runtimeSectionOutlineSlice,
-            requires_search: requiresSearch,
-            placeholder_hint: placeholderHint,
-            analysis_context: analysisContext,  // 注入匹配到的招标文件解析
-            generation_strategy: generationStrategy,
-            enable_diagrams: DIAGRAM_GENERATION_ENABLED,
-            max_diagrams: DIAGRAM_MAX_PER_PROJECT,
-            need_diagram: DIAGRAM_GENERATION_ENABLED && diagramMeta.needDiagram,
-            diagram_brief: DIAGRAM_GENERATION_ENABLED ? diagramMeta.diagramBrief : '',
-            diagram_type_hint: diagramMeta.diagramTypeHint,
-            diagram_priority: diagramMeta.diagramPriority,
-            mapping_table: { ...mappingTable, ...bidderMappingTable },
-            bidder_info: proj?.bidderInfo ?? {},
+            expectedWords: params.expectedWords,
+            projectSummary,
+            globalOutline: scopedGlobalOutline,
+            sectionOutlineSlice: runtimeSectionOutlineSlice,
+            requiresSearch: requiresSearch,
+            placeholderHint,
+            analysisContext,
+            generationStrategy,
+            enableDiagrams: DIAGRAM_GENERATION_ENABLED,
+            maxDiagrams: DIAGRAM_MAX_PER_PROJECT,
+            needDiagram: DIAGRAM_GENERATION_ENABLED && diagramMeta.needDiagram,
+            diagramBrief: DIAGRAM_GENERATION_ENABLED ? diagramMeta.diagramBrief : '',
+            diagramTypeHint: diagramMeta.diagramTypeHint,
+            diagramPriority: diagramMeta.diagramPriority,
+            mappingTable: { ...mappingTable, ...bidderMappingTable },
+            bidderInfo: toBidderInfoRecord(proj?.bidderInfo),
         });
         return {
             content: response.content || '',
@@ -4371,42 +4477,18 @@ export const projectService = {
         const proj = loadAll().find(p => p.id === projectId);
         if (!proj) throw new Error('项目不存在');
 
-        // 组装附件列表（使用项目已保存的 requiredAttachments 仅用于过滤，具体内容由前端暂存 state 传入——此处为空，后续可扩展）
-        const attachments: { label: string; content: string }[] = [];
-
-        const payload = {
-            project_id: projectId,
-            project_name: proj.name,
-            sections,
-            scoring_rows: proj.scoringRows ?? [],
-            attachments,
-            mapping_table: proj.mappingTable ?? {},
-            // forge 只传 abs_path 给后端：preview_url 是 API 路径，python-docx 无法通过 URL 读取文件
-            image_map: Object.fromEntries(
+        // 保持 legacy workbench 的 section 组装方式，只把实际接口收敛到统一 service layer。
+        saveBlobToDisk(await forgeDocumentApi(toBidProjectRecord({
+            ...proj,
+            scoringRows: proj.scoringRows ?? [],
+            imageMap: Object.fromEntries(
                 Object.entries(proj.imageMap ?? {}).map(([k, v]) => [
                     k,
                     typeof v === 'string' ? v : v.abs_path,
-                ])
+                ]),
             ),
-            bidder_info: proj.bidderInfo ?? {},
-        };
-
-        // 使用 blob 响应类型直接触发浏览器下载
-        const response = await api.post('/projects/forge-document', payload, {
-            responseType: 'blob',
-        });
-
-        const blob = new Blob([response as unknown as BlobPart], {
-            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${proj.name}_标书文件.docx`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+            bidderInfo: proj.bidderInfo,
+        }), sections as Array<Record<string, unknown>>));
     },
     /** 一键全部生成：串联调用所有章节（SSE 流式，逐 chunk 推送） */
     async generateAll(
@@ -4682,6 +4764,116 @@ export const projectService = {
                 break;
         }
     },
+
+    async buildScoringTable(project: Project): Promise<ScoringRow[]> {
+        const scoreReqs = (project.requirements ?? [])
+            .filter(r => r.type === 'score')
+            .map((r, i) => ({ id: `score_${i}`, content: r.content, points: r.points ?? 10 }));
+        const res = await buildScoringTableApi({
+            projectId: project.id,
+            scoreRequirements: scoreReqs,
+            scoringTableTemplate: project.scoringTableTemplate || [],
+        });
+        return (res.rows ?? []).map((row: any) => ({
+            id: row.id,
+            indicator: row.indicator,
+            maxScore: row.max_score,
+            criteria: row.criteria ?? '',
+            selfResponse: '',
+            selfComment: '',
+            evidenceRefs: [],
+        }));
+    },
+
+    async fillScoringRow(project: Project, row: ScoringRow): Promise<Partial<ScoringRow>> {
+        const reqsContext = (project.requirements ?? [])
+            .map(r => `[${r.type}] ${r.content}`)
+            .join('\n')
+            .substring(0, 800);
+        const res = await fillScoringRowApi({
+            rowId: row.id,
+            indicator: row.indicator,
+            maxScore: row.maxScore,
+            criteria: row.criteria,
+            projectSummary: project.summary ?? '',
+            requirementsContext: reqsContext,
+        });
+        return {
+            selfResponse: res.self_response as 'full' | 'partial',
+            selfComment: res.self_comment ?? '',
+            evidenceRefs: res.evidence_refs ?? [],
+        };
+    },
+
+    async exportScoringTable(project: Project, rows: ScoringRow[]): Promise<void> {
+        saveBlobToDisk(await exportScoringTableApi(
+            project.name,
+            rows.map(row => ({
+                id: row.id,
+                indicator: row.indicator,
+                max_score: row.maxScore,
+                criteria: row.criteria,
+                self_response: row.selfResponse,
+                self_comment: row.selfComment,
+                evidence_refs: row.evidenceRefs,
+            })),
+        ));
+    },
+
+    async generateAttachment(input: {
+        project: Project;
+        attachmentType: string;
+        attachmentName: string;
+        attachmentDesc: string;
+        recipient: string;
+        bidNo: string;
+        agentName: string;
+        agentId: string;
+    }): Promise<{ label: string; content: string }> {
+        const bidder = input.project.bidderInfo;
+        const res = await generateAttachmentApi({
+            attachmentType: input.attachmentType,
+            attachmentName: input.attachmentName,
+            attachmentDesc: input.attachmentDesc,
+            projectId: input.project.id,
+            orgName: bidder?.orgName || '',
+            legalRep: bidder?.legalRep || '',
+            projectLead: bidder?.projectLead || '',
+            phone: bidder?.phone || '',
+            docDate: bidder?.docDate || '',
+            projectName: input.project.name,
+            recipient: input.recipient,
+            bidNo: input.bidNo,
+            agentName: input.agentName,
+            agentId: input.agentId,
+        });
+        return { label: String(res.label || ''), content: String(res.content || '') };
+    },
+
+    async generateBlueprint(project: Project): Promise<BlueprintData> {
+        const reqs = (project.requirements || [])
+            .filter(requirement => requirement.type !== 'score')
+            .map(requirement => ({ type: requirement.type, content: requirement.content }));
+        const outline = (project.outline || []).map(section => ({ title: section.title }));
+        const res = await generateBlueprintApi({
+            projectId: project.id,
+            bidType: project.bidType || 'tech',
+            projectSummary: project.summary || '',
+            requirements: reqs,
+            outline,
+        });
+        return (res.blueprint || {
+            positioning: '',
+            strategy: '',
+            highlights: [],
+            writing_style: '',
+        }) as unknown as BlueprintData;
+    },
+
+    async getKnowledgeDocuments(): Promise<KnowledgeDocumentInfo[]> {
+        const res: any = await fetchKnowledgeDocumentsApi();
+        return toKnowledgeDocumentInfoList(res?.documents);
+    },
 };
 
 
@@ -4701,25 +4893,33 @@ export const bidAttachmentService = {
         resolvedStartLocator: string;
         resolvedEndLocator: string;
     }> => {
-        const res: any = await api.post('/bid-attachment/extract', {
-            project_id: projectId,
-            start_locator: item.start_locator,
-            end_locator: item.end_locator,
-            attachment_name: item.name,
+        const res = await extractBidAttachmentApi({
+            projectId,
+            startLocator: item.start_locator,
+            endLocator: item.end_locator,
+            attachmentName: item.name,
         });
         return {
-            html: res.html,
-            attachmentName: res.attachment_name,
-            paragraphCount: res.paragraph_count,
+            html: String(res.html || ''),
+            attachmentName: String(res.attachment_name || item.name),
+            paragraphCount: Number(res.paragraph_count || 0),
             resolvedStartLocator: res.resolved_start_locator || item.start_locator,
             resolvedEndLocator: res.resolved_end_locator || item.end_locator,
         };
     },
 
     getDocBlocks: async (projectId: string): Promise<DocBlocksResponse> => {
-        const res: any = await api.get(`/projects/${encodeURIComponent(projectId)}/doc-blocks`);
+        const res = await fetchProjectDocBlocksApi(projectId);
         return {
-            blocks: Array.isArray(res?.blocks) ? res.blocks : [],
+            blocks: Array.isArray(res?.blocks)
+                ? res.blocks.map((item: any) => ({
+                    block_id: String(item?.block_id || ''),
+                    locator: String(item?.locator || ''),
+                    body_idx: Number(item?.body_idx || 0),
+                    type: (item?.type === 'table' ? 'table' : 'paragraph') as 'table' | 'paragraph',
+                    text: String(item?.text || ''),
+                })).filter((item: any) => Boolean(item.block_id))
+                : [],
             snapshotOnly: Boolean(res?.snapshot_only),
         };
     },
@@ -4734,12 +4934,7 @@ export const bidAttachmentService = {
     },
 
     rebuildLocator: async (projectId: string, file: File): Promise<{ blocks: number; locators: number }> => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res: any = await api.post(
-            `/projects/${encodeURIComponent(projectId)}/rebuild-locator`,
-            formData
-        );
+        const res = await rebuildLocatorApi(projectId, file);
         return {
             blocks: Number(res?.blocks || 0),
             locators: Number(res?.locators || 0),
@@ -4750,18 +4945,18 @@ export const bidAttachmentService = {
         projectId: string,
         params: { attachmentName: string; startBlockId: string; endBlockId: string },
     ): Promise<{ html: string; attachmentName: string; paragraphCount: number; startBlockId: string; endBlockId: string; snapshotOnly: boolean }> => {
-        const res: any = await api.post('/bid-attachment/extract-by-block', {
-            project_id: projectId,
-            attachment_name: params.attachmentName,
-            start_block_id: params.startBlockId,
-            end_block_id: params.endBlockId,
+        const res = await extractBidAttachmentByBlocksApi({
+            projectId,
+            attachmentName: params.attachmentName,
+            startBlockId: params.startBlockId,
+            endBlockId: params.endBlockId,
         });
         return {
-            html: res.html,
-            attachmentName: res.attachment_name,
-            paragraphCount: res.paragraph_count,
-            startBlockId: res.start_block_id,
-            endBlockId: res.end_block_id,
+            html: String(res.html || ''),
+            attachmentName: String(res.attachment_name || params.attachmentName),
+            paragraphCount: Number(res.paragraph_count || 0),
+            startBlockId: String(res.start_block_id || params.startBlockId),
+            endBlockId: String(res.end_block_id || params.endBlockId),
             snapshotOnly: Boolean(res.snapshot_only),
         };
     },
@@ -4770,21 +4965,13 @@ export const bidAttachmentService = {
         projectId: string,
         params: { attachmentName: string; startBlockId: string; endBlockId: string },
     ): Promise<Blob> => {
-        const resp = await bidGeneratorFetch(`/bid-attachment/extract-by-block-docx`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_id: projectId,
-                attachment_name: params.attachmentName,
-                start_block_id: params.startBlockId,
-                end_block_id: params.endBlockId,
-            }),
+        const download = await extractBidAttachmentDocxByBlocksApi({
+            projectId,
+            attachmentName: params.attachmentName,
+            startBlockId: params.startBlockId,
+            endBlockId: params.endBlockId,
         });
-        if (!resp.ok) {
-            const detail = await resp.text().catch(() => '');
-            throw new Error(`HTTP ${resp.status}${detail ? `: ${detail}` : ''}`);
-        }
-        return await resp.blob();
+        return download.blob;
     },
 
     /**
@@ -4794,7 +4981,16 @@ export const bidAttachmentService = {
         total_locators: number;
         preview: { locator: string; body_idx: number; snippet: string }[];
     }> => {
-        const res: any = await api.get(`/bid-attachment/test-locators?project_id=${encodeURIComponent(projectId)}`);
-        return res;
+        const res = await testBidAttachmentLocatorsApi(projectId);
+        return {
+            total_locators: Number(res.total_locators || 0),
+            preview: Array.isArray(res.preview)
+                ? res.preview.map((item: any) => ({
+                    locator: String(item?.locator || ''),
+                    body_idx: Number(item?.body_idx || 0),
+                    snippet: String(item?.snippet || ''),
+                }))
+                : [],
+        };
     },
 };

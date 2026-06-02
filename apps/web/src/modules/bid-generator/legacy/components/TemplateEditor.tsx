@@ -24,7 +24,6 @@ import {
 import clsx from 'clsx';
 import { ContentEditor } from './ContentEditor';
 import { TaskLoadingState } from './TaskLoadingState';
-import { bidGeneratorFetch } from '../services/apiBase';
 import { ProtectedIframe } from './ProtectedIframe';
 
 interface Props {
@@ -1094,8 +1093,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             resumeTargets.forEach(({ blockId, taskId }) => {
                                 // 竞态约束：先快速查一次后端状态，若已 done 则直接应用，不等 resumeContentTask 轮询
                                 // 场景：刷新前任务刚完成但结果还没写入 localStorage，后端已有数据
-                                bidGeneratorFetch(`/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`)
-                                    .then(r => r.ok ? r.json() : null)
+                                projectService.getTaskStatus(taskId, projectId)
                                     .then(taskStatus => {
                                         if (taskStatus?.status === 'done' && taskStatus.result) {
                                             // 后端已完成 → 直接应用，无须继续轮询（优先于 localStorage 的 generating 状态）

@@ -181,6 +181,24 @@ function ProjectView({
     </div>
   );
 
+  useEffect(() => {
+    if (activeTab !== 'bid' || !activeProject?.id) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await projectService.syncFromServer();
+        if (!cancelled) refreshProjects();
+      } catch {
+        // 静默刷新失败不打断投标文件编排使用。
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject?.id, activeTab, refreshProjects]);
+
   if (!activeProject) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-400 flex-col gap-3">
@@ -202,24 +220,6 @@ function ProjectView({
     || Boolean(activeProject.outline?.length);
   // 前序阶段默认只读，但技术方案在进入投标文件阶段后仍允许继续编辑和生成。
   const isLockedReadOnly = activeTab !== 'tech' && tabIdx < currentStageIdx;
-
-  useEffect(() => {
-    if (activeTab !== 'bid' || !activeProject?.id) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        await projectService.syncFromServer();
-        if (!cancelled) refreshProjects();
-      } catch {
-        // 静默刷新失败不打断投标文件编排使用。
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProject?.id, activeTab, refreshProjects]);
 
   // ── 内容区渲染 ──
   const renderContent = () => {
@@ -322,6 +322,8 @@ function ProjectView({
 // ─────────────────────────────────────────────
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState('');
   const [repairingLocks, setRepairingLocks] = useState(false);
   const [switchWarn, setSwitchWarn] = useState<{
     open: boolean;
@@ -395,12 +397,33 @@ export default function App() {
   const activeProjectBusy = shouldBlockProjectNavigation(activeProjectId, busyProjectIds);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
-      await projectService.syncFromServer();
-      await projectService.repairZombieLocks();
-      reconcileProjectStatuses();
-      refreshProjects();
+      try {
+        await projectService.syncFromServer();
+        await projectService.repairZombieLocks();
+        reconcileProjectStatuses();
+        if (!cancelled) {
+          refreshProjects();
+          setBootstrapError('');
+        }
+      } catch (error) {
+        console.warn('[BidGeneratorApp] 首屏同步失败，回退到本地缓存展示。', error);
+        if (!cancelled) {
+          refreshProjects();
+          setBootstrapError('统一后端同步失败，当前已回退到本地缓存展示。');
+        }
+      } finally {
+        if (!cancelled) {
+          setBootstrapping(false);
+        }
+      }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [refreshProjects, reconcileProjectStatuses]);
 
   useEffect(() => {
@@ -483,6 +506,16 @@ export default function App() {
 
       {/* 右侧主内容区 */}
       <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
+        {bootstrapping ? (
+          <div className="border-b border-[var(--color-info-border)] bg-[var(--color-info-bg)] px-6 py-3 text-sm text-[var(--color-info-text)]">
+            正在同步标书项目与任务状态...
+          </div>
+        ) : null}
+        {bootstrapError ? (
+          <div className="border-b border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-6 py-3 text-sm text-[var(--color-warning-text)]">
+            {bootstrapError}
+          </div>
+        ) : null}
         <Routes>
           {/* 新建项目 */}
           <Route path="/" element={

@@ -8,13 +8,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.errors import PlatformError
+from app.services.pipt_recognition_adapter import desensitize_with_platform_recognizer
 from app.services.pipt_redaction_service import apply_current_document_global_redactions
 from packages.py_common.db.session import get_engine
 
@@ -205,6 +205,39 @@ def preprocess_payload(data: dict[str, Any]) -> dict[str, Any]:
         ),
     }
     result["audit"]["event_persisted"] = _persist_event_from_result(result)
+    return result
+
+
+def preprocess_internal_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    统一后端内部使用的预处理契约。
+    在标准 preprocess 返回基础上补充 mapping_table，供需要继续持有可逆映射的业务链路使用。
+    该字段不应直接暴露给通用公开网关接口。
+    """
+    source_text = str(data.get("text") or "")
+    module_code = str(data.get("module_code") or "unknown").strip() or "unknown"
+    purpose = str(data.get("purpose") or "llm_external_call").strip() or "llm_external_call"
+    request_id = str(data.get("request_id") or uuid.uuid4().hex)
+    requested_mode = str(data.get("mode") or "").strip().lower()
+    enabled = bool(data.get("enabled", False))
+    if requested_mode == "strong" or (enabled and requested_mode != "compatibility"):
+        result = _preprocess_strong_payload(
+            data,
+            request_id=request_id,
+            module_code=module_code,
+            purpose=purpose,
+            source_text=source_text,
+        )
+        if "mapping_table" not in result:
+            result["mapping_table"] = {}
+        return result
+    result = preprocess_payload(data)
+    mapping_table = data.get("mapping_table")
+    result["mapping_table"] = (
+        {str(k): str(v) for k, v in mapping_table.items()}
+        if isinstance(mapping_table, dict)
+        else {}
+    )
     return result
 
 
@@ -743,13 +776,11 @@ def _preprocess_strong_payload(
 ) -> dict[str, Any]:
     target_entities = _target_entities(data.get("target_entities"))
     llm_mode = _llm_mode(data.get("llm_mode"))
-    engine = _legacy_desensitize_engine()
-    result = engine.desensitize(
+    result = desensitize_with_platform_recognizer(
         text=source_text,
         target_entities=target_entities,
         method="placeholder",
         placeholder_protocol="strong",
-        db_session=None,
         llm_mode=llm_mode,
         audit_context={"source": "core.pipt_gateway", "session_id": request_id},
     )
@@ -1074,35 +1105,6 @@ def _restore_from_vault(*, request_id: str, text_value: str) -> tuple[str, int]:
         restored = restored.replace(token, original)
         restored_count += 1
     return restored, restored_count
-
-
-@lru_cache(maxsize=1)
-def _legacy_desensitize_engine() -> Any:
-    _ensure_legacy_runtime()
-    from app.api_lite.engine import DesensitizeEngine
-
-    return DesensitizeEngine()
-
-
-def _ensure_legacy_runtime() -> None:
-    repo_root = _repo_root()
-    legacy_root = repo_root / "legacy" / "bid-generator"
-    pipt_root = legacy_root / "pipt-flask"
-    os.environ.setdefault("PRO_ENGINE_ROOT", str(legacy_root))
-    os.environ.setdefault("PIPT_ROOT", str(pipt_root))
-    import app as platform_app
-
-    legacy_app_path = str(pipt_root / "app")
-    if legacy_app_path not in platform_app.__path__:
-        platform_app.__path__.append(legacy_app_path)
-
-
-def _repo_root() -> Path:
-    current = Path(__file__).resolve()
-    for candidate in (current, *current.parents):
-        if (candidate / "legacy" / "bid-generator").is_dir() and (candidate / "packages" / "py_common").is_dir():
-            return candidate
-    raise RuntimeError("Cannot locate clover-platform root")
 
 
 def _target_entities(value: Any) -> list[str]:
