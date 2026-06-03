@@ -50,6 +50,8 @@ services:
       ENABLE_DIAGRAM_GENERATION: ${ENABLE_DIAGRAM_GENERATION:-false}
       MAX_DIAGRAM_RUNNING_TASKS: ${MAX_DIAGRAM_RUNNING_TASKS:-1}
       DIAGRAM_ARTIFACT_DIR: ${DIAGRAM_ARTIFACT_DIR:-/app/legacy/bid-generator/data/diagram_artifacts}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
