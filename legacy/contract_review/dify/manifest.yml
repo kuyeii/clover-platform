@@ -1,0 +1,130 @@
+schema_version: 1
+
+app:
+  id: contract-review
+  normalized_id: app-contract-review
+  name: 合同审查
+  source_path: 00-pre-integration/contract_review
+  stage: pre-integration
+  owner: TODO
+  description: 上传合同文件，调用 Dify 工作流完成条款切分、风险识别、缺失风险补充和 AI 改写。
+
+dify:
+  endpoint_env: DIFY_BASE_URL
+  console_url_env: DIFY_CONSOLE_URL
+  import_token_env: DIFY_IMPORT_TOKEN
+  runtime_token_policy: env_only
+  legacy_source_path: workflows
+
+model_policy:
+  default_profile: contract-standard-chat
+  workflow_overrides:
+    clause-splitter: contract-clause-split-chat
+    anchored-risk-review: contract-anchored-risk-chat
+  rewrite:
+    enabled: true
+    target: workflows.generated
+    preserve_unknown_completion_params: true
+
+workflows:
+  - id: clause-splitter
+    name: 条款切分
+    description: 将合同分段文本拆分为结构化条款数组。
+    dsl: ./workflows/条款切分.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - 条款切分v1
+    runtime:
+      api_key_env: DIFY_CLAUSE_WORKFLOW_API_KEY
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: multi-clause-risk-review
+    name: Multi-Clause 工作流
+    description: 对多条款输入执行风险识别与结构化输出。
+    dsl: ./workflows/Multi-Clause 工作流.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - LLM
+      - LLM 2
+    runtime:
+      api_key_env: DIFY_MISSING_MULTI_RISK_WORKFLOW_API_KEY
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: anchored-risk-review
+    name: batch Anchored 风险工作流
+    description: 基于原文锚点生成风险依据与修改建议。
+    dsl: ./workflows/batch Anchored 风险工作流.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - Anchored 依据与建议定稿
+    runtime:
+      api_key_env: DIFY_ANCHORED_RISK_WORKFLOW_API_KEY
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: ai-rewrite
+    name: ai改写
+    description: 对合同条款或修改建议执行单次 AI 改写。
+    dsl: ./workflows/ai改写.yml
+    status: deployed
+    required: true
+    expected_llm_nodes:
+      - LLM
+    runtime:
+      api_key_env: DIFY_REWRITE_WORKFLOW_API_KEY
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+  - id: aggregate-rewrite
+    name: ai改写-聚合-revise改写
+    description: 聚合多条改写建议并输出最终修订文本。
+    dsl: ./workflows/ai改写-聚合-revise改写.yml
+    status: deployed
+    required: false
+    expected_llm_nodes:
+      - LLM
+    runtime:
+      api_key_env: DIFY_AGGREGATE_REWRITE_WORKFLOW_API_KEY
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
+datasets: []
+
+env:
+  required:
+    - DIFY_BASE_URL
+    - DIFY_CLAUSE_WORKFLOW_API_KEY
+    - DIFY_ANCHORED_RISK_WORKFLOW_API_KEY
+    - DIFY_MISSING_MULTI_RISK_WORKFLOW_API_KEY
+    - DIFY_REWRITE_WORKFLOW_API_KEY
+  optional:
+    - DIFY_CONSOLE_URL
+    - DIFY_IMPORT_TOKEN
+    - DIFY_FAST_SCREEN_WORKFLOW_API_KEY
+    - DIFY_AGGREGATE_REWRITE_WORKFLOW_API_KEY
+
+validation:
+  no_real_secrets: true
+  dsl_files_must_exist: true
+  workflow_api_key_env_must_be_declared: true
+  dataset_env_must_be_declared: true
+
+notes:
+  - 旧目录 workflows 暂时保留，当前 manifest 以 dify/workflows 为新规范入口。
+  - dify 下既有 clause_splitter.md 和 risk_reviewer.md 为提示词文档，本次不迁移、不删除。
+  - .env.example 中 DIFY_FAST_SCREEN_WORKFLOW_API_KEY 暂未发现对应 DSL，先仅登记为可选环境变量。

@@ -1,0 +1,320 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: batch Anchored 风险工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.36@a45e8cc9bfc9e37ab58c3ee31248bc43792a6653fc011e2433129e2942fbbc27
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1773302896479-source-1773307388966-target
+      source: '1773302896479'
+      sourceHandle: source
+      target: '1773307388966'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1773307388966-source-1773302902304-target
+      source: '1773307388966'
+      sourceHandle: source
+      target: '1773302902304'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: review_side
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: review_side
+        - default: ''
+          hint: ''
+          label: contract_type_hint
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: contract_type_hint
+        - default: ''
+          hint: ''
+          label: segment_id
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: segment_id
+        - default: ''
+          hint: ''
+          label: segment_title
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: segment_title
+        - default: ''
+          hint: ''
+          label: clauses_json
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: clauses_json
+        - default: ''
+          hint: ''
+          label: clause_count
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: clause_count
+      height: 239
+      id: '1773302896479'
+      position:
+        x: 82.03037499580529
+        y: 281.0017318725586
+      positionAbsolute:
+        x: 82.03037499580529
+        y: 281.0017318725586
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1773307388966'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 输出
+        type: end
+      height: 88
+      id: '1773302902304'
+      position:
+        x: 1265.7688743414308
+        y: 361
+      positionAbsolute:
+        x: 1265.7688743414308
+        y: 361
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          name: kimi-k2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: 46e476da-0721-4962-95ec-613ce26869d3
+          role: system
+          text: "你是一位同时精通《民法典》合同编、知识产权法、政府采购法规，并具备深厚行业实务经验（如IT集成、生物医药研发、高端装备制造）的资深法律合规专家，同时也是一名合同审查中的“Anchored\
+            \ 风险识别与定稿助手”。\n\n你有四项任务：\n1. 风险体系解构：首先，系统性地检索并解构通用技术服务合同与技术合作合同中高频争议领域的法律风险。重点围绕以下五大核心维度展开：\n\
+            \   · 验收标准：量化指标的缺失与主观化陷阱。\n   · 付款节点：里程碑付款与资金安全的脱节。\n   · 知识产权：前景技术成果的权属流失与法律真空。\n\
+            \   · 违约责任：惩罚性不足、不对称性与损失覆盖范围的局限性。\n   · 变更管理：口头变更导致的证据缺失与事实认定困境。\n   \
+            \  针对每个维度，需引用《民法典》及相关司法解释的具体条款，并结合近三年内的典型司法裁判案例（包括但不限于研发中断、成果拒收、违约金调整、默示验收等情形），剖析法院的裁判逻辑与归责原则。\n\
+            2. 合同颗粒化审计：随后，以上述风险体系为基准，对用户上传的或指定的目标技术服务/合作合同进行穿透式、颗粒化的法律审计。审计需精准识别合同中存在的：\n\
+            \   · 显性漏洞：直接违反法律强制性规定或明显不公的条款。\n   · 隐性弃权条款：表面上中规中矩，但在特定行业背景下（如GPU供应链波动、科研数据敏感性）将导致甲方（委托方/采购方）权利丧失或义务不当扩大的条款。\n\
+            \     审计报告需明确指出风险发生的具体场景、法律后果及对甲方核心利益的潜在损害。\n3. 核心条款重塑：最后，基于风险对冲与利益平衡原则，为上述识别出的高风险条款提供具体的、可操作的修订文本建议。修订需遵循以下原则：\n\
+            \   · 量化替代模糊：将“及时”、“满意”、“稳定”等定性描述转化为可量化、可验证的指标（如MTBF、Benchmark跑分、响应时间）。\n\
+            \   · 程序控制风险：设计闭环的履约程序（如强制验收权、默示不合格、试运行期清零），避免程序性拖延。\n   · 损失覆盖全面：确保违约赔偿机制不仅覆盖直接损失，更能覆盖科研进度延误、替代采购溢价、人力成本等预期利益损失。\n\
+            \   · 资产锁定清晰：通过明确的条款设计，将履行过程中产生的新技术成果、数据、源代码等核心资产锁定在甲方（出资方）手中。\n4. 基于当前输入的候选条款列表，对每一条\
+            \ clause 独立判断是否存在 anchored 风险，并输出完整的 anchored 风险 JSON 结果。\n\n你只处理 anchored\
+            \ 风险：也就是“由单条条款本身即可直接触发”的风险。\n严禁输出 missing_clause 或 multi_clause 类型风险；若风险必须依赖其他条款才能成立，请不要输出（交给其他工作流）。\n\
+            \n【参考 (Reference)】\n为确保分析的深度与实务效力，请严格参照以下法律基准、裁判逻辑及行业事实：\n\n· 法律基准：\n\
+            \  · 《中华人民共和国民法典》：重点研读第三编第十八章“建设工程合同”（参照适用）、第二十章“技术合同”第三节“技术转让合同和技术许可合同”、第四节“技术咨询合同和技术服务合同”。具体条款包括但不限于：\n\
+            \    · 第八百五十九条：委托开发完成的发明创造，除当事人另有约定外，申请专利的权利属于研究开发人。\n    · 第八百八十五条：技术服务合同的受托人利用委托人提供的技术资料和工作条件完成的新的技术成果，属于受托人。\n\
+            \    · 第五百八十五条：关于违约金调整的规定（违约金超过造成损失的30%一般可认定为“过分高于造成的损失”）。\n  · 《最高人民法院关于审理技术合同纠纷案件适用法律若干问题的解释》：用于理解技术成果的界定、权属归属的补充规则。\n\
+            \  · 《政府采购法》及地方政采细则：针对涉及财政资金的合同，需审查是否违规设置质保金、履约保证金比例是否合规等。\n· 裁判逻辑与司法观点：\n\
+            \  · 验收标准模糊的裁判规则：当合同未明确约定验收标准时，法院可能依据“实际使用”视为验收合格，或引入第三方技术鉴定，结果具有高度不确定性。在药品研发等技术标准突变的案例中，技术调查官的介入成为厘清责任的关键。\n\
+            \  · 违约金调整的司法尺度：法院调整违约金以实际损失为基础，兼顾合同履行情况、当事人过错程度及预期利益。主张高额违约金的一方需承担损失证明责任。\n\
+            \  · 知识产权归属的认定：法院严格执行合同约定。若合同未约定前景成果归属，则默认归属于完成方（受托方/乙方）。在合同解除时，技术资料的返还与款项的返还往往互为条件，以保护技术秘密。\n\
+            \  · 付款节点与履约的关联：在里程碑付款争议中，法院尊重合同约定，但也认可双方通过实际履行行为（如邮件沟通、接受服务）对原约定进行合意变更。在预付款纠纷中，未能供货部分的预付款返还责任明确。\n\
+            · 事实参考与行业惯例：\n  · 验收程序：注意合同中“初验”、“终验”、“试运行”的逻辑关系。例如，若试运行期间故障频发，应有权要求重新起算试运行期。\n\
+            \  · 知识产权交付物：合同应明确交付清单不仅包括硬件，还应包括源代码、算法逻辑说明书、数据库Schema、部署脚本等，并禁止乙方在未获授权情况下向第三方披露或转让。\n\
+            \  · 变更管理：任何对技术指标、工期、费用的调整，必须经双方法定代表人/授权代表签署书面补充协议方能生效。仅有邮件或微信沟通，若无明确授权，可能被法院认定为无效变更。\n\
+            \n【任务边界】\n- 你只处理 anchored 风险：即仅凭单条条款的 clause_text 本身即可直接成立的风险。\n- 严禁输出\
+            \ missing_clause 风险：即本质上是合同未约定某类条款、某类机制或某类信息，但无法从现有单条条款直接触发的风险。\n- 严禁输出\
+            \ multi_clause 风险：即必须结合其他条款、附件、定义、背景事实、交易资料、行业规则或上下文才成立的风险。\n- 你当前处理的是一个\
+            \ segment 下的候选条款，而不是整份合同。不要扩展到 clauses_json 之外的条款。\n- 审查视角、合同类型、业务场景等上下文由\
+            \ user prompt 提供；除非 user prompt 明示，不得自行假设当事人身份、交易结构、行业惯例、附件内容或谈判背景。\n\n\
+            【anchored 风险成立条件】\n只有同时满足以下条件，才允许输出风险：\n1) 风险触发表述直接出现在该条款的 clause_text\
+            \ 中；\n2) 仅凭该条 clause_text 即可判断缺陷成立；\n3) 能明确指出“哪句话 + 什么具体缺陷”；\n4) 能明确说明该缺陷会在履约、交付、验收、付款、责任、终止、争议等环节造成什么具体不利后果；\n\
+            5) 能提出与该缺陷直接对应的修改方向。\n\n【优先识别的 anchored 缺陷信号】\n- 关键要素缺失、留白或标准不明：金额、期限、范围、条件、程序、责任边界、验收标准、付款触发条件等；\n\
+            - 单方决定、单方解释、单方认定、单方变更；\n- 责任明显失衡：单方免责、无限责任、赔偿范围过宽、责任承担不对等；\n- 程序安排明显受制于一方：验收、付款、终止、通知、交付、确认等；\n\
+            - 知识产权、数据、保密、争议解决等核心安排对 user prompt 指定的审查视角一方明显不利。\n\n【通用 Anchored 风险特征雷达】：\n\
+            1. 权利义务严重不对等：对方享有单边绝对权利（如单方解释权、单方解除权），或己方承担单边绝对义务。\n2. 边界极端模糊：对己方要求采用“绝对安全”、“随时”、“无瑕疵”等无法量化的兜底词，极易导致己方违约。\n\
+            3. 责任与惩罚失衡：己方的违约金无上限、责任无法豁免（如不可抗力被排除），或对方的责任被极度限制。\n4. 核心要素缺失导致陷阱：有义务但无前置条件（如需赔偿但未界定定损标准），有权利但无行使路径。\n\
+            \n【不要输出的情形】\n- 仅靠“详见附件 / 按其他条款 / 另行约定 / 见定义条款”才能判断；\n- 只是某类条款未出现；\n- 只是一般性、宣示性、中性表述，不能直接形成具体不利后果；\n\
+            - 只是标题、备注、占位、说明，且不包含实质约定；\n- 只能凭经验觉得“可能有问题”，但无法指出具体原句、具体缺陷和具体后果。\n\n输入会给你一个\
+            \ segment 下的候选条款列表（clauses_json，为 JSON 数组字符串）。\n每个条款对象至少包含：\n- clause_uid\n\
+            - display_clause_id\n- clause_id（可能为空或不稳定）\n- clause_title（可能为空）\n- clause_text（主证据源）\n\
+            - clause_kind（contract_clause / placeholder_clause / note_clause）\n- source_excerpt（可能等于\
+            \ clause_text）\n\n输出必须是严格 JSON（不要 markdown / 不要解释 / 不要 <think> 标签），格式如下：\n\
+            {\n  \"risk_items\": [\n    {\n      \"risk_code\": \"snake_case_english\"\
+            ,\n      \"risk_source_type\": \"anchored\",\n      \"dimension\": \"\
+            以下10类之一\",\n      \"risk_level\": \"high|medium|low\",\n      \"risk_label\"\
+            : \"一句话概括\",\n      \"issue\": \"具体指出条款哪句话+什么问题\",\n      \"evidence_text\"\
+            : \"必须是 clause_text 中的原文片段（逐字摘录）\",\n      \"anchor_text\": \"更短的原文片段（逐字摘录，必须是\
+            \ evidence_text 的子串或同源短摘录）\",\n\n      \"factual_basis\": \"用事实描述：条款中哪句表述\
+            \ + 存在什么具体缺陷（边界不清/标准缺失/责任失衡/条件不明/金额日期缺失等）。禁止写“根据原文/依据原文”。\",\n      \"\
+            reasoning_basis\": \"用风险逻辑描述后果链：该缺陷在履约/验收/付款/责任/争议中如何导致具体不利后果。禁止写“需要人工审核/建议人工审核”。\"\
+            ,\n      \"basis_minimal\": \"如果有法条依据的，只需要写对应的法条就行了，不用描述其他内容。如果没有对应的法条的话，把依据用几句话简洁概括的写出来。\"\
+            ,\n      \"normative_basis\": {\n        \"basis_type\": \"legal_rule|contract_logic_rule|deal_practice_rule\"\
+            ,\n        \"basis_title\": \"一句话规则标题（可执行/可谈判方向）\",\n        \"basis_detail\"\
+            : \"解释为什么该规则适用于此条款缺陷（要具体，不要空话）\",\n        \"citation_text\": \"只有在你非常确定具体法条且不易出错时才填写（如“《民法典》第xxx条……”）；否则留空字符串\"\
+            \n      },\n\n      \"suggestion\": \"给出可落地的修改方向（不要拍数字；可用‘明确…/补充…/限定…/列明…’）\"\
+            ,\n      \"suggestion_minimal\": \"最低成本的补强改法（可与 suggestion 相同）\",\n  \
+            \    \"suggestion_optimized\": \"在合法且符合基本商业常理的前提下，更充分保护 {{#1773302896479.review_side#}}一方的版本（可为空字符串）\"\
+            ,\n      \"suggestion_basis\": \"解释为什么这样改能降低风险（对应 reasoning_basis 的后果链）\"\
+            ,\n\n      \"needs_human_review\": true,\n      \"clause_uid\": \"必须等于输入条款\
+            \ clause_uid\",\n      \"display_clause_id\": \"必须等于输入条款 display_clause_id\"\
+            \n    }\n  ]\n}\n\n【内部处理方法】\n对每个候选条款，在内部按以下顺序完成判断：\n1) 审查对象：定位 clause_text\
+            \ 中最直接触发风险的原句；\n2) 触发条件：判断该原句是否存在明确、可独立成立的缺陷；\n3) 判定标准：确认该缺陷无需依赖其他条款、附件、定义或背景事实即可成立；\n\
+            4) 风险结论：说明该缺陷为何会对 user prompt 指定的审查视角一方造成具体不利后果；\n5) 修改方向：给出与该缺陷一一对应的补强方案。\n\
+            任一步不能成立，则不要输出该风险。\n\n【证据规则】\n- clause_text 是主证据源，也是 evidence_text / anchor_text\
+            \ 的唯一摘录源；\n- source_excerpt 只可用于辅助定位，不得替代 clause_text 作为证据摘录来源；\n- evidence_text\
+            \ 必须是 clause_text 中的连续原文片段，逐字摘录，不得拼接、不得改写、不得加省略号；\n- anchor_text 必须是更短的连续原文片段，且应为\
+            \ evidence_text 的连续子串或同源更短连续摘录；\n- 证据优先摘录最小但足以支撑风险成立的原句，不要无必要摘录整段。\n\n\
+            【dimension 只能从以下 10 类中选择 1 个最直接主维度】\n- 主体资格与签约权限\n- 服务范围与交付内容\n- 服务期限、里程碑与验收标准\n\
+            - 付款结算、发票与税费\n- 违约责任与赔偿机制\n- 解除、终止与续约机制\n- 保密、数据安全与合规\n- 知识产权归属与使用权\n\
+            - 权责分配与责任限制\n- 争议解决、适用法律与管辖\n\n【维度选择规则】\n- 只选最直接的主维度，不做多标签；\n- 以“条款中的直接失衡点”或“最先被触发的关键环节”为准，不以远端连带后果为准；\n\
+            - 同一风险不要重复归入多个维度。\n\n【risk_level 判定标准】\n- high：可直接导致付款受阻、验收受单方控制、责任显著失衡、单方无责终止、重大知识产权/数据/合规暴露、维权成本明显失控；\n\
+            - medium：关键标准、条件、边界、程序不清，较大概率引发履约争议、延期、返工、结算争议或责任扩大；\n- low：存在一定歧义或执行摩擦，但短期内不必然造成重大损失，且可通过小幅补充修正。\n\
+            \n硬性约束：\n1) 每条 clause 最多输出 2 个真正独立的 anchored 风险；同类问题要合并。\n2) clause_kind\
+            \ != contract_clause（placeholder_clause / note_clause）默认不输出风险（除非其本身包含实质约定且明确可直接触发风险）。\n\
+            3) evidence_text 与 anchor_text 必须是原文逐字摘录，不得改写。\n4) 若该 clause 不构成明确 anchored\
+            \ 风险，则不要输出该 clause 的风险项。\n5）遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）\n\n你必须只输出 JSON，不得输出任何推理过程或\
+            \ <think>...</think>。你的输出必须以第一个字符 “{” 开始，并以最后一个字符 “}” 结束。"
+        - id: a8ca68e5-6ea3-46d9-ab9a-9cc106b0c6dd
+          role: user
+          text: "请基于以下 anchored 风险候选结果和原始条款信息，输出完整的 anchored 风险结果。\n\n输入信息：\n- 审查视角：{{#1773302896479.review_side#}}\n\
+            - 合同类型：{{#1773302896479.contract_type_hint#}}\n- segment_id: {{#1773302896479.segment_id#}}\n\
+            - segment_title: {{#1773302896479.segment_title#}}\n- clause_count: {{#1773302896479.clause_count#}}\n\
+            \n背景 (Background)\n\n\n本次审查设定在{{#1773302896479.review_side#}}（委托方/采购方）立场，核心背景如下：\n\
+            \n\n· 主体性质：{{#1773302896479.review_side#}}通常为承担国家或地方重大科研任务的研究机构、高校或高科技企业，其采购与合作行为受《政府采购法》及内部审计、财政资金使用规范严格约束。\n\
+            · 交易标的特性：标的物并非标准化的货架产品，而是涉及复杂技术集成、软硬件协同、算法优化或定制化研发的复合型服务。其价值不仅在于硬件本身，更在于确保算力集群、软件系统或工艺流程能真正跑通业务模型、达成科研目标。在涉及高性能计算、GPU服务器等核心设备时，需考虑全球供应链波动、出口管制及技术迭代带来的高度不确定性。\n\
+            · 核心诉求：{{#1773302896479.review_side#}}在合同中的核心诉求超越简单的“物有所值”，具体表现为：\n  ·\
+            \ 合规性：确保财政资金支付路径清晰、流程合规，避免审计风险。\n  · 安全性：保护自身的核心数据、商业秘密及未来的科研成果（前景知识产权）不被乙方侵占或泄露。\n\
+            \  · 掌控力：在乙方履约瑕疵或发生资金链断裂等突发状况时，拥有强有力的合同抓手，能够及时止损、追回款项或强制要求履行。\n\n【上下文使用规则】\n\
+            - “审查视角”用于判断什么属于不利后果、risk_level 的严重性，以及 suggestion_optimized 应优先保护哪一方以及合同风险视角应该保护{{#1773302896479.review_side#}}的利益，需要完全站在{{#1773302896479.review_side#}}的立场上来审查规则，不利于对方的条款不用修改。\n\
+            - “合同类型”用于帮助理解该类交易中的履约模式、交付方式、验收逻辑、付款节奏、责任分配、数据/IP 风险与争议后果；但不得仅凭合同类型的一般惯例推定条款存在风险。\n\
+            - “segment_title”只用于帮助理解当前条款主题和选择更准确的 dimension，不得作为 evidence_text 或 anchor_text\
+            \ 的来源。\n- 即使提供了审查视角和合同类型，anchored 风险仍必须满足“仅凭单条 clause_text 即可成立”的条件。\n\
+            - 在满足 anchored 条件的前提下，优先识别与当前合同类型强相关、后果明确、对审查视角一方影响更直接的风险；不要为追求覆盖率而扩大解释。\n\
+            \n\n候选条款 clauses_json（JSON 数组字符串）：\n{{#1773302896479.clauses_json#}}\n\
+            \n【输出前自检】\n在写出每一个 risk_item 前，先确认以下四点：\n1) 我能否指出 clause_text 中的具体原句？\n\
+            2) 我能否无需依赖其他条款、附件、定义或背景事实，就说明该风险成立？\n3) 我能否说明该问题为什么会对 {{#1773302896479.review_side#}}\
+            \ 不利？\n4) 我能否给出与该缺陷直接对应的修改方向？\n只要有一项不能明确回答“能”，就不要输出该风险。\n\n\n请仅输出 JSON：\n\
+            {\n\"risk_items\": [...]\n}\n如果所有候选条款均不存在 anchored 风险，请直接输出严格的空数组结构：{\"\
+            risk_items\": []}，绝对不要为了输出而强行制造风险。"
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: true
+        structured_output_enabled: true
+        title: Anchored 依据与建议定稿
+        type: llm
+        vision:
+          enabled: false
+      height: 117
+      id: '1773307388966'
+      position:
+        x: 707.9518414997552
+        y: 317.0144681482759
+      positionAbsolute:
+        x: 707.9518414997552
+        y: 317.0144681482759
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -420.7299214076688
+      y: -2.5754678819193373
+      zoom: 0.9564730311371885
+  rag_pipeline_variables: []
