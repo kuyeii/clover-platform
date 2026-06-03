@@ -1953,7 +1953,12 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
     setModeError("");
     setCompetitorRows(rows);
     lastSyncedCompetitorValue.current = "";
-  }, [getRowsFromForm, resetSeed]);
+    setForm({
+      ...createEmptyForm(),
+      province: matchMode === "auto" ? DEFAULT_PROVINCE : "",
+      matchMode
+    });
+  }, [getRowsFromForm, matchMode, resetSeed, setForm]);
 
   useEffect(() => {
     if (previousMatchMode.current === matchMode) return;
@@ -2535,6 +2540,7 @@ export default function LegacyCompetitorAnalysisApp() {
     if (isLoading && runningResultId) {
       setHomeMatchMode(nextMode);
       setPhase("home");
+      setHomeResetSeed((value) => value + 1);
       if (syncUrl) {
         pushHomeRoute({ mode: nextMode });
       }
