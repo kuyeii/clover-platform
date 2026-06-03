@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -91,6 +92,7 @@ from app.services.bid_generator_service import (
 from app.services.business_proxy import proxy_business_request
 
 APP_CODE = "bid-generator"
+ALLOW_LEGACY_PROXY_ENV = "BID_GENERATOR_ALLOW_LEGACY_PROXY"
 
 router = APIRouter(prefix="/bid-generator")
 
@@ -103,6 +105,23 @@ def require_bid_generator_user(user: dict[str, Any] = Depends(get_current_user))
 
 def legacy_json(payload: Any, *, status_code: int = 200) -> JSONResponse:
     return JSONResponse(content=payload, status_code=status_code)
+
+
+def _legacy_fallback_allowed() -> bool:
+    return str(os.getenv(ALLOW_LEGACY_PROXY_ENV, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _raise_legacy_proxy_blocked(path: str) -> None:
+    raise PlatformError(
+        code="BID_GENERATOR_LEGACY_PROXY_BLOCKED",
+        message="标书生成已迁移到统一后端原生路由，未知路径不会默认转发 legacy。若需临时回滚代理，请显式设置 BID_GENERATOR_ALLOW_LEGACY_PROXY=true。",
+        status_code=410,
+        details={
+            "classification": "legacy_fallback_blocked",
+            "route": f"/api/v1/bid-generator/{str(path or '').lstrip('/')}",
+            "allow_env": ALLOW_LEGACY_PROXY_ENV,
+        },
+    )
 
 
 def file_response(payload: Any) -> Response:
@@ -905,6 +924,8 @@ async def empty_proxy_path(
     user: dict[str, Any] = Depends(require_bid_generator_user),
     client_id: str = Depends(get_client_id),
 ) -> StreamingResponse:
+    if not _legacy_fallback_allowed():
+        _raise_legacy_proxy_blocked("")
     return await proxy_business_request(
         request=request,
         app_code=APP_CODE,
@@ -921,6 +942,8 @@ async def proxy_bid_generator(
     user: dict[str, Any] = Depends(require_bid_generator_user),
     client_id: str = Depends(get_client_id),
 ) -> StreamingResponse:
+    if not _legacy_fallback_allowed():
+        _raise_legacy_proxy_blocked(path)
     return await proxy_business_request(
         request=request,
         app_code=APP_CODE,

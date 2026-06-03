@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.errors import PlatformError
+from app.services.pipt_recognition_adapter import recognize_with_platform_recognizer
 from app.services.pipt_gateway_service import DEFAULT_TARGET_ENTITIES, preprocess_payload
 from app.services.rag_dify_service import get_dataset_api_base_url, get_dataset_api_key, get_default_dataset_id
 from packages.py_common.db.session import get_engine
@@ -164,13 +165,11 @@ def _normalize_entity(entity: Any) -> dict[str, Any]:
 
 
 def _recognize_privacy(text_value: str) -> dict[str, Any]:
-    from app.services.bid_generator_service import ensure_legacy_runtime
-
-    ensure_legacy_runtime()
-    from app.api_lite.routes import get_engine as get_pipt_engine
-
-    engine = get_pipt_engine()
-    entities = engine.recognize(text_value, DEFAULT_TARGET_ENTITIES, llm_mode_override="verify_only")
+    entities = recognize_with_platform_recognizer(
+        text=text_value,
+        target_entities=DEFAULT_TARGET_ENTITIES,
+        llm_mode="verify_only",
+    )
     normalized = [_normalize_entity(entity) for entity in entities]
     counts_by_type: dict[str, int] = {}
     for item in normalized:

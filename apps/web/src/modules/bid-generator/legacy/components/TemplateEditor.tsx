@@ -9,8 +9,8 @@ import {
 import { SortableBlock } from './SortableBlock';
 import {
     AlertCircle, CheckCircle2, Download,
-    FileDown, FileText, FolderTree, Loader2, PanelRightClose, PanelRightOpen,
-    Plus, RefreshCw, RotateCcw, Sparkles, Trash2, UploadIcon, XCircle,
+    FileDown, FileText, FolderTree, Loader2,
+    Plus, RefreshCw, RotateCcw, Sparkles, Trash2, UploadIcon, UserRound, XCircle,
 } from 'lucide-react';
 import type { StandardYaml, TemplateBlock } from '../services/configService';
 import { configService } from '../services/configService';
@@ -24,7 +24,9 @@ import {
 import clsx from 'clsx';
 import { ContentEditor } from './ContentEditor';
 import { TaskLoadingState } from './TaskLoadingState';
-import { ProtectedIframe } from './ProtectedIframe';
+import { BidderInfoDialog } from './BidderInfoDialog';
+import type { BidderInfo } from '../services/projectService';
+import { ResizablePdfPreviewPane } from './ResizablePdfPreviewPane';
 
 interface Props {
     projectId?: string;  // 当前项目 ID
@@ -180,6 +182,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
 
     // 一键生成全部状态
     const [showGenerateAllConfirm, setShowGenerateAllConfirm] = useState(false);
+    const [showBidderInfoDialog, setShowBidderInfoDialog] = useState(false);
     const [isGeneratingAll, setIsGeneratingAll] = useState(false);
     const [, setGenerateAllProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -204,6 +207,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     const [contentStates, setContentStates] = useState<Record<string, BlockContentState>>({});
     const hasGeneratingContent = Object.values(contentStates).some((state) => state.status === 'queued' || state.status === 'generating');
     const isContentGenerationBusy = isGeneratingAll || queuedBlockIds.size > 0 || hasGeneratingContent;
+    const hasGeneratedContent = Object.values(contentStates).some((state) => state.status === 'done' && state.content.trim());
     const fileInputRef = useRef<HTMLInputElement>(null);
     // 用于取消 generateAll 的完整串行循环
     const generateAllAbortRef = useRef<AbortController | null>(null);
@@ -696,6 +700,12 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
         setGenerateAllProgress(null);
         setQueuedBlockIds(new Set());
     }, [contentStates, isLocked, getContentTaskKey, projectId]);
+
+    const handleBidderInfoConfirm = useCallback((bidderInfo: BidderInfo) => {
+        if (!projectId) return;
+        projectService.updateBidderInfo(projectId, bidderInfo);
+        setShowBidderInfoDialog(false);
+    }, [projectId]);
 
     useEffect(() => {
         if (!template) return;
@@ -1468,6 +1478,21 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    {projectId && (
+                        <button
+                            type="button"
+                            onClick={() => setShowBidderInfoDialog(true)}
+                            className={clsx(
+                                'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-lg hover:bg-gray-50 transition-colors',
+                                bidderInfoReady
+                                    ? 'text-gray-600 bg-white border-gray-200'
+                                    : 'text-warning bg-[var(--color-warning-bg)] border-[var(--color-warning-border)]',
+                            )}
+                        >
+                            <UserRound className="w-3 h-3" />
+                            投标人信息配置
+                        </button>
+                    )}
 
                     {/* 导出技术方案 */}
                     {projectId && (
@@ -2116,36 +2141,11 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
 
                 {/* 3. 右侧：PDF 侧边栏（仿解析报告） */}
                 {pdfUrl && (
-                    <div className={`flex shrink-0 border-l border-gray-200 transition-all duration-200 ${showPdf ? 'w-[46%] min-w-[360px] max-w-[620px]' : 'w-8'}`}>
-                        <button
-                            onClick={() => setShowPdf(!showPdf)}
-                            className="w-8 shrink-0 bg-gray-50 hover:bg-brand-50 border-r border-gray-200 flex flex-col items-center justify-center gap-2 transition-colors group"
-                            title={showPdf ? '收起原文' : '展开查看原始招标文件'}
-                        >
-                            {showPdf
-                                ? <PanelRightClose className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
-                                : <PanelRightOpen className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
-                            }
-                            <span
-                                className="text-xs text-gray-400 group-hover:text-brand-600"
-                                style={{ writingMode: 'vertical-rl', letterSpacing: '0.05em' }}
-                            >
-                                招标文件原文
-                            </span>
-                        </button>
-                        {showPdf && (
-                            <div className="flex-1 bg-gray-100 flex flex-col min-w-0">
-                                <div className="px-3 py-2 bg-white border-b border-gray-200 shrink-0">
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">原始招标文件</p>
-                                </div>
-                                <ProtectedIframe
-                                    src={`${pdfUrl}#pagemode=none`}
-                                    className="flex-1 w-full border-0"
-                                    title="招标文件预览"
-                                />
-                            </div>
-                        )}
-                    </div>
+                    <ResizablePdfPreviewPane
+                        pdfUrl={pdfUrl}
+                        open={showPdf}
+                        onOpenChange={setShowPdf}
+                    />
                 )}
             </div>
 
@@ -2197,7 +2197,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                     </button>
                                     {!bidderOk && (
                                         <span className="pointer-events-none absolute right-0 bottom-full z-10 mb-2 hidden w-56 rounded-lg bg-gray-900 px-3 py-2 text-xs leading-5 text-white shadow-panel group-hover:block">
-                                            完成左侧投标人信息后才能开始正文生成。
+                                            完成投标人信息配置后才能开始正文生成。
                                         </span>
                                     )}
                                 </div>
@@ -2206,6 +2206,13 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                     </div>
                 );
             })()}
+            <BidderInfoDialog
+                visible={showBidderInfoDialog}
+                initialValue={projectId ? projectService.getById(projectId)?.bidderInfo : undefined}
+                hasGeneratedContent={hasGeneratedContent}
+                onCancel={() => setShowBidderInfoDialog(false)}
+                onConfirm={handleBidderInfoConfirm}
+            />
         </div>
     );
 }

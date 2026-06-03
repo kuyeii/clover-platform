@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
+import pytest
+from fastapi.responses import StreamingResponse
 
 API_ROOT = Path(__file__).resolve().parents[1]
 API_ROOT_VALUE = str(API_ROOT)
@@ -10,6 +14,7 @@ if API_ROOT_VALUE not in sys.path:
     sys.path.insert(0, API_ROOT_VALUE)
 
 import app.api.bid_generator_proxy as bid_generator_proxy
+from app.core.errors import PlatformError
 from app.services import bid_generator_service
 
 
@@ -107,7 +112,7 @@ def test_bid_generator_routes_are_owned_by_apps_api_without_legacy_router_mount(
 
 
 def test_legacy_router_specific_unknown_routes_are_not_mounted() -> None:
-    # 统一后端不再默认 include legacy api_lite routers；未知路径只走平台 catch-all proxy 回滚边界。
+    # 统一后端不再默认 include legacy api_lite routers。
     assert _route_count("POST", "/bid-generator/api/knowledge/sync") == 0
     assert _route_count("POST", "/bid-generator/api/knowledge/sync/{doc_name}") == 0
     assert _route_count("POST", "/bid-generator/api/kb/sync") == 0
@@ -126,3 +131,69 @@ def test_bid_generator_service_does_not_expose_legacy_router_entrypoints() -> No
     assert not hasattr(bid_generator_service, "get_legacy_api_routers")
     assert not hasattr(bid_generator_service, "init_legacy_storage")
     assert not hasattr(bid_generator_service, "preload_legacy_engine")
+
+
+def test_bid_generator_service_does_not_expose_legacy_document_parse_helpers() -> None:
+    assert not hasattr(bid_generator_service, "_legacy_routes_module")
+    assert not hasattr(bid_generator_service, "_legacy_cache_pdf_file")
+    assert not hasattr(bid_generator_service, "_legacy_extract_pdf_pages_text")
+    assert not hasattr(bid_generator_service, "_legacy_convert_to_pdf_and_cache")
+    assert not hasattr(bid_generator_service, "_legacy_extract_raw_text_with_images")
+    assert not hasattr(bid_generator_service, "_legacy_extract_docx_with_locators")
+
+
+def test_bid_generator_service_does_not_expose_legacy_task_route_caller() -> None:
+    assert not hasattr(bid_generator_service, "call_legacy_task_route")
+    assert not hasattr(bid_generator_service, "legacy_task_manager")
+    assert not hasattr(bid_generator_service, "_legacy_task_manager")
+    assert not hasattr(bid_generator_service, "_get_legacy_task")
+    assert not hasattr(bid_generator_service, "_require_legacy_task_owner")
+
+
+def test_bid_generator_unknown_path_blocks_legacy_proxy_by_default() -> None:
+    with patch.object(bid_generator_proxy, "proxy_business_request") as proxy:
+        with pytest.raises(PlatformError) as exc_info:
+            _run_async(
+                bid_generator_proxy.proxy_bid_generator(
+                    request=SimpleNamespace(url=SimpleNamespace(query="")),
+                    path="api/unknown",
+                    user={"role": "admin"},
+                    client_id="client-1",
+                )
+            )
+
+    proxy.assert_not_called()
+    error = exc_info.value
+    assert error.code == "BID_GENERATOR_LEGACY_PROXY_BLOCKED"
+    assert error.status_code == 410
+    assert error.details["classification"] == "legacy_fallback_blocked"
+    assert error.details["allow_env"] == "BID_GENERATOR_ALLOW_LEGACY_PROXY"
+
+
+def test_bid_generator_unknown_path_can_use_explicit_legacy_proxy_rollback() -> None:
+    async def fake_proxy_business_request(**kwargs):
+        assert kwargs["app_code"] == "bid-generator"
+        assert kwargs["path"] == "api/unknown"
+        return StreamingResponse(iter([b"ok"]))
+
+    with (
+        patch.dict("os.environ", {"BID_GENERATOR_ALLOW_LEGACY_PROXY": "true"}),
+        patch.object(bid_generator_proxy, "proxy_business_request", side_effect=fake_proxy_business_request) as proxy,
+    ):
+        response = _run_async(
+            bid_generator_proxy.proxy_bid_generator(
+                request=SimpleNamespace(url=SimpleNamespace(query="")),
+                path="api/unknown",
+                user={"role": "admin"},
+                client_id="client-1",
+            )
+        )
+
+    proxy.assert_called_once()
+    assert isinstance(response, StreamingResponse)
+
+
+def _run_async(awaitable):
+    import asyncio
+
+    return asyncio.run(awaitable)

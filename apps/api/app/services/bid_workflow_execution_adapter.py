@@ -1,135 +1,100 @@
 from __future__ import annotations
 
-import importlib
-import threading
-from types import ModuleType
+import json
+import re
 from typing import Any, Mapping
 
-from fastapi import HTTPException
+import yaml
 
 from app.core.errors import PlatformError
-from app.services.bid_task_execution_adapter import ensure_legacy_runtime
-
-
-_IMPORT_LOCK = threading.RLock()
-_LEGACY_MODULES: dict[str, ModuleType] = {}
 
 
 async def generate_template_architecture_payload(body: Mapping[str, Any]) -> dict[str, Any]:
-    """
-    调用 legacy 模板结构生成。
+    """使用统一后端 Dify structure_generator 生成项目专属模板结构。"""
+    payload = dict(body or {})
+    project_name = str(payload.get("project_name") or payload.get("projectName") or "").strip()
+    blueprint = str(payload.get("blueprint") or "")
+    structured_data = str(payload.get("structured_data") or payload.get("structuredData") or "")
+    if not project_name:
+        raise PlatformError(code="BID_TEMPLATE_GENERATE_FAILED", message="项目名称不能为空。", status_code=400)
 
-    该能力暂时保留在 legacy：
-    - 现网仍依赖 legacy `config.yaml` 中的 `dify.api_key`
-    - 统一后端其它大纲链路已切到 `.env` / `DIFY_WORKFLOW_STRUCTURE_GENERATOR`
-    这是凭据权威来源冲突，当前不做静默迁移。
-    """
-    response = await _call_legacy_route_response(
-        getattr(_legacy_routes(), "generate_template_architecture"),
-        _legacy_schema_model("GenerateStructureRequest", body),
-        error_code="TEMPLATE_GENERATE_FAILED",
+    from app.services import bid_generator_service as bid_service
+
+    dify_key = bid_service._get_workflow_key("structure_generator")
+    if not dify_key:
+        raise PlatformError(
+            code="BID_TEMPLATE_GENERATE_FAILED",
+            message="模板结构生成工作流 API Key 未配置，请在 .env 中设置 DIFY_WORKFLOW_STRUCTURE_GENERATOR",
+            status_code=500,
+        )
+
+    prompt = (
+        f"你是一个资深售前解决方案架构师。请针对当前项目【{project_name}】，"
+        "结合蓝图与需求，生成一份专属的标书结构目录YAML配置。"
+        "产出格式必须符合系统标准的 blocks 数组结构，只输出合法的YAML。"
     )
-    return _legacy_json_payload(response)
-
-
-async def forge_document_response(body: Mapping[str, Any]) -> Any:
-    """
-    调用 legacy DOCX 组装导出；保持 legacy 二进制响应对象。
-
-    该能力暂时保留在 legacy：
-    - 依赖 legacy EntityRegistry / FernetEncryptor / placeholder protocol
-    - 依赖 ImageRegistry / gateway-out / docxcompose
-    当前不做静默迁移。
-    """
-    routes = _legacy_routes()
-    request_model = getattr(routes, "_ForgeDocumentRequest")
-    return await _call_legacy_route_response(
-        getattr(routes, "forge_document"),
-        request_model(**_json_object_body(body)),
-        error_code="FORGE_FAILED",
-    )
-
-
-async def export_report_response(body: Mapping[str, Any]) -> Any:
-    """
-    调用 legacy 解析报告 PDF 导出；保持 legacy 二进制响应对象。
-
-    该能力暂时保留在 legacy：
-    - 依赖 WeasyPrint
-    - 与当前 Python 3.10 slim 容器目标存在运行时依赖冲突
-    当前不做静默迁移。
-    """
-    routes = _legacy_routes()
-    request_model = getattr(routes, "_ExportReportRequest")
-    return await _call_legacy_route_response(
-        getattr(routes, "export_report_pdf"),
-        request_model(**_json_object_body(body)),
-        error_code="EXPORT_FAILED",
-    )
-
-
-def _legacy_routes() -> ModuleType:
-    return _ensure_legacy_imported("app.api_lite.routes")
-
-
-def _legacy_schemas() -> ModuleType:
-    return _ensure_legacy_imported("app.api_lite.schemas")
-
-
-async def _call_legacy_route_response(route: Any, *args: Any, error_code: str, **kwargs: Any) -> Any:
+    inputs = {
+        "system_prompt": f"{prompt}\n\n{blueprint}".strip(),
+        "structured_data": structured_data,
+        "knowledge_query": f"{project_name} 目录架构搭建",
+        "requires_search": "false",
+    }
     try:
-        return await route(*args, **kwargs)
-    except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else "legacy 路由调用失败"
-        if exc.status_code == 400:
-            raise PlatformError(code="INVALID_REQUEST", message=detail, status_code=400) from exc
-        if exc.status_code == 403:
-            raise PlatformError(code="PERMISSION_DENIED", message=detail, status_code=403) from exc
-        if exc.status_code == 404:
-            raise PlatformError(code="RESOURCE_NOT_FOUND", message=detail, status_code=404) from exc
-        raise PlatformError(code=error_code, message=detail, status_code=exc.status_code) from exc
-
-
-def _legacy_schema_model(model_name: str, body: Mapping[str, Any]) -> Any:
-    model = getattr(_legacy_schemas(), model_name)
-    try:
-        return model(**_json_object_body(body))
+        dify_res = await bid_service._call_dify_workflow(dify_key, inputs)
     except Exception as exc:
-        raise PlatformError(code="INVALID_REQUEST", message=f"{model_name} 请求体无效: {exc}", status_code=400) from exc
+        raise PlatformError(
+            code="BID_TEMPLATE_GENERATE_FAILED",
+            message=bid_service._format_dify_runtime_error(exc),
+            status_code=500,
+        ) from exc
+
+    structure_dict = _normalize_structure_dict(_extract_dify_structure_raw(dify_res), project_name=project_name)
+    return {"structure_dict": structure_dict}
 
 
-def _legacy_json_payload(value: Any) -> dict[str, Any]:
-    converted = _model_or_mapping_to_dict(value)
-    return converted if isinstance(converted, dict) else {"data": converted}
+def _extract_dify_structure_raw(dify_res: Mapping[str, Any]) -> Any:
+    outputs = dify_res.get("data", {}).get("outputs", {}) if isinstance(dify_res, Mapping) else {}
+    if not isinstance(outputs, Mapping):
+        return outputs
+    return (
+        outputs.get("structured_output")
+        or outputs.get("structure_dict")
+        or outputs.get("result")
+        or outputs.get("text")
+        or outputs
+    )
 
 
-def _json_object_body(body: Mapping[str, Any]) -> dict[str, Any]:
-    return dict(body) if isinstance(body, Mapping) else {}
+def _normalize_structure_dict(raw: Any, *, project_name: str) -> dict[str, Any]:
+    parsed = _parse_structure_value(raw)
+    if isinstance(parsed, dict) and isinstance(parsed.get("blocks"), list):
+        return parsed
+    blocks = parsed if isinstance(parsed, list) else []
+    return {
+        "name": f"{project_name}专属架构",
+        "id": "dynamic_struct_01",
+        "blocks": blocks,
+    }
 
 
-def _model_or_mapping_to_dict(value: Any) -> dict[str, Any]:
-    if isinstance(value, Mapping):
-        return dict(value)
-    model_dump = getattr(value, "model_dump", None)
-    if callable(model_dump):
-        dumped = model_dump()
-        return dict(dumped) if isinstance(dumped, Mapping) else {"data": dumped}
-    legacy_dict = getattr(value, "dict", None)
-    if callable(legacy_dict):
-        dumped = legacy_dict()
-        return dict(dumped) if isinstance(dumped, Mapping) else {"data": dumped}
-    return {"data": value}
+def _parse_structure_value(raw: Any) -> Any:
+    if isinstance(raw, (dict, list)):
+        return raw
+    if not isinstance(raw, str):
+        return {}
+    text = _extract_fenced_yaml(raw.strip())
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
+        return {}
 
 
-def _ensure_legacy_imported(name: str) -> ModuleType:
-    module = _LEGACY_MODULES.get(name)
-    if module is not None:
-        return module
-    with _IMPORT_LOCK:
-        module = _LEGACY_MODULES.get(name)
-        if module is not None:
-            return module
-        ensure_legacy_runtime()
-        imported = importlib.import_module(name)
-        _LEGACY_MODULES[name] = imported
-        return imported
+def _extract_fenced_yaml(text: str) -> str:
+    match = re.search(r"```(?:yaml|yml|json)?\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
+    return match.group(1).strip() if match else text

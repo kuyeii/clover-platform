@@ -3,7 +3,6 @@
  * 数据结构与后端接口对齐，联调时只需替换此文件的实现
  */
 
-import { bidGeneratorFetch } from './apiBase';
 import { extractCoreWritingIntent } from './writingHintService';
 import { DiagramServiceError, diagramService, type DiagramRequest, type DiagramSectionResult } from './diagramService';
 import {
@@ -18,6 +17,8 @@ import {
     extractRequirements as extractRequirementsApi,
     exportScoringTable as exportScoringTableApi,
     exportReport as exportReportApi,
+    fetchAnalyzeNodeResponse,
+    fetchTaskProgressResponse,
     fillScoringRow as fillScoringRowApi,
     fetchAnalysisFramework as fetchAnalysisFrameworkApi,
     fetchKnowledgeDocuments as fetchKnowledgeDocumentsApi,
@@ -39,7 +40,13 @@ import {
     saveAnalysisReport as saveAnalysisReportApi,
     saveBlobToDisk,
     startAnalyzeTask as startAnalyzeTaskApi,
+    startContentGroupTask,
+    startContentRewriteTask,
+    startContentTask,
+    startExtractTask as startExtractTaskApi,
+    startGroupReviewTask,
     startOutlineTask as startOutlineTaskApi,
+    cancelTask as cancelTaskApi,
     testBidAttachmentLocators as testBidAttachmentLocatorsApi,
     updateProject as updateProjectApi,
 } from '../../services/bidGeneratorApi';
@@ -1266,6 +1273,20 @@ function toProjectDataPayload(project: Project): Record<string, unknown> {
     return project as unknown as Record<string, unknown>;
 }
 
+function toLegacyProject(record: { id?: string; name?: string; status?: string; data?: Record<string, unknown>; created_at?: string; updated_at?: string }): Project {
+    const data = (record.data || {}) as Partial<Project>;
+    const now = new Date().toISOString();
+    return {
+        ...data,
+        id: String(data.id || record.id || ''),
+        name: String(data.name || record.name || '未命名标书项目'),
+        bidFileName: String(data.bidFileName || data.name || record.name || '未命名标书项目'),
+        status: (data.status || record.status || 'uploading') as ProjectStatus,
+        createdAt: String(data.createdAt || record.created_at || now),
+        updatedAt: String(data.updatedAt || record.updated_at || now),
+    } as Project;
+}
+
 function toAnalysisNodeList(nodes: unknown[] | undefined): AnalysisNode[] {
     if (!Array.isArray(nodes)) return [];
     return nodes.map((node: any) => ({
@@ -2319,19 +2340,13 @@ export const projectService = {
         let lastError: Error | null = null;
         for (let i = 0; i < 3; i += 1) {
             try {
-                const resp = await bidGeneratorFetch(`/projects/${id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: Object.prototype.hasOwnProperty.call(patch, 'name') ? updated.name : undefined,
-                        status: Object.prototype.hasOwnProperty.call(patch, 'status') ? updated.status : undefined,
-                        data_patch: patch,
-                    }),
-                });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const body: any = await resp.json().catch(() => null);
-                const proj = (body?.data || body) as Project | undefined;
-                if (proj?.id) applyServerProjectToLocal(proj);
+                const proj = await patchProjectApi(
+                    id,
+                    patch as Record<string, unknown>,
+                    Object.prototype.hasOwnProperty.call(patch, 'status') ? updated.status : undefined,
+                    Object.prototype.hasOwnProperty.call(patch, 'name') ? updated.name : undefined,
+                );
+                if (proj?.id) applyServerProjectToLocal(toLegacyProject(proj));
                 return updated;
             } catch (err) {
                 lastError = err as Error;
@@ -2512,8 +2527,7 @@ export const projectService = {
 
     /** 打开通用任务进度 SSE（outline/extract/content 等） */
     async openTaskProgressStream(taskId: string, projectId: string, signal?: AbortSignal): Promise<Response> {
-        const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        return bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/progress${qs}`, { signal });
+        return fetchTaskProgressResponse(taskId, projectId, signal);
     },
 
     /**
@@ -2621,15 +2635,7 @@ export const projectService = {
 
     /** 请求取消任务：等待后端完成取消收敛 */
     async cancelTask(taskId: string, projectId?: string): Promise<any> {
-        const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        const resp = await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/cancel${qs}`, {
-            method: 'POST',
-        });
-        if (!resp.ok) {
-            const detail = await resp.text().catch(() => '');
-            throw new Error(`任务取消失败: ${resp.status}${detail ? ` ${detail}` : ''}`);
-        }
-        return await resp.json().catch(() => ({} as any));
+        return cancelTaskApi(taskId, projectId);
     },
 
     /** 调用后端 Dify API 提取项目需求（含脱敏预处理） */
@@ -2639,22 +2645,18 @@ export const projectService = {
             formData.append('file', file);
             formData.append('project_name', file.name.replace(/\.\w+$/, ''));
 
-            // 从 localStorage 读取脱敏设置（由侧边栏设置面板写入）
-            const deenSettings = JSON.parse(
-                localStorage.getItem('proengine_desen_settings') || '{}'
-            );
-            formData.append('enable_desensitize', String(deenSettings.enabled !== false)); // 默认 true
-            formData.append('desensitize_profile', deenSettings.profile || 'tender');
-
-            // 是否启用 PyMuPDF4LLM + VLM 多模态增强提取
-            const useVision = localStorage.getItem('proengine_use_vision_parsing') === 'true';
+            const enableDesensitize = true;
+            const desensitizeProfile = 'tender';
+            const useVision = true;
+            formData.append('enable_desensitize', String(enableDesensitize));
+            formData.append('desensitize_profile', desensitizeProfile);
             formData.append('use_vision_parsing', String(useVision));
 
             const response = await extractRequirementsApi({
                 file,
                 projectName: file.name.replace(/\.\w+$/, ''),
-                enableDesensitize: deenSettings.enabled !== false,
-                desensitizeProfile: deenSettings.profile || 'tender',
+                enableDesensitize,
+                desensitizeProfile,
                 useVisionParsing: useVision,
             });
 
@@ -2706,26 +2708,19 @@ export const projectService = {
             onError?: (data: { message: string }) => void;
         }
     ): Promise<Project | null> {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('project_name', file.name.replace(/\.\w+$/, ''));
-        formData.append('project_id', projectId);
-
-        const deenSettings = JSON.parse(
-            localStorage.getItem('proengine_desen_settings') || '{}'
-        );
-        formData.append('enable_desensitize', String(deenSettings.enabled !== false));
-        formData.append('desensitize_profile', deenSettings.profile || 'tender');
-        const useVision = localStorage.getItem('proengine_use_vision_parsing') === 'true';
-        formData.append('use_vision_parsing', String(useVision));
+        const enableDesensitize = true;
+        const desensitizeProfile = 'tender';
+        const useVision = true;
 
         // 发起后台任务
-        const startResp = await bidGeneratorFetch(`/tasks/start-extract`, {
-            method: 'POST',
-            body: formData,
+        const { task_id } = await startExtractTaskApi({
+            projectId,
+            file,
+            projectName: file.name.replace(/\.\w+$/, ''),
+            enableDesensitize,
+            desensitizeProfile,
+            useVisionParsing: useVision,
         });
-        if (!startResp.ok) throw new Error(`解析请求失败: ${startResp.status}`);
-        const { task_id } = await startResp.json();
         localStorage.setItem(`extract_task_${projectId}`, task_id);
         // 与 analyze 任务使用统一键，便于全局锁与刷新恢复逻辑复用
         localStorage.setItem(`proengine_analyze_task_${projectId}`, task_id);
@@ -2745,8 +2740,7 @@ export const projectService = {
         let resultData: any = null;
         try {
             // 连接 SSE 进度
-            const response = await bidGeneratorFetch(`/tasks/${task_id}/progress?project_id=${encodeURIComponent(projectId)}`);
-            if (!response.ok) throw new Error(`进度连接失败: ${response.status}`);
+            const response = await fetchTaskProgressResponse(task_id, projectId);
 
             const reader = response.body?.getReader();
             if (!reader) throw new Error('无法获取响应流');
@@ -3049,16 +3043,17 @@ export const projectService = {
         signal?: AbortSignal,
     ): Promise<void> {
 
-        const response = await bidGeneratorFetch(`/tasks/${taskId}/progress?project_id=${encodeURIComponent(projectId)}`, { signal });
-        if (!response.ok) {
-            if (response.status === 404) {
-                // 后端重启或任务过期 → 清除残留 task_id，静默退出，不向用户报错
+        let response: Response;
+        try {
+            response = await fetchTaskProgressResponse(taskId, projectId, signal);
+        } catch (error) {
+            const status = typeof (error as any)?.status === 'number' ? (error as any).status : 0;
+            if (status === 404) {
                 localStorage.removeItem(storageKey);
                 console.warn(`[analyze reconnect] 任务 ${taskId} 已过期（后端重启？），已清除缓存`);
                 return;
             }
-            // 其他 HTTP 错误也不弹给用户，console 记录即可
-            console.warn(`[analyze reconnect] 进度连接失败: ${response.status}`);
+            console.warn(`[analyze reconnect] 进度连接失败: ${status || 'unknown'}`);
             return;
         }
 
@@ -3170,12 +3165,7 @@ export const projectService = {
         onBidAttachments?: (items: BidAttachmentItem[]) => void,
     ): Promise<{ content: string } | null> {
 
-        const res = await bidGeneratorFetch(`/projects/${projectId}/analyze-node`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ node_id: nodeId, node_label: nodeLabel, extraction_prompt: extractionPrompt }),
-        });
-        if (!res.ok) throw new Error(`单节点提取失败: ${res.status}`);
+        const res = await fetchAnalyzeNodeResponse(projectId, nodeId, nodeLabel, extractionPrompt);
 
         // SSE 流式读取
         const reader = res.body?.getReader();
@@ -3495,16 +3485,7 @@ export const projectService = {
         (async () => {
             try {
                 // 发起后台任务
-                const startResp = await bidGeneratorFetch(`/tasks/start-content`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                });
-                if (!startResp.ok) {
-                    callbacks.onError(`HTTP ${startResp.status}`);
-                    return;
-                }
-                const { task_id } = await startResp.json();
+                const { task_id } = await startContentTask(requestBody);
                 localStorage.setItem(taskStorageKey, task_id);
                 localStorage.removeItem(`content_task_${params.sectionId}`);
                 setLocalTaskRuntime(params.projectId, {
@@ -3526,24 +3507,7 @@ export const projectService = {
                     if (controller.signal.aborted) break;
 
                     try {
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                setLocalTaskRuntime(params.projectId, {
-                                    state: 'timed_out',
-                                    taskId: task_id,
-                                    taskType: 'content',
-                                    message: '任务不存在或已过期',
-                                    cancellable: false,
-                                });
-                                localStorage.removeItem(taskStorageKey);
-                                localStorage.removeItem(`content_task_${params.sectionId}`);
-                                callbacks.onError('任务不存在或已过期');
-                                break;
-                            }
-                            continue; // 网络抖动，重试
-                        }
-                        const taskStatus = await statusResp.json();
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId);
 
                         // 推送阶段变化
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
@@ -3552,7 +3516,7 @@ export const projectService = {
                         }
 
                         // 进行中阶段性结果：正文先到先展示，图表后到再增量覆盖
-                        const pr = taskStatus.partial_result;
+                        const pr = taskStatus.partial_result as any;
                         if (pr?.partial && pr.content) {
                             const sig = `${pr.phase || 'partial'}:${pr.word_count || 0}:${(pr.content || '').length}:${pr.diagrams_count || 0}`;
                             if (sig !== lastPartialSig) {
@@ -3691,7 +3655,21 @@ export const projectService = {
                         }
                         // 任务仍在运行：逐步放宽轮询间隔，降低服务压力
                         pollMs = Math.min(5000, pollMs + 500);
-                    } catch { /* 网络异常，忽略并重试 */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            setLocalTaskRuntime(params.projectId, {
+                                state: 'timed_out',
+                                taskId: task_id,
+                                taskType: 'content',
+                                message: '任务不存在或已过期',
+                                cancellable: false,
+                            });
+                            localStorage.removeItem(taskStorageKey);
+                            localStorage.removeItem(`content_task_${params.sectionId}`);
+                            callbacks.onError('任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '生成失败');
@@ -3787,16 +3765,7 @@ export const projectService = {
 
         (async () => {
             try {
-                const startResp = await bidGeneratorFetch(`/tasks/start-content-rewrite`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                });
-                if (!startResp.ok) {
-                    callbacks.onError(`HTTP ${startResp.status}`);
-                    return;
-                }
-                const { task_id } = await startResp.json();
+                const { task_id } = await startContentRewriteTask(requestBody);
                 localStorage.setItem(taskStorageKey, task_id);
                 localStorage.removeItem(`content_task_${params.sectionId}`);
                 setLocalTaskRuntime(params.projectId, {
@@ -3815,30 +3784,13 @@ export const projectService = {
                     await new Promise(r => setTimeout(r, pollMs));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                setLocalTaskRuntime(params.projectId, {
-                                    state: 'timed_out',
-                                    taskId: task_id,
-                                    taskType: 'content',
-                                    message: '重生成任务不存在或已过期',
-                                    cancellable: false,
-                                });
-                                localStorage.removeItem(taskStorageKey);
-                                localStorage.removeItem(`content_task_${params.sectionId}`);
-                                callbacks.onError('重生成任务不存在或已过期');
-                                break;
-                            }
-                            continue;
-                        }
-                        const taskStatus = await statusResp.json();
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId);
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                             lastStage = taskStatus.current_stage;
                             callbacks.onStage(lastStage);
                         }
                         if (taskStatus.status === 'done' && taskStatus.result) {
-                            const result = taskStatus.result;
+                            const result = taskStatus.result as any;
                             setLocalTaskRuntime(params.projectId, {
                                 state: 'succeeded',
                                 taskId: task_id,
@@ -3898,7 +3850,21 @@ export const projectService = {
                             break;
                         }
                         pollMs = Math.min(5000, pollMs + 500);
-                    } catch { /* 网络抖动时继续轮询 */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            setLocalTaskRuntime(params.projectId, {
+                                state: 'timed_out',
+                                taskId: task_id,
+                                taskType: 'content',
+                                message: '重生成任务不存在或已过期',
+                                cancellable: false,
+                            });
+                            localStorage.removeItem(taskStorageKey);
+                            localStorage.removeItem(`content_task_${params.sectionId}`);
+                            callbacks.onError('重生成任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '重生成失败');
@@ -4032,29 +3998,12 @@ export const projectService = {
 
         (async () => {
             try {
-                const workflowResp = await bidGeneratorFetch(`/config/workflow-status`);
-                if (workflowResp.ok) {
-                    const workflowStatus = await workflowResp.json();
-                    if (workflowStatus?.content_group_writer?.configured === false) {
-                        callbacks.onError('content_group_writer 工作流未配置，请检查 DIFY_WORKFLOW_CONTENT_GROUP_WRITER');
-                        return;
-                    }
-                }
-                const startResp = await bidGeneratorFetch(`/tasks/start-content-group`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                });
-                if (!startResp.ok) {
-                    let detail = `HTTP ${startResp.status}`;
-                    try {
-                        const body = await startResp.json();
-                        detail = body?.detail || detail;
-                    } catch { /* ignore */ }
-                    callbacks.onError(detail);
+                const workflowStatus = await fetchWorkflowStatusApi().catch(() => null);
+                if (workflowStatus?.content_group_writer?.configured === false) {
+                    callbacks.onError('content_group_writer 工作流未配置，请检查 DIFY_WORKFLOW_CONTENT_GROUP_WRITER');
                     return;
                 }
-                const { task_id } = await startResp.json();
+                const { task_id } = await startContentGroupTask(requestBody);
                 params.blocks.forEach((block) => {
                     localStorage.setItem(buildContentTaskStorageKey(params.projectId, block.id), task_id);
                     localStorage.removeItem(`content_task_${block.id}`);
@@ -4102,30 +4051,9 @@ export const projectService = {
                     await new Promise(r => setTimeout(r, pollMs));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusParams = new URLSearchParams({
-                            project_id: params.projectId,
-                            after_event_id: String(lastPartialEventId),
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId, {
+                            afterEventId: lastPartialEventId,
                         });
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?${statusParams.toString()}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                setLocalTaskRuntime(params.projectId, {
-                                    state: 'timed_out',
-                                    taskId: task_id,
-                                    taskType: 'content',
-                                    message: '分组任务不存在或已过期',
-                                    cancellable: false,
-                                });
-                                params.blocks.forEach((block) => {
-                                    localStorage.removeItem(buildContentTaskStorageKey(params.projectId, block.id));
-                                    localStorage.removeItem(`content_task_${block.id}`);
-                                });
-                                callbacks.onError('分组任务不存在或已过期');
-                                break;
-                            }
-                            continue;
-                        }
-                        const taskStatus = await statusResp.json();
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                             lastStage = taskStatus.current_stage;
                             callbacks.onStage(lastStage);
@@ -4235,7 +4163,23 @@ export const projectService = {
                             break;
                         }
                         pollMs = Math.min(5000, pollMs + 500);
-                    } catch { /* 网络异常，忽略并重试 */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            setLocalTaskRuntime(params.projectId, {
+                                state: 'timed_out',
+                                taskId: task_id,
+                                taskType: 'content',
+                                message: '分组任务不存在或已过期',
+                                cancellable: false,
+                            });
+                            params.blocks.forEach((block) => {
+                                localStorage.removeItem(buildContentTaskStorageKey(params.projectId, block.id));
+                                localStorage.removeItem(`content_task_${block.id}`);
+                            });
+                            callbacks.onError('分组任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '分组生成失败');
@@ -4287,47 +4231,31 @@ export const projectService = {
 
         (async () => {
             try {
-                const startResp = await bidGeneratorFetch(`/tasks/start-group-review`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        project_id: params.projectId,
-                        group_id: params.groupId,
-                        group_title: params.groupTitle,
-                        project_summary: projectSummary,
-                        group_outline: buildOutlineNeighborhoodSlice(outline, params.groupId, ''),
-                        group_analysis_context: groupAnalysisContext,
-                        sections,
-                    }),
+                const { task_id } = await startGroupReviewTask({
+                    project_id: params.projectId,
+                    group_id: params.groupId,
+                    group_title: params.groupTitle,
+                    project_summary: projectSummary,
+                    group_outline: buildOutlineNeighborhoodSlice(outline, params.groupId, ''),
+                    group_analysis_context: groupAnalysisContext,
+                    sections,
                 });
-                if (!startResp.ok) {
-                    callbacks.onError(`HTTP ${startResp.status}`);
-                    return;
-                }
-                const { task_id } = await startResp.json();
                 callbacks.onStage(`🚀 评估任务已提交（${task_id.slice(0, 8)}）`);
                 let lastStage = '';
                 while (!controller.signal.aborted) {
                     await new Promise(r => setTimeout(r, 2000));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                callbacks.onError('评估任务不存在或已过期');
-                                break;
-                            }
-                            continue;
-                        }
-                        const taskStatus = await statusResp.json();
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId);
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                             lastStage = taskStatus.current_stage;
                             callbacks.onStage(lastStage);
                         }
                         if (taskStatus.status === 'done' && taskStatus.result) {
+                            const result = taskStatus.result as any;
                             callbacks.onDone({
-                                feedback: String(taskStatus.result.group_feedback || ''),
-                                qualityScore: taskStatus.result.quality_score,
+                                feedback: String(result.group_feedback || ''),
+                                qualityScore: result.quality_score,
                             });
                             break;
                         }
@@ -4343,7 +4271,12 @@ export const projectService = {
                             callbacks.onError(taskStatus.error || '评估失败');
                             break;
                         }
-                    } catch { /* ignore */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            callbacks.onError('评估任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '评估失败');
@@ -4382,25 +4315,13 @@ export const projectService = {
                 firstCheck = false;
                 if (controller.signal.aborted) break;
                 try {
-                    const resp = await bidGeneratorFetch(`/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`);
-                    if (!resp.ok) {
-                        if (resp.status === 404) {
-                            // 后端重启或任务过期 → 静默清理，重置到 idle（用户可凭「重新生成」恢复）
-                            localStorage.removeItem(taskStorageKey);
-                            localStorage.removeItem(`content_task_${sectionId}`);
-                            console.warn(`[content resume] 任务 ${taskId} 已过期，已清除缓存`);
-                            callbacks.onExpired?.();
-                            break;
-                        }
-                        continue; // 其他网络抖动，重试
-                    }
-                    const taskStatus = await resp.json();
+                    const taskStatus = await getTaskStatusApi(taskId, projectId);
                     if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                         lastStage = taskStatus.current_stage;
                         callbacks.onStage(lastStage);
                     }
                     if (taskStatus.status === 'done' && taskStatus.result) {
-                        const r = taskStatus.result;
+                        const r = taskStatus.result as any;
                         const diagramError = extractDiagramErrorMessage(r.diagram_error)
                             || extractDiagramSkipMessage(r.diagram_skip);
                         if (diagramError) {
@@ -4443,7 +4364,16 @@ export const projectService = {
                         localStorage.removeItem(`content_task_${sectionId}`);
                         break;
                     }
-                } catch { /* 网络异常，重试 */ }
+                } catch (error) {
+                    if ((error as any)?.status === 404) {
+                        // 后端重启或任务过期时静默清理，用户可凭“重新生成”恢复。
+                        localStorage.removeItem(taskStorageKey);
+                        localStorage.removeItem(`content_task_${sectionId}`);
+                        console.warn(`[content resume] 任务 ${taskId} 已过期，已清除缓存`);
+                        callbacks.onExpired?.();
+                        break;
+                    }
+                }
             }
         })();
 
@@ -4925,12 +4855,7 @@ export const bidAttachmentService = {
     },
 
     getSourceDocx: async (projectId: string): Promise<Blob> => {
-        const resp = await bidGeneratorFetch(`/projects/${encodeURIComponent(projectId)}/source-docx`);
-        if (!resp.ok) {
-            const msg = await resp.text().catch(() => '');
-            throw new Error(msg || `获取原始 DOCX 失败: HTTP ${resp.status}`);
-        }
-        return await resp.blob();
+        return (await fetchSourceDocxApi(projectId)).blob;
     },
 
     rebuildLocator: async (projectId: string, file: File): Promise<{ blocks: number; locators: number }> => {

@@ -272,6 +272,48 @@ export function fetchTemplateConfig(options: RequestControl & { templateName?: s
   });
 }
 
+/**
+ * 更新标书大纲模板。
+ * @param templateName 模板文件名。
+ * @param templateDict 模板内容。
+ * @returns 后端保存状态。
+ */
+export function updateTemplateConfig(templateName: string, templateDict: unknown) {
+  return apiClient.put<{ status?: string; message?: string }>(
+    `${API_PREFIX}/config/template`,
+    {
+      template_name: templateName,
+      template_dict: templateDict,
+    },
+    { unwrapEnvelope: false },
+  );
+}
+
+/**
+ * 删除标书大纲模板。
+ * @param templateName 模板文件名。
+ * @returns 后端删除状态。
+ */
+export function deleteTemplateConfig(templateName: string) {
+  return apiClient.delete<{ status?: string; message?: string }>(`${API_PREFIX}/config/template`, {
+    query: { template_name: templateName },
+    unwrapEnvelope: false,
+  });
+}
+
+/**
+ * 更新标书全局配置。
+ * @param configDict 全局配置字典。
+ * @returns 后端保存状态。
+ */
+export function updateGlobalConfig(configDict: unknown) {
+  return apiClient.put<{ status?: string; message?: string }>(
+    `${API_PREFIX}/config/global`,
+    { config_dict: configDict },
+    { unwrapEnvelope: false },
+  );
+}
+
 export function fetchSupportedEntities(options: RequestControl = {}) {
   return apiClient.get<{ entities?: Record<string, string>; description?: string }>(`${API_PREFIX}/entities`, {
     signal: options.signal,
@@ -428,8 +470,8 @@ export function uploadProjectPdf(projectId: string, file: File) {
 }
 
 /**
- * Legacy 标书脱敏路由。
- * 该端点仍由 legacy router 承载，属于 PIPT 统一后端迁移的 blocked_conflict 区域。
+ * 标书脱敏兼容路由。
+ * 该端点由 apps/api 原生路由承载；底层识别引擎仍通过统一 PIPT provider 适配 legacy DesensitizeEngine。
  * 新版原生组件不要新增调用；需要平台 PIPT 状态或能力时使用 /pipt-gateway/* 对应 Service。
  */
 export function legacyDesensitizeText(input: {
@@ -541,16 +583,94 @@ export async function startAnalyzeTask(projectId: string, selectedNodeIds: strin
  * 启动提取后台任务。
  * 路由由 apps/api 原生拥有；任务运行态仍复用兼容 TaskManager 存储。
  */
-export async function startExtractTask(projectId: string, file: File, projectName: string) {
+export async function startExtractTask(input: {
+  projectId: string;
+  file: File;
+  projectName: string;
+  enableDesensitize?: boolean;
+  desensitizeProfile?: string;
+  useVisionParsing?: boolean;
+}) {
   const form = new FormData();
-  form.append("file", file);
-  form.append("project_id", projectId);
-  form.append("project_name", projectName);
-  form.append("enable_desensitize", "true");
-  form.append("desensitize_profile", "tender");
+  form.append("file", input.file);
+  form.append("project_id", input.projectId);
+  form.append("project_name", input.projectName);
+  form.append("enable_desensitize", String(input.enableDesensitize !== false));
+  form.append("desensitize_profile", input.desensitizeProfile || "tender");
+  form.append("use_vision_parsing", String(Boolean(input.useVisionParsing)));
   return apiClient.post<{ task_id: string }>(`${API_PREFIX}/tasks/start-extract`, form, {
     unwrapEnvelope: false,
   });
+}
+
+/**
+ * 启动正文生成后台任务。
+ * @param body 已按 legacy 任务契约组装好的正文生成入参。
+ * @returns 后端任务 ID。
+ */
+export function startContentTask(body: Record<string, unknown>) {
+  return apiClient.post<{ task_id: string }>(`${API_PREFIX}/tasks/start-content`, body, {
+    unwrapEnvelope: false,
+  });
+}
+
+/**
+ * 启动正文重生成后台任务。
+ * @param body 已按 legacy 任务契约组装好的正文重生成入参。
+ * @returns 后端任务 ID。
+ */
+export function startContentRewriteTask(body: Record<string, unknown>) {
+  return apiClient.post<{ task_id: string }>(`${API_PREFIX}/tasks/start-content-rewrite`, body, {
+    unwrapEnvelope: false,
+  });
+}
+
+/**
+ * 启动分组正文生成后台任务。
+ * @param body 已按 legacy 任务契约组装好的分组生成入参。
+ * @returns 后端任务 ID。
+ */
+export function startContentGroupTask(body: Record<string, unknown>) {
+  return apiClient.post<{ task_id: string }>(`${API_PREFIX}/tasks/start-content-group`, body, {
+    unwrapEnvelope: false,
+  });
+}
+
+/**
+ * 启动分组评估后台任务。
+ * @param body 已按 legacy 任务契约组装好的分组评估入参。
+ * @returns 后端任务 ID。
+ */
+export function startGroupReviewTask(body: Record<string, unknown>) {
+  return apiClient.post<{ task_id: string }>(`${API_PREFIX}/tasks/start-group-review`, body, {
+    unwrapEnvelope: false,
+  });
+}
+
+/**
+ * 启动图表批量生成后台任务。
+ * @param input.projectId 项目 ID。
+ * @param input.diagramRequests 图表补写请求列表。
+ * @param input.signal 可选取消信号。
+ * @returns 后端任务 ID。
+ */
+export function startDiagramBatchTask(input: {
+  projectId: string;
+  diagramRequests: unknown[];
+  signal?: AbortSignal;
+}) {
+  return apiClient.post<{ task_id: string }>(
+    `${API_PREFIX}/tasks/start-diagram-batch`,
+    {
+      project_id: input.projectId,
+      diagram_requests: input.diagramRequests,
+      enable_diagrams: true,
+    },
+    {
+      signal: input.signal,
+      unwrapEnvelope: false,
+    },
+  );
 }
 
 /**
@@ -597,11 +717,33 @@ export async function startOutlineTask(project: BidProjectRecord, expectedTotalW
  * 查询任务状态。
  * 路由由 apps/api 原生拥有；状态仍会叠加兼容 TaskManager 的进程内运行态。
  */
-export async function getTaskStatus(taskId: string, projectId?: string, options: RequestControl = {}) {
+export async function getTaskStatus(
+  taskId: string,
+  projectId?: string,
+  options: RequestControl & { afterEventId?: number } = {},
+) {
   return apiClient.get<BidTaskStatus>(`${API_PREFIX}/tasks/${encodeURIComponent(taskId)}/status`, {
-    query: projectId ? { project_id: projectId } : undefined,
+    query: {
+      project_id: projectId || undefined,
+      after_event_id: options.afterEventId,
+    },
     signal: options.signal,
     unwrapEnvelope: false,
+  });
+}
+
+/**
+ * 打开任务进度 SSE 原始响应。
+ * @param taskId 后台任务 ID。
+ * @param projectId 项目 ID；用于后端定位兼容运行态。
+ * @param signal 可选取消信号。
+ * @returns 原始 SSE Response，供 legacy UI 继续按原协议读取。
+ */
+export function fetchTaskProgressResponse(taskId: string, projectId: string, signal?: AbortSignal) {
+  return apiClient.raw("GET", `${API_PREFIX}/tasks/${encodeURIComponent(taskId)}/progress`, {
+    query: projectId ? { project_id: projectId } : undefined,
+    headers: { Accept: "text/event-stream, application/json" },
+    signal,
   });
 }
 
@@ -635,6 +777,31 @@ export function cancelTask(taskId: string, projectId?: string) {
       unwrapEnvelope: false,
     },
   );
+}
+
+/**
+ * 读取图表 artifact 文本内容。
+ * @param diagramId 图表 artifact ID。
+ * @param extension artifact 扩展名，当前支持 svg/mmd。
+ * @param projectId 可选项目 ID，用于后端定位项目缓存。
+ * @returns artifact 文本内容。
+ */
+export async function fetchDiagramArtifactText(
+  diagramId: string,
+  extension: "svg" | "mmd",
+  projectId?: string,
+) {
+  const response = await apiClient.raw(
+    "GET",
+    `${API_PREFIX}/diagram-artifacts/${encodeURIComponent(diagramId)}.${extension}`,
+    {
+      query: projectId ? { project_id: projectId } : undefined,
+      headers: {
+        Accept: extension === "svg" ? "image/svg+xml,text/plain,*/*" : "text/plain,*/*",
+      },
+    },
+  );
+  return response.text();
 }
 
 /**
@@ -931,6 +1098,25 @@ export function legacyAnalyzeNode(projectId: string, nodeId: string, nodeLabel: 
 }
 
 /**
+ * 打开单节点分析 SSE 原始响应。
+ * @param projectId 项目 ID。
+ * @param nodeId 解析框架节点 ID。
+ * @param nodeLabel 节点标题。
+ * @param extractionPrompt 节点提取提示词。
+ * @returns 原始 SSE Response，保留 legacy UI 的逐 chunk 渲染行为。
+ */
+export function fetchAnalyzeNodeResponse(projectId: string, nodeId: string, nodeLabel: string, extractionPrompt = "") {
+  return apiClient.raw("POST", `${API_PREFIX}/projects/${encodeURIComponent(projectId)}/analyze-node`, {
+    headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" },
+    body: {
+      node_id: nodeId,
+      node_label: nodeLabel,
+      extraction_prompt: extractionPrompt,
+    },
+  });
+}
+
+/**
  * 保存项目分析报告快照。
  * @param projectId 项目 ID。
  * @param nodes 已存在的分析报告节点数组；该接口只持久化快照，不触发报告生成或导出。
@@ -975,6 +1161,18 @@ export async function fetchProtectedAsset(path: string): Promise<DownloadedBlob>
     blob: await response.blob(),
     fileName: pickFileNameFromDisposition(response.headers.get("Content-Disposition"), "asset"),
   };
+}
+
+/**
+ * 读取受保护资源 Blob。
+ * @param path 后端返回的 `/api/...`、`/api/v1/bid-generator/...` 或完整 URL 路径。
+ * @returns 资源 Blob，调用方负责创建和释放 object URL。
+ */
+export async function fetchProtectedAssetBlob(path: string): Promise<Blob> {
+  const response = await apiClient.raw("GET", normalizeApiAssetPath(path), {
+    headers: { Accept: "*/*" },
+  });
+  return response.blob();
 }
 
 export async function fetchSourceDocx(projectId: string): Promise<DownloadedBlob> {

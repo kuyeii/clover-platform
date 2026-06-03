@@ -1,13 +1,22 @@
 from __future__ import annotations
 
-import os
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, Protocol
+
+from app.services.pipt_engine import DesensitizeEngine
 
 
 class PiptRecognitionProvider(Protocol):
     """PIPT 识别提供方边界，统一后端业务层只依赖该协议。"""
+
+    def recognize(
+        self,
+        *,
+        text: str,
+        target_entities: list[str],
+        llm_mode: str | None = None,
+    ) -> list[Any]:
+        """识别文本中的敏感实体，返回兼容 legacy EntityItem 的对象列表。"""
 
     def desensitize(
         self,
@@ -22,8 +31,22 @@ class PiptRecognitionProvider(Protocol):
         """识别并脱敏文本，返回兼容 legacy DesensitizeResult 的对象。"""
 
 
-class LegacyPiptRecognitionProvider:
-    """当前 PIPT 识别引擎仍在 legacy，统一后端通过该 provider 适配。"""
+class NativePiptRecognitionProvider:
+    """统一后端 PIPT 识别引擎 provider。"""
+
+    def recognize(
+        self,
+        *,
+        text: str,
+        target_entities: list[str],
+        llm_mode: str | None = None,
+    ) -> list[Any]:
+        entities = _native_desensitize_engine().recognize(
+            text,
+            target_entities,
+            llm_mode_override=llm_mode,
+        )
+        return entities if isinstance(entities, list) else []
 
     def desensitize(
         self,
@@ -35,7 +58,7 @@ class LegacyPiptRecognitionProvider:
         llm_mode: str | None = None,
         audit_context: dict[str, Any] | None = None,
     ) -> Any:
-        return _legacy_desensitize_engine().desensitize(
+        return _native_desensitize_engine().desensitize(
             text=text,
             target_entities=target_entities,
             method=method,
@@ -55,7 +78,7 @@ def desensitize_with_platform_recognizer(
     llm_mode: str | None = None,
     audit_context: dict[str, Any] | None = None,
 ) -> Any:
-    """统一 PIPT 识别入口；当前底层通过 legacy adapter 调用 DesensitizeEngine。"""
+    """统一 PIPT 识别入口。"""
     return get_recognition_provider().desensitize(
         text=text,
         target_entities=target_entities,
@@ -66,35 +89,25 @@ def desensitize_with_platform_recognizer(
     )
 
 
+def recognize_with_platform_recognizer(
+    *,
+    text: str,
+    target_entities: list[str],
+    llm_mode: str | None = None,
+) -> list[Any]:
+    """统一 PIPT 实体识别入口；业务模块不得直接导入 legacy engine。"""
+    return get_recognition_provider().recognize(
+        text=text,
+        target_entities=target_entities,
+        llm_mode=llm_mode,
+    )
+
+
 @lru_cache(maxsize=1)
 def get_recognition_provider() -> PiptRecognitionProvider:
-    return LegacyPiptRecognitionProvider()
+    return NativePiptRecognitionProvider()
 
 
 @lru_cache(maxsize=1)
-def _legacy_desensitize_engine() -> Any:
-    _ensure_legacy_runtime()
-    from app.api_lite.engine import DesensitizeEngine
-
+def _native_desensitize_engine() -> DesensitizeEngine:
     return DesensitizeEngine()
-
-
-def _ensure_legacy_runtime() -> None:
-    repo_root = _repo_root()
-    legacy_root = repo_root / "legacy" / "bid-generator"
-    pipt_root = legacy_root / "pipt-flask"
-    os.environ.setdefault("PRO_ENGINE_ROOT", str(legacy_root))
-    os.environ.setdefault("PIPT_ROOT", str(pipt_root))
-    import app as platform_app
-
-    legacy_app_path = str(pipt_root / "app")
-    if legacy_app_path not in platform_app.__path__:
-        platform_app.__path__.append(legacy_app_path)
-
-
-def _repo_root() -> Path:
-    current = Path(__file__).resolve()
-    for candidate in (current, *current.parents):
-        if (candidate / "legacy" / "bid-generator").is_dir() and (candidate / "packages" / "py_common").is_dir():
-            return candidate
-    raise RuntimeError("Cannot locate clover-platform root")

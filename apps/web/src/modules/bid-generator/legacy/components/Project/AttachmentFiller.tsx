@@ -122,7 +122,7 @@ export function AttachmentFiller({ project }: Props) {
                 {!bidderConfigured && (
                     <div className="mb-3 flex items-start gap-2 text-sm text-warning bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-3 py-2 rounded-lg">
                         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                        侧边栏"投标人信息"尚未配置，附件将以占位符填充，建议先完善。
+                        投标人信息尚未配置，附件将以占位符填充，建议先完善。
                     </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">

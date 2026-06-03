@@ -1,4 +1,4 @@
-import { bidGeneratorFetch } from './apiBase';
+import { fetchProtectedAssetBlob } from '../../services/bidGeneratorApi';
 
 const objectUrlCache = new Map<string, string>();
 const pendingUrlCache = new Map<string, Promise<string>>();
@@ -58,12 +58,9 @@ export async function resolveProtectedAssetUrl(path: string): Promise<string> {
         return pending;
     }
 
-    const next = bidGeneratorFetch(normalizedPath)
-        .then(async (response) => {
-            if (!response.ok) {
-                throw new Error(`资源加载失败: HTTP ${response.status}`);
-            }
-            const objectUrl = URL.createObjectURL(await response.blob());
+    const next = fetchProtectedAssetBlob(normalizedPath)
+        .then((blob) => {
+            const objectUrl = URL.createObjectURL(blob);
             objectUrlCache.set(normalizedPath, objectUrl);
             return objectUrl;
         })

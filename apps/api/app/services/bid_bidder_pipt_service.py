@@ -22,7 +22,50 @@ BIDDER_FIELD_SPECS: tuple[tuple[str, str, str], ...] = (
     ("projectLead", "name", "项目负责人"),
     ("phone", "phone", "联系电话"),
 )
+REQUIRED_BIDDER_FIELDS: tuple[tuple[str, str], ...] = (
+    ("orgName", "投标单位全称"),
+    ("legalRep", "法定代表人"),
+    ("projectLead", "项目负责人"),
+    ("phone", "联系电话"),
+)
 DOC_DATE_TOKEN = "@@PIPT:v1:e900005:kb1d0c005@@"
+
+
+class BidderInfoRequiredError(ValueError):
+    def __init__(self, missing_fields: list[str]) -> None:
+        self.missing_fields = missing_fields
+        super().__init__(f"正文生成前必须先配置投标人信息：{', '.join(missing_fields)}")
+
+
+def validate_required_bidder_info(bidder_info: Mapping[str, Any] | None) -> None:
+    """校验正文生成必需的投标人信息；入参为 bidder_info，缺字段时抛出兼容 legacy 的错误文案。"""
+    if not isinstance(bidder_info, Mapping):
+        raise BidderInfoRequiredError([label for _, label in REQUIRED_BIDDER_FIELDS])
+    missing = [
+        label
+        for key, label in REQUIRED_BIDDER_FIELDS
+        if not _normalize_bidder_value(bidder_info.get(key))
+    ]
+    if missing:
+        raise BidderInfoRequiredError(missing)
+
+
+def merge_bidder_pipt_context(
+    *,
+    mapping_table: Mapping[str, Any] | None,
+    placeholder_hint: str | None,
+    bidder_info: Mapping[str, Any] | None,
+) -> tuple[dict[str, str], str, dict[str, Any]]:
+    """合并请求已有脱敏上下文与投标人配置 PIPT 上下文；入参出参与 legacy merge_bidder_pipt_context 保持一致。"""
+    base_mapping = {str(key): str(value) for key, value in dict(mapping_table or {}).items()}
+    base_hint = str(placeholder_hint or "").strip()
+    bidder_context = normalize_bidder_pipt_payload({"bidder_info": dict(bidder_info or {})})
+    bidder_mapping = bidder_context.get("mapping_table") or {}
+    if isinstance(bidder_mapping, Mapping):
+        base_mapping.update({str(key): str(value) for key, value in bidder_mapping.items()})
+    bidder_hint = str(bidder_context.get("placeholder_hint") or "").strip()
+    merged_hint = "\n\n".join(part for part in (base_hint, bidder_hint) if part)
+    return base_mapping, merged_hint, bidder_context
 
 
 def normalize_bidder_pipt_payload(body: Mapping[str, Any]) -> dict[str, Any]:

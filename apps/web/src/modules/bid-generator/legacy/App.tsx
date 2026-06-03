@@ -1,15 +1,15 @@
 import { useEffect, useCallback } from 'react';
 import { Routes, Route, useParams, useNavigate, Navigate, useMatch } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
-import { KnowledgeHub } from './components/Dashboard/KnowledgeHub';
 import { ProjectCreator } from './components/Project/ProjectCreator';
 import RequirementsReview from './components/Dashboard/RequirementsReview';
 import { OutlineGenerator } from './components/Project/OutlineGenerator';
 import { TemplateEditor } from './components/TemplateEditor';
 import { BidDocWorkbench } from './components/BidDocWorkbench';
 import { TechProposalGate } from './components/TechProposalGate';
+import { BidderInfoDialog } from './components/BidderInfoDialog';
 import { StageTopBar, getCurrentStageIndex, type StageId } from './components/StageTopBar';
-import type { Project, TechProposalConfig } from './services/projectService';
+import type { BidderInfo, Project, TechProposalConfig } from './services/projectService';
 import { buildInitialOutlineFromTechnicalHeadings, projectService } from './services/projectService';
 import { shouldBlockProjectNavigation } from './services/navigationPolicy';
 import { useState } from 'react';
@@ -44,6 +44,7 @@ function ProjectView({
   const [isContentBusy, setIsContentBusy] = useState(false);
   const [exportingBidDoc, setExportingBidDoc] = useState(false);
   const [isStartingOutline, setIsStartingOutline] = useState(false);
+  const [showBidderGate, setShowBidderGate] = useState(false);
   const activeBusyMeta = projectService.getProjectBusyMeta(activeProject);
 
   useEffect(() => {
@@ -76,10 +77,9 @@ function ProjectView({
           window.alert('大纲尚未生成完成，请等待大纲任务结束后再进入技术方案。');
           return;
         }
-        projectService.update(activeProject.id, { status: 'editing' });
-        refreshProjects();
+        setShowBidderGate(true);
+        return;
       }
-      navigate(`/projects/${id}/tech`);
     } else if (action === 'go_bid') {
       // 技术方案完成，更新项目状态再跳转
       if (activeProject) {
@@ -140,6 +140,15 @@ function ProjectView({
       .finally(() => {
         setIsStartingOutline(false);
       });
+  };
+
+  const handleBidderGateConfirm = (bidderInfo: BidderInfo) => {
+    if (!activeProject || !id) return;
+    projectService.updateBidderInfo(activeProject.id, bidderInfo);
+    projectService.update(activeProject.id, { status: 'editing' });
+    refreshProjects();
+    setShowBidderGate(false);
+    navigate(`/projects/${id}/tech`);
   };
 
   // 大纲生成完成：保持在大纲页（状态 outline_ready），由用户点「下一步」再进技术方案
@@ -313,6 +322,15 @@ function ProjectView({
         initialConfig={activeProject?.targetConfig}
         disabled={isStartingOutline}
       />
+      <BidderInfoDialog
+        visible={showBidderGate}
+        title="投标人信息配置"
+        subtitle="进入技术方案前请确认投标人信息"
+        initialValue={activeProject?.bidderInfo}
+        submitLabel="进入技术方案"
+        onCancel={() => setShowBidderGate(false)}
+        onConfirm={handleBidderGateConfirm}
+      />
     </>
   );
 }
@@ -383,10 +401,9 @@ export default function App() {
 
   // 从 URL 读取当前活跃项目 id 和全局视图
   const projectMatch = useMatch('/projects/:id/:tab');
-  const knowledgeMatch = useMatch('/knowledge');
   const activeProjectId = projectMatch?.params.id ?? null;
   const activeProject = projects.find(p => p.id === activeProjectId) ?? null;
-  const globalTab: 'project' | 'knowledge' = knowledgeMatch ? 'knowledge' : 'project';
+  const globalTab: 'project' = 'project';
 
   const isProjectBusy = useCallback((proj: Project): boolean => {
     return projectService.getProjectBusyMeta(proj).busy;
@@ -491,26 +508,19 @@ export default function App() {
       <Sidebar
         projects={projects}
         activeProjectId={activeProjectId}
-        activeProject={activeProject}
         globalTab={globalTab}
         onSelectProject={handleSelectProject}
         onNewProject={() => guardNavigation('新建项目', () => navigate('/'))}
         onDeleteProject={handleDeleteProject}
-        onOpenKnowledge={() => guardNavigation('知识库管理', () => navigate('/knowledge'))}
-        onBidderInfoUpdated={refreshProjects}
         onRepairLocks={handleRepairZombieLocks}
         repairingLocks={repairingLocks}
+        projectsLoading={bootstrapping}
         lockedProjectId={activeProjectBusy ? activeProjectId : null}
         disableNewProject={activeProjectBusy}
       />
 
       {/* 右侧主内容区 */}
       <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
-        {bootstrapping ? (
-          <div className="border-b border-[var(--color-info-border)] bg-[var(--color-info-bg)] px-6 py-3 text-sm text-[var(--color-info-text)]">
-            正在同步标书项目与任务状态...
-          </div>
-        ) : null}
         {bootstrapError ? (
           <div className="border-b border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-6 py-3 text-sm text-[var(--color-warning-text)]">
             {bootstrapError}
@@ -521,9 +531,6 @@ export default function App() {
           <Route path="/" element={
             <ProjectCreator onProjectCreated={handleProjectCreated} />
           } />
-
-          {/* 知识库 */}
-          <Route path="/knowledge" element={<KnowledgeHub />} />
 
           {/* 项目视图（必须有 tab） */}
           <Route path="/projects/:id/:tab" element={

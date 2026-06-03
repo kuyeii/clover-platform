@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import asyncio
 import sys
 import unittest
@@ -545,7 +546,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                     "updated_at": "2026-06-01T00:00:00+00:00",
                 },
             ),
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = asyncio.run(service.test_locators_payload("proj-1"))
 
@@ -654,7 +655,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             root = Path(tmp)
             with (
                 patch.object(service, "_bid_generator_legacy_root", return_value=root),
-                patch.object(service, "_ensure_legacy_imported") as legacy_import,
+                patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
             ):
                 payload = _run_async(
                     service.update_template_config_payload(
@@ -676,7 +677,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             template_path.write_text("id: custom\n", encoding="utf-8")
             with (
                 patch.object(service, "_bid_generator_legacy_root", return_value=root),
-                patch.object(service, "_ensure_legacy_imported") as legacy_import,
+                patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
             ):
                 payload = _run_async(service.delete_template_config_payload("custom.yaml"))
 
@@ -695,7 +696,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             root = Path(tmp)
             with (
                 patch.object(service, "_bid_generator_legacy_root", return_value=root),
-                patch.object(service, "_ensure_legacy_imported") as legacy_import,
+                patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
             ):
                 payload = _run_async(
                     service.update_global_config_payload({"config_dict": {"workspace": {"data_dir": "./data"}}})
@@ -748,7 +749,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(service, "_pdf_cache_path", return_value=pdf_path),
             patch.object(service, "_raw_doc_cache_path", return_value=raw_path),
             patch.object(service, "_docx_cache_path", return_value=docx_path),
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = service.delete_project_caches_payload("proj-1")
 
@@ -772,7 +773,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(service, "_pdf_cache_path", return_value=pdf_path),
             patch.object(service, "_raw_doc_cache_path", return_value=raw_path),
             patch.object(service, "_docx_cache_path", return_value=docx_path),
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = service.delete_project_caches_payload("proj-1")
 
@@ -897,6 +898,68 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
         self.assertEqual(getattr(ctx.exception, "status_code", None), 400)
 
+    def test_execute_diagram_for_section_runs_natively_without_legacy_task_routes(self) -> None:
+        class FakeTaskManager:
+            def __init__(self) -> None:
+                self.stages: list[str] = []
+                self.dify_task_ids: list[str] = []
+
+            async def reserve_diagram_slot(self, project_id: str, max_diagrams: int) -> bool:
+                self.reserved = (project_id, max_diagrams)
+                return True
+
+            async def release_diagram_slot(self, project_id: str) -> None:
+                raise AssertionError("unexpected release")
+
+            def update_stage(self, task_id: str, stage: str) -> None:
+                self.stages.append(stage)
+
+            def set_dify_task_id(self, task_id: str, dify_task_id: str) -> None:
+                self.dify_task_ids.append(dify_task_id)
+
+            def get_task(self, task_id: str) -> SimpleNamespace:
+                return SimpleNamespace(status="running")
+
+        async def fake_diagram_stream(*args, **kwargs):
+            _ = args, kwargs
+            yield {"dify_task_id": "dify-diagram-1"}
+            yield {"__finished__": True, "outputs": {"svg": "<svg><text>架构</text></svg>"}}
+
+        task_manager = FakeTaskManager()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            with (
+                patch.object(service, "_task_manager", return_value=task_manager),
+                patch.object(service, "_call_dify_workflow_stream", new=fake_diagram_stream),
+                patch.object(service, "_diagram_artifact_dir", return_value=root),
+            ):
+                diagrams, reserved, error = _run_async(
+                    service._execute_diagram_for_section(
+                        task_id="task-1",
+                        project_id="proj-1",
+                        diagram_key="diagram-key",
+                        enable_diagrams=True,
+                        need_diagram=True,
+                        diagram_brief="生成系统架构图",
+                        max_diagrams=1,
+                        diagram_type_hint="architecture",
+                        section_title="总体架构",
+                        writing_hint="说明模块、接口、数据流",
+                        raw_keywords="架构, 接口",
+                        raw_global_outline="总体架构",
+                    )
+                )
+
+            self.assertEqual(len(list((root / "proj-1").glob("*.svg"))), 1)
+
+        self.assertFalse(hasattr(service, "_legacy_task_routes_module"))
+        self.assertTrue(reserved)
+        self.assertIsNone(error)
+        self.assertEqual(diagrams[0]["type"], "architecture")
+        self.assertIn("svg_url", diagrams[0])
+        self.assertEqual(task_manager.dify_task_ids, ["dify-diagram-1"])
+        self.assertIn("🎨 图表生成中", task_manager.stages)
+
     def test_get_task_status_payload_maps_running_legacy_task(self) -> None:
         task = SimpleNamespace(
             task_id="task-1",
@@ -916,7 +979,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             updated_at=1780296060,
         )
 
-        with patch.object(service, "_require_legacy_task_owner", return_value=task):
+        with patch.object(service, "_require_task_owner", return_value=task):
             payload = service.get_task_status_payload("task-1", project_id="proj-1", after_event_id=1)
 
         self.assertEqual(payload["task_id"], "task-1")
@@ -930,6 +993,65 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertEqual(payload["last_partial_event_id"], 3)
         self.assertIsNone(payload["error"])
         self.assertTrue(payload["cancellable"])
+
+    def test_ensure_project_slot_native_uses_task_manager_without_legacy_route(self) -> None:
+        class FakeTaskManager:
+            def ensure_backend_ready(self) -> None:
+                return None
+
+            def get_limits(self) -> dict[str, int]:
+                return {
+                    "max_global_running": 4,
+                    "max_project_running": 1,
+                    "max_project_content_running": 2,
+                    "max_kb_sync_running": 1,
+                }
+
+            async def try_acquire_task_slot(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+                return True, {"reason": "ok"}
+
+        task_manager = FakeTaskManager()
+        with (
+            patch.object(service, "_task_manager", return_value=task_manager),
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
+        ):
+            _run_async(service._ensure_project_slot_native("proj-1", "content"))
+
+        legacy_import.assert_not_called()
+        self.assertEqual(task_manager.args[:2], ("proj-1", "content"))
+        self.assertEqual(task_manager.kwargs["max_project_running"], 2)
+        self.assertTrue(task_manager.kwargs["enforce_project_limit"])
+
+    def test_ensure_project_slot_native_maps_limit_error(self) -> None:
+        class FakeTaskManager:
+            def ensure_backend_ready(self) -> None:
+                return None
+
+            def get_limits(self) -> dict[str, int]:
+                return {
+                    "max_global_running": 4,
+                    "max_project_running": 1,
+                    "max_project_content_running": 2,
+                    "max_kb_sync_running": 1,
+                }
+
+            async def try_acquire_task_slot(self, *args, **kwargs):
+                _ = args, kwargs
+                return False, {
+                    "reason": "project_limit",
+                    "max_project_running": 2,
+                    "running_project": 2,
+                }
+
+        with patch.object(service, "_task_manager", return_value=FakeTaskManager()):
+            with self.assertRaises(Exception) as ctx:
+                _run_async(service._ensure_project_slot_native("proj-1", "content"))
+
+        self.assertEqual(getattr(ctx.exception, "status_code", None), 409)
+        self.assertEqual(getattr(ctx.exception, "code", ""), "TASK_LIMIT_REACHED")
+        self.assertIn("正在运行 2 个正文任务", str(ctx.exception))
 
     def test_get_task_status_payload_maps_done_legacy_task(self) -> None:
         task = SimpleNamespace(
@@ -947,7 +1069,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             updated_at=1780296060,
         )
 
-        with patch.object(service, "_require_legacy_task_owner", return_value=task):
+        with patch.object(service, "_require_task_owner", return_value=task):
             payload = service.get_task_status_payload("task-1")
 
         self.assertEqual(payload["state"], "succeeded")
@@ -1012,14 +1134,14 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
-            patch.object(service, "_legacy_validate_required_bidder_info", return_value=None),
+            patch.object(service, "_task_manager", return_value=task_manager),
+            patch.object(service, "_validate_required_bidder_info", return_value=None),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
             patch.object(service, "_get_workflow_key", side_effect=lambda name: "content-key" if name in {"content_writer", "diagram_generator"} else ""),
-            patch.object(service, "_legacy_compose_runtime_writing_hint", return_value="合成提示"),
+            patch.object(service, "_compose_runtime_writing_hint", return_value="合成提示"),
             patch.object(
                 service,
-                "_legacy_merge_bidder_pipt_context",
+                "_merge_bidder_pipt_context",
                 return_value=(
                     {"@@PIPT:v1:e000001:k11111111@@": "张三"},
                     "占位符提示",
@@ -1041,7 +1163,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_persist_content_result_to_project", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_content_task_payload(
@@ -1059,8 +1180,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload, {"task_id": "task-content-1", "section_id": "sec-1"})
         self.assertEqual(task_manager.created, [("content", "proj-1", "content_writer")])
         self.assertIn("✍️ 正文生成", task_manager.stages)
@@ -1121,13 +1240,13 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
-            patch.object(service, "_legacy_validate_required_bidder_info", return_value=None),
+            patch.object(service, "_task_manager", return_value=task_manager),
+            patch.object(service, "_validate_required_bidder_info", return_value=None),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
             patch.object(service, "_get_workflow_key", return_value="rewrite-key"),
             patch.object(
                 service,
-                "_legacy_merge_bidder_pipt_context",
+                "_merge_bidder_pipt_context",
                 return_value=(
                     {"@@PIPT:v1:e000001:k11111111@@": "张三"},
                     "占位符提示",
@@ -1143,7 +1262,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_persist_content_result_to_project", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_content_rewrite_task_payload(
@@ -1160,8 +1278,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload, {"task_id": "task-rewrite-1", "section_id": "sec-1"})
         self.assertEqual(task_manager.created, [("content", "proj-1", "content_rewrite")])
         self.assertEqual(task_manager.result["done"], True)
@@ -1229,13 +1345,13 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
-            patch.object(service, "_legacy_validate_required_bidder_info", return_value=None),
+            patch.object(service, "_task_manager", return_value=task_manager),
+            patch.object(service, "_validate_required_bidder_info", return_value=None),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
             patch.object(service, "_get_workflow_key", side_effect=lambda name: "group-key" if name == "content_group_writer" else ""),
             patch.object(
                 service,
-                "_legacy_merge_bidder_pipt_context",
+                "_merge_bidder_pipt_context",
                 return_value=(
                     {"@@PIPT:v1:e000001:k11111111@@": "张三"},
                     "占位符提示",
@@ -1246,7 +1362,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_persist_group_content_result_to_project", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_content_group_task_payload(
@@ -1280,8 +1395,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload, {"task_id": "task-group-1", "group_id": "group-a"})
         self.assertEqual(task_manager.created, [("content", "proj-1", "content_group_writer")])
         self.assertEqual(len(task_manager.partial_events), 2)
@@ -1344,13 +1457,12 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
             patch.object(service, "_get_workflow_key", side_effect=lambda name: "review-key" if name == "group_review_writer" else ""),
             patch.object(service, "_call_dify_workflow_stream", new=fake_stream),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_group_review_task_payload(
@@ -1369,8 +1481,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload, {"task_id": "task-review-1", "group_id": "group-a"})
         self.assertEqual(task_manager.created, [("content", "proj-1", "group_review_writer")])
         self.assertIn("🧾 H2 章节评估中", task_manager.stages)
@@ -1418,7 +1528,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
             patch.object(service, "_get_workflow_key", side_effect=lambda name: "diagram-key" if name == service._get_diagram_workflow_name() else ""),
             patch.object(
@@ -1439,7 +1549,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             ),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_diagram_task_payload(
@@ -1456,8 +1565,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload, {"task_id": "task-diagram-1", "section_id": "sec-1"})
         self.assertEqual(task_manager.created, [("diagram", "proj-1", service._get_diagram_workflow_name())])
         self.assertIn("🎨 独立图表任务启动", task_manager.stages)
@@ -1529,13 +1636,12 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
             patch.object(service, "_get_workflow_key", side_effect=lambda name: "diagram-key" if name == service._get_diagram_workflow_name() else ""),
             patch.object(service, "_run_diagram_request", new=AsyncMock(side_effect=results)),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_diagram_batch_task_payload(
@@ -1550,8 +1656,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload, {"task_id": "task-diagram-batch-1", "count": 2})
         self.assertEqual(task_manager.created, [("diagram", "proj-1", service._get_diagram_workflow_name())])
         self.assertEqual(len(task_manager.partial_events), 2)
@@ -1560,23 +1664,23 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertEqual(len(task_manager.result["failed_sections"]), 1)
         self.assertEqual(task_manager.result["diagrams_count"], 1)
 
-    def test_require_legacy_task_owner_rejects_project_mismatch(self) -> None:
+    def test_require_task_owner_rejects_project_mismatch(self) -> None:
         task_manager = Mock()
         task_manager.get_task.return_value = SimpleNamespace(task_id="task-1", project_id="proj-1")
 
-        with patch.object(service, "_legacy_task_manager", return_value=task_manager):
+        with patch.object(service, "_task_manager", return_value=task_manager):
             with self.assertRaises(Exception) as ctx:
-                service._require_legacy_task_owner("task-1", "other")
+                service._require_task_owner("task-1", "other")
 
         self.assertEqual(getattr(ctx.exception, "status_code", None), 403)
 
-    def test_require_legacy_task_owner_returns_404_when_task_missing(self) -> None:
+    def test_require_task_owner_returns_404_when_task_missing(self) -> None:
         task_manager = Mock()
         task_manager.get_task.return_value = None
 
-        with patch.object(service, "_legacy_task_manager", return_value=task_manager):
+        with patch.object(service, "_task_manager", return_value=task_manager):
             with self.assertRaises(Exception) as ctx:
-                service._require_legacy_task_owner("task-1", None)
+                service._require_task_owner("task-1", None)
 
         self.assertEqual(getattr(ctx.exception, "status_code", None), 404)
 
@@ -1602,11 +1706,11 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         )
 
         with (
-            patch.object(service, "_require_legacy_task_owner", return_value=task),
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_require_task_owner", return_value=task),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_stop_dify_workflows_for_task", return_value=(False, "not_applicable")),
             patch.object(service, "_persist_project_task_runtime", return_value=None) as persist_runtime,
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = _run_async(service.cancel_task_payload("task-1", project_id="proj-1"))
 
@@ -1620,7 +1724,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
     def test_cancel_task_payload_returns_404_when_task_already_finished(self) -> None:
         task = SimpleNamespace(task_id="task-1", project_id="proj-1", task_type="outline", status="done", current_stage="")
-        with patch.object(service, "_require_legacy_task_owner", return_value=task):
+        with patch.object(service, "_require_task_owner", return_value=task):
             with self.assertRaises(Exception) as ctx:
                 _run_async(service.cancel_task_payload("task-1"))
 
@@ -1743,13 +1847,12 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
             patch.object(service, "_get_workflow_key", side_effect=lambda name: "outline-key" if name == "structure_generator" else ""),
             patch.object(service, "_call_dify_workflow_stream", new=fake_stream),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_outline_task_payload(
@@ -1763,8 +1866,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload, {"task_id": "task-outline-1"})
         self.assertEqual(task_manager.created, [("outline", "proj-1", "structure_generator")])
         self.assertEqual(task_manager.partial_result["phase"], "h3_meta_generating")
@@ -1809,18 +1910,17 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
-            patch.object(service, "_legacy_extract_raw_text_with_images", return_value=("原文内容", {"img1": {"name": "示意图"}})),
-            patch.object(service, "_legacy_extract_docx_with_locators", return_value=("定位原文", {"P1": 1}, [{"block_id": "B1"}])),
+            patch.object(service, "_extract_raw_text_with_images_native", return_value=("原文内容", {"img1": {"name": "示意图"}})),
+            patch.object(service, "_extract_docx_with_locators_native", return_value=("定位原文", {"P1": 1}, [{"block_id": "B1"}])),
             patch.object(service, "_persist_project_doc_blocks_snapshot", return_value=None),
             patch.object(service, "_persist_docx_cache", return_value=None),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
             patch.object(service, "_persist_raw_document", return_value=None),
-            patch.object(service, "_legacy_convert_to_pdf_and_cache", return_value="/api/projects/pdf/proj-1"),
+            patch.object(service, "_convert_to_pdf_and_cache_native", return_value="/api/projects/pdf/proj-1"),
             patch.object(service, "_run_bid_pipt_preprocess", return_value={"text": "定位原文", "mapping_table": {}, "mapping_table_count": 0, "placeholder_manifest": {}, "placeholder_policy": {}}),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.start_extract_task_payload(
@@ -1831,8 +1931,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             _run_async(_await_task(task_manager.async_task))
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload["task_id"], "task-extract-1")
         self.assertEqual(task_manager.created, [("extract", "proj-1")])
         self.assertIn("解析文档结构", task_manager.stages)
@@ -1874,16 +1972,16 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
-            patch.object(service, "_legacy_extract_raw_text_with_images", return_value=("第一段 张三 未替换。第二段 张三 已识别。", {})),
-            patch.object(service, "_legacy_extract_docx_with_locators", return_value=("第一段 张三 未替换。第二段 张三 已识别。", {}, [])),
+            patch.object(service, "_extract_raw_text_with_images_native", return_value=("第一段 张三 未替换。第二段 张三 已识别。", {})),
+            patch.object(service, "_extract_docx_with_locators_native", return_value=("第一段 张三 未替换。第二段 张三 已识别。", {}, [])),
             patch.object(service, "_persist_project_doc_blocks_snapshot", return_value=None),
             patch.object(service, "_persist_docx_cache", return_value=None),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
             patch.object(service, "_persist_raw_document", return_value=None),
-            patch.object(service, "_legacy_convert_to_pdf_and_cache", return_value=""),
+            patch.object(service, "_convert_to_pdf_and_cache_native", return_value=""),
             patch.object(
                 service,
                 "_run_bid_pipt_preprocess",
@@ -1982,7 +2080,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             return None
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_get_workflow_key", return_value="doc-key"),
             patch.object(service, "load_docanalysis_framework", return_value=("系统提示", _analysis_framework_nodes())),
             patch.object(service, "_bid_generator_root", return_value=Path("/tmp")),
@@ -2032,7 +2130,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task_manager = FakeTaskManager()
 
         with (
-            patch.object(service, "_legacy_task_manager", return_value=task_manager),
+            patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_get_workflow_key", return_value="doc-key"),
             patch.object(service, "load_docanalysis_framework", return_value=("系统提示", _analysis_framework_nodes())),
             patch.object(service, "_bid_generator_root", return_value=Path("/tmp")),
@@ -2098,7 +2196,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 ),
             ),
             patch.object(service, "_persist_extract_raw_document", return_value=None) as persist_raw,
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.extract_requirements_payload(
@@ -2107,8 +2204,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                     project_id="proj-1",
                 )
             )
-
-        legacy_call.assert_not_called()
         persist_raw.assert_called_once_with("proj-1", "脱敏后原文")
         self.assertEqual(payload["bid_type"], "tech")
         self.assertEqual(payload["project_summary"], "项目概述")
@@ -2151,7 +2246,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 },
             ),
             patch.object(service, "_persist_extract_raw_document", return_value=None),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             response = _run_async(
                 service.extract_requirements_stream_response(
@@ -2164,7 +2258,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             body = _run_async(_collect_streaming_response_text(response))
 
         _ = request
-        legacy_call.assert_not_called()
         self.assertEqual(response.media_type, "text/event-stream")
         self.assertIn('event: progress', body)
         self.assertIn('"label": "解析文档结构"', body)
@@ -2173,6 +2266,67 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertIn('event: result', body)
         self.assertIn('"raw_document": "预处理后原文"', body)
         self.assertIn('"mapping_table": {"@@PIPT:v1:e000001:k11111111@@": "张三"}', body)
+
+    def test_finalize_generated_body_runs_without_legacy_task_routes(self) -> None:
+        with patch.object(service, "_normalize_generated_markdown", side_effect=lambda content, _title: content):
+            payload = service._finalize_generated_body(
+                "```markdown\n一、完全响应招标要求\n\n1.1 提供实施方案\n```",
+                "响应情况",
+                strip_structural_numbering=True,
+            )
+
+        self.assertFalse(hasattr(service, "_legacy_task_routes_module"))
+        self.assertEqual(payload, "完全响应招标要求\n\n提供实施方案")
+
+    def test_compose_runtime_writing_hint_runs_without_legacy_builder(self) -> None:
+        with patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import:
+            payload = service._compose_runtime_writing_hint(
+                "原始写作意图\n\n【正文扩写与技术深度约束（必须遵守）】\n旧约束",
+                "1.1 响应情况",
+                900,
+                "验收, 风险",
+                section_outline_slice="[当前] 1.1 响应情况",
+                analysis_context="招标要求：须完全响应",
+            )
+
+        legacy_import.assert_not_called()
+        self.assertIn("【本节目录层级定位（只用于理解，不得输出）】", payload)
+        self.assertIn("【章内承接与开篇导入要求】", payload)
+        self.assertIn("原始写作意图", payload)
+        self.assertNotIn("旧约束", payload)
+        self.assertIn("招标要求：须完全响应", payload)
+        self.assertIn("目标篇幅：约 900 字", payload)
+        self.assertIn("关键词覆盖：验收, 风险", payload)
+
+    def test_finalize_content_output_resolves_placeholders_natively(self) -> None:
+        with (
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
+            patch.object(service, "_normalize_generated_markdown", side_effect=lambda content, _title: content),
+            patch("app.services.bid_content_placeholder_service.get_engine") as placeholder_engine,
+        ):
+            conn = Mock()
+            exists_result = Mock()
+            exists_result.scalar_one.return_value = False
+            conn.execute.return_value = exists_result
+            placeholder_engine.return_value.begin.return_value.__enter__.return_value = conn
+            content, report = service._finalize_legacy_content_output(
+                "我方人员 {{PIPT_1}} 与 {{BIDDER_ORG}} 完全响应。",
+                "响应情况",
+                request_mapping_flat={
+                    "{{__PIPT_name_1__}}": "张三",
+                    "{{__BIDDER_ORG__}}": "测试公司",
+                },
+            )
+
+        legacy_import.assert_not_called()
+        self.assertEqual(content, "我方人员 张三 与 测试公司 完全响应。")
+        self.assertEqual(
+            report,
+            [
+                {"placeholder": "{{PIPT_1}}", "original": "张三", "status": "success"},
+                {"placeholder": "{{BIDDER_ORG}}", "original": "测试公司", "status": "success"},
+            ],
+        )
 
     def test_rebuild_locator_payload_rebuilds_docx_snapshot_natively(self) -> None:
         blocks = [
@@ -2186,7 +2340,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(service, "_extract_docx_blocks", return_value=blocks) as extract_blocks,
             patch.object(service, "_persist_docx_cache") as persist_docx,
             patch.object(service, "_persist_project_doc_blocks_snapshot") as persist_snapshot,
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = _run_async(service.rebuild_locator_payload("proj-1", upload))
 
@@ -2239,7 +2393,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         ]
         with (
             patch.object(service, "get_project_doc_blocks_payload", return_value={"project_id": "proj-1", "blocks": blocks}),
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = _run_async(
                 service.extract_bid_attachment_payload(
@@ -2270,7 +2424,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         ]
         with (
             patch.object(service, "get_project_doc_blocks_payload", return_value={"project_id": "proj-1", "blocks": blocks}),
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = _run_async(
                 service.extract_bid_attachment_by_block_payload(
@@ -2329,7 +2483,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         with (
             patch.object(service, "get_project_doc_blocks_payload", return_value={"project_id": "proj-1", "blocks": blocks}),
             patch.object(service, "_docx_cache_path", return_value=docx_path),
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             payload = _run_async(
                 service.extract_bid_attachment_by_block_docx_response(
@@ -2388,8 +2542,8 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         request = SimpleNamespace(is_disconnected=_async_false)
 
         with (
-            patch.object(service, "_require_legacy_task_owner", return_value=task),
-            patch.object(service, "_ensure_legacy_imported") as legacy_import,
+            patch.object(service, "_require_task_owner", return_value=task),
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
         ):
             response = _run_async(service.stream_task_progress_response("task-1", request, project_id="proj-1"))
             body = _run_async(_collect_streaming_response_text(response))
@@ -2407,7 +2561,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         request = SimpleNamespace(is_disconnected=_async_false)
         with patch.object(
             service,
-            "_require_legacy_task_owner",
+            "_require_task_owner",
             side_effect=service.PlatformError(code="RESOURCE_NOT_FOUND", message="任务不存在或已过期", status_code=404),
         ):
             response = _run_async(service.stream_task_progress_response("task-1", request))
@@ -2536,7 +2690,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                     }
                 ),
             ),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.re_extract_requirements_payload(
@@ -2546,8 +2699,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                     }
                 )
             )
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload["bid_type"], "tech")
         self.assertEqual(payload["project_summary"], "项目概述")
         self.assertEqual(payload["requirements"][0]["content"], "需求A")
@@ -2572,12 +2723,12 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
     def test_generate_content_payload_runs_natively_without_legacy_route(self) -> None:
         with (
-            patch.object(service, "_legacy_validate_required_bidder_info", return_value=None),
+            patch.object(service, "_validate_required_bidder_info", return_value=None),
             patch.object(service, "_get_workflow_key", return_value="content-key"),
-            patch.object(service, "_legacy_compose_runtime_writing_hint", return_value="合成提示"),
+            patch.object(service, "_compose_runtime_writing_hint", return_value="合成提示"),
             patch.object(
                 service,
-                "_legacy_merge_bidder_pipt_context",
+                "_merge_bidder_pipt_context",
                 return_value=(
                     {"@@PIPT:v1:e000001:k11111111@@": "张三"},
                     "占位符提示",
@@ -2609,7 +2760,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 "_run_inline_content_diagram",
                 new=AsyncMock(return_value=("最终正文", 1, None, {"mode": "inline"})),
             ),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             payload = _run_async(
                 service.generate_content_payload(
@@ -2626,8 +2776,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                     }
                 )
             )
-
-        legacy_call.assert_not_called()
         self.assertEqual(payload["section_id"], "sec-1")
         self.assertEqual(payload["content"], "最终正文")
         self.assertEqual(payload["quality_score"], 88)
@@ -2649,12 +2797,12 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             }
 
         with (
-            patch.object(service, "_legacy_validate_required_bidder_info", return_value=None),
+            patch.object(service, "_validate_required_bidder_info", return_value=None),
             patch.object(service, "_get_workflow_key", return_value="content-key"),
-            patch.object(service, "_legacy_compose_runtime_writing_hint", return_value="合成提示"),
+            patch.object(service, "_compose_runtime_writing_hint", return_value="合成提示"),
             patch.object(
                 service,
-                "_legacy_merge_bidder_pipt_context",
+                "_merge_bidder_pipt_context",
                 return_value=(
                     {"@@PIPT:v1:e000001:k11111111@@": "张三"},
                     "占位符提示",
@@ -2672,7 +2820,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 "_run_inline_content_diagram",
                 new=AsyncMock(return_value=("完整正文", 0, None, None)),
             ),
-            patch.object(service, "call_legacy_task_route") as legacy_call,
         ):
             response = _run_async(
                 service.generate_content_stream_response(
@@ -2690,8 +2837,6 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
             body = _run_async(_collect_streaming_response_text(response))
-
-        legacy_call.assert_not_called()
         self.assertEqual(response.media_type, "text/event-stream")
         self.assertIn('"stage": "✍️ 正文生成"', body)
         self.assertIn('"text": "第一段"', body)
@@ -2878,20 +3023,210 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
         self.assertIn('"error": "大纲生成结构不完整，请重试：', body)
 
-    def test_export_report_response_returns_legacy_binary_response(self) -> None:
-        expected = SimpleNamespace(kind="pdf", payload={"project_name": "项目一", "nodes": []})
+    def test_export_report_response_builds_pdf_natively(self) -> None:
+        self.assertFalse(hasattr(service.bid_workflow_execution_adapter, "export_report_response"))
 
-        with patch.object(service.bid_workflow_execution_adapter, "export_report_response", return_value=expected) as export_mock:
-            response = _run_async(service.export_report_response({"project_name": "项目一", "nodes": []}))
+        response = _run_async(
+            service.export_report_response(
+                {
+                    "project_name": "项目一",
+                    "nodes": [{"id": "n1", "label": "资质要求", "content": "满足招标文件要求"}],
+                }
+            )
+        )
 
-        export_mock.assert_called_once_with({"project_name": "项目一", "nodes": []})
-        self.assertIs(response, expected)
+        self.assertEqual(response.media_type, "application/pdf")
+        self.assertEqual(response.filename, "analysis-report.pdf")
+        self.assertTrue(response.content.startswith(b"%PDF"))
+        self.assertIn("Content-Disposition", response.headers)
+
+    def test_forge_document_response_builds_docx_natively_without_legacy_adapter(self) -> None:
+        import io
+        import docx
+
+        class FakeForge:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+            def build(self, sections, scoring_rows=None, attachments=None):
+                document = docx.Document()
+                for section in sections:
+                    title = section.get("title") or section.get("heading_text")
+                    if title:
+                        document.add_heading(title, level=int(section.get("heading_level") or 1))
+                    content = section.get("content")
+                    if content:
+                        document.add_paragraph(content)
+                buffer = io.BytesIO()
+                document.save(buffer)
+                return buffer.getvalue()
+
+        with (
+            patch.object(service, "create_document_forge", return_value=FakeForge()),
+            patch.object(service, "_load_forge_pipt_mapping", return_value={}),
+            patch.object(service, "_load_forge_image_map", return_value={}),
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
+        ):
+            payload = _run_async(
+                service.forge_document_response(
+                    {
+                        "project_id": "proj-1",
+                        "project_name": "项目一",
+                        "sections": [{"id": "s1", "title": "第一章", "content": "正文内容", "heading_level": 1}],
+                    }
+                )
+            )
+
+        legacy_import.assert_not_called()
+        self.assertFalse(hasattr(service.bid_workflow_execution_adapter, "forge_document_response"))
+        self.assertEqual(payload.media_type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        self.assertEqual(payload.filename, "document.docx")
+        document = docx.Document(io.BytesIO(payload.content))
+        text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        self.assertIn("第一章", text)
+        self.assertIn("正文内容", text)
+
+    def test_forge_document_response_preserves_docx_slice_natively(self) -> None:
+        import io
+        import docx
+
+        source = docx.Document()
+        source.add_paragraph("原文第一段")
+        source.add_paragraph("原文第二段")
+        source.add_paragraph("原文第三段")
+        source_buffer = io.BytesIO()
+        source.save(source_buffer)
+
+        docx_path = Mock()
+        docx_path.exists.return_value = True
+        docx_path.read_bytes.return_value = source_buffer.getvalue()
+        blocks = [
+            {"block_id": "B000000", "locator": "P0000", "body_idx": 0, "type": "paragraph", "text": "原文第一段"},
+            {"block_id": "B000001", "locator": "P0001", "body_idx": 1, "type": "paragraph", "text": "原文第二段"},
+            {"block_id": "B000002", "locator": "P0002", "body_idx": 2, "type": "paragraph", "text": "原文第三段"},
+        ]
+
+        def fake_build(sections, scoring_rows=None, attachments=None):
+            document = docx.Document()
+            for section in sections:
+                if section.get("title"):
+                    document.add_heading(section["title"], level=int(section.get("heading_level") or 1))
+                if section.get("content"):
+                    document.add_paragraph(section["content"])
+            buffer = io.BytesIO()
+            document.save(buffer)
+            return buffer.getvalue()
+
+        fake_forge = SimpleNamespace(build=fake_build)
+        with (
+            patch.object(service, "create_document_forge", return_value=fake_forge),
+            patch.object(service, "add_scoring_table_and_attachments", return_value=None),
+            patch.object(service, "_load_forge_pipt_mapping", return_value={}),
+            patch.object(service, "_load_forge_image_map", return_value={}),
+            patch.object(service, "get_project_doc_blocks_payload", return_value={"project_id": "proj-1", "blocks": blocks}),
+            patch.object(service, "_docx_cache_path", return_value=docx_path),
+            patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
+        ):
+            payload = _run_async(
+                service.forge_document_response(
+                    {
+                        "project_id": "proj-1",
+                        "project_name": "项目一",
+                        "sections": [
+                            {"id": "intro", "title": "前言", "content": "生成正文", "heading_level": 1},
+                            {
+                                "id": "slice",
+                                "title": "原文附件",
+                                "source_type": "docx_slice",
+                                "start_block_id": "B000001",
+                                "end_block_id": "B000002",
+                                "inject_title": True,
+                                "heading_level": 1,
+                            },
+                        ],
+                    }
+                )
+            )
+
+        legacy_import.assert_not_called()
+        document = docx.Document(io.BytesIO(payload.content))
+        text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        self.assertIn("前言", text)
+        self.assertIn("生成正文", text)
+        self.assertIn("原文附件", text)
+        self.assertNotIn("原文第一段", text)
+        self.assertIn("原文第二段", text)
+        self.assertIn("原文第三段", text)
+
+    def test_hybrid_forge_groups_contiguous_markdown_before_page_breaks(self) -> None:
+        import docx
+
+        source = docx.Document()
+        source.add_paragraph("原文切片")
+        source_buffer = io.BytesIO()
+        source.save(source_buffer)
+
+        docx_path = Mock()
+        docx_path.exists.return_value = True
+        docx_path.read_bytes.return_value = source_buffer.getvalue()
+        blocks = [{"block_id": "B000000", "locator": "P0000", "body_idx": 0, "type": "paragraph", "text": "原文切片"}]
+        build_calls: list[list[dict]] = []
+
+        def fake_build(sections, scoring_rows=None, attachments=None):
+            build_calls.append([dict(section) for section in sections])
+            document = docx.Document()
+            for section in sections:
+                title = section.get("title") or section.get("heading_text")
+                if title:
+                    document.add_heading(title, level=int(section.get("heading_level") or 1))
+                content = section.get("content")
+                if content:
+                    document.add_paragraph(content)
+            buffer = io.BytesIO()
+            document.save(buffer)
+            return buffer.getvalue()
+
+        fake_forge = SimpleNamespace(build=fake_build)
+        with (
+            patch.object(service, "create_document_forge", return_value=fake_forge),
+            patch.object(service, "add_scoring_table_and_attachments", return_value=None),
+            patch.object(service, "_load_forge_pipt_mapping", return_value={}),
+            patch.object(service, "_load_forge_image_map", return_value={}),
+            patch.object(service, "get_project_doc_blocks_payload", return_value={"project_id": "proj-1", "blocks": blocks}),
+            patch.object(service, "_docx_cache_path", return_value=docx_path),
+        ):
+            _run_async(
+                service.forge_document_response(
+                    {
+                        "project_id": "proj-1",
+                        "project_name": "项目一",
+                        "sections": [
+                            {"id": "root", "title": "技术部分", "content": "", "heading_level": 1, "title_only": True},
+                            {"id": "parent", "title": "实施方案", "content": "", "heading_level": 2, "title_only": True},
+                            {"id": "child", "title": "总体方案", "content": "正文内容", "heading_level": 3},
+                            {
+                                "id": "slice",
+                                "title": "原文附件",
+                                "source_type": "docx_slice",
+                                "start_block_id": "B000000",
+                                "end_block_id": "B000000",
+                                "inject_title": True,
+                                "heading_level": 1,
+                            },
+                        ],
+                    }
+                )
+            )
+
+        markdown_calls = [call for call in build_calls if any(section.get("id") == "child" for section in call)]
+        self.assertEqual(len(markdown_calls), 1)
+        self.assertEqual([section.get("id") for section in markdown_calls[0]], ["root", "parent", "child"])
 
     def test_export_scoring_table_response_builds_xlsx_natively(self) -> None:
         import io
         import openpyxl
 
-        with patch.object(service, "_ensure_legacy_imported") as legacy_import:
+        with patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import:
             payload = _run_async(
                 service.export_scoring_table_response(
                     {
@@ -3057,6 +3392,92 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
         self.assertEqual(getattr(ctx.exception, "status_code", None), 400)
 
+    def test_register_knowledge_image_asset_native_persists_registry_and_asset(self) -> None:
+        execute_calls = []
+
+        class FakeResult:
+            def __init__(self, scalar=None, first=None):
+                self._scalar = scalar
+                self._first = first
+
+            def scalar_one(self):
+                return self._scalar
+
+            def first(self):
+                return self._first
+
+        class FakeConn:
+            def execute(self, statement, params=None):
+                execute_calls.append((str(statement), params or {}))
+                sql = str(statement)
+                if "to_regclass" in sql:
+                    return FakeResult(scalar=True)
+                if "SELECT 1 FROM bid_generator.image_registry" in sql:
+                    return FakeResult(first=None)
+                if "SELECT 1 FROM bid_generator.knowledge_image_assets" in sql:
+                    return FakeResult(first=None)
+                return FakeResult()
+
+        engine = MagicMock()
+        engine.begin.return_value.__enter__.return_value = FakeConn()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            patch.object(service, "_bid_generator_legacy_root", return_value=Path(tmp_dir)),
+            patch.object(service, "get_engine", return_value=engine),
+            patch.object(
+                service,
+                "_tag_image_with_vlm_native",
+                return_value='{"caption":"系统架构图","image_type":"系统架构图","summary":"架构说明","tags":["架构"]}',
+            ),
+        ):
+            placeholder, caption, image_info = service._register_knowledge_image_asset_native(
+                filename="demo.docx",
+                image_bytes=b"fake-image-bytes",
+                original_name="image.png",
+            )
+
+        self.assertTrue(placeholder.startswith("__PRO_IMG_"))
+        self.assertEqual(caption, "系统架构图")
+        self.assertEqual(image_info["description"], "系统架构图")
+        self.assertIn("knowledge_block", image_info)
+        insert_registry = [params for sql, params in execute_calls if "INSERT INTO bid_generator.image_registry" in sql][0]
+        insert_asset = [params for sql, params in execute_calls if "INSERT INTO bid_generator.knowledge_image_assets" in sql][0]
+        self.assertEqual(insert_registry["placeholder"], placeholder)
+        self.assertEqual(insert_asset["source_doc"], "demo.docx")
+        self.assertEqual(insert_asset["caption_status"], "captioned")
+
+    def test_extract_docx_with_tables_native_registers_embedded_images(self) -> None:
+        import base64
+        import docx
+
+        image_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+        image_buffer = io.BytesIO(image_bytes)
+
+        document = docx.Document()
+        document.add_paragraph("正文段落")
+        document.add_picture(image_buffer)
+        docx_buffer = io.BytesIO()
+        document.save(docx_buffer)
+
+        with patch.object(
+            service,
+            "_register_knowledge_image_asset_native",
+            return_value=("__PRO_IMG_hash__", "配图说明", {"preview_url": "/api/extracted-images/hash.png"}),
+        ) as register:
+            text_value, image_map = service._extract_docx_with_tables_native(
+                docx_buffer.getvalue(),
+                filename="demo.docx",
+                extract_images=True,
+            )
+
+        self.assertIn("正文段落", text_value)
+        self.assertIn("![配图说明](__PRO_IMG_hash__)", text_value)
+        self.assertEqual(image_map["__PRO_IMG_hash__"]["preview_url"], "/api/extracted-images/hash.png")
+        register.assert_called_once()
+
     def test_list_kb_sync_jobs_reads_recent_status_files(self) -> None:
         files = [
             _fake_status_file("new.json", 30, {"job_id": "new", "status": "completed", "started_at": "2026-06-01", "total": 3, "processed": 3, "failed": 0}),
@@ -3093,7 +3514,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         path.open.return_value = manager
 
         with (
-            patch.object(service, "_get_legacy_task", return_value=None),
+            patch.object(service, "_get_task", return_value=None),
             patch.object(service, "_kb_sync_status_path", return_value=path),
         ):
             payload = service.get_kb_sync_status_payload("abcdef123456")
@@ -3112,7 +3533,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task = SimpleNamespace(status="running", created_at=1780296000, error="")
 
         with (
-            patch.object(service, "_get_legacy_task", return_value=task),
+            patch.object(service, "_get_task", return_value=task),
             patch.object(service, "_kb_sync_status_path", return_value=path),
         ):
             payload = service.get_kb_sync_status_payload("abcdef123456")
@@ -3128,7 +3549,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         task = SimpleNamespace(status="error", created_at=1780296000, error="sync failed")
 
         with (
-            patch.object(service, "_get_legacy_task", return_value=task),
+            patch.object(service, "_get_task", return_value=task),
             patch.object(service, "_kb_sync_status_path", return_value=path),
         ):
             payload = service.get_kb_sync_status_payload("abcdef123456")
@@ -3148,7 +3569,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         path.exists.return_value = False
 
         with (
-            patch.object(service, "_get_legacy_task", return_value=None),
+            patch.object(service, "_get_task", return_value=None),
             patch.object(service, "_kb_sync_status_path", return_value=path),
         ):
             with self.assertRaises(Exception) as ctx:

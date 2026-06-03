@@ -2,83 +2,90 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import HTTPException
-
+import pytest
 
 API_ROOT = Path(__file__).resolve().parents[1]
 API_ROOT_VALUE = str(API_ROOT)
 if API_ROOT_VALUE not in sys.path:
     sys.path.insert(0, API_ROOT_VALUE)
 
+from app.core.errors import PlatformError
 from app.services import bid_workflow_execution_adapter as adapter
 
 
-def test_generate_template_architecture_payload_normalizes_legacy_model_response() -> None:
+def test_generate_template_architecture_payload_uses_native_structure_workflow() -> None:
     captured: dict[str, object] = {}
 
-    class FakeRequest:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
+    async def fake_call_dify_workflow(api_key, inputs):
+        captured["api_key"] = api_key
+        captured["inputs"] = inputs
+        return {
+            "data": {
+                "outputs": {
+                    "text": "```yaml\nid: custom\nblocks:\n  - id: sec_1\n    title: 第一章\n```",
+                }
+            }
+        }
 
-    class FakeResponse:
-        def model_dump(self) -> dict[str, object]:
-            return {"outline": [{"id": "1", "title": "第一章"}]}
+    with (
+        patch("app.services.bid_generator_service._get_workflow_key", return_value="workflow-key"),
+        patch("app.services.bid_generator_service._call_dify_workflow", side_effect=fake_call_dify_workflow),
+    ):
+        payload = _run_async(
+            adapter.generate_template_architecture_payload(
+                {
+                    "project_name": "项目一",
+                    "blueprint": "蓝图",
+                    "structured_data": "{\"requirements\": []}",
+                }
+            )
+        )
 
-    async def fake_generate(request: FakeRequest) -> FakeResponse:
-        assert isinstance(request, FakeRequest)
-        return FakeResponse()
-
-    schemas = SimpleNamespace(GenerateStructureRequest=FakeRequest)
-    routes = SimpleNamespace(generate_template_architecture=fake_generate)
-
-    with patch.object(adapter, "_ensure_legacy_imported", side_effect=[routes, schemas]):
-        payload = _run_async(adapter.generate_template_architecture_payload({"project_id": "proj-1", "sections": []}))
-
-    assert payload == {"outline": [{"id": "1", "title": "第一章"}]}
-    assert captured["project_id"] == "proj-1"
-
-
-def test_export_report_response_returns_legacy_binary_response() -> None:
-    captured: dict[str, object] = {}
-
-    class FakeRequest:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
-
-    async def fake_export(request: FakeRequest) -> object:
-        return SimpleNamespace(kind="pdf", payload=request)
-
-    routes = SimpleNamespace(_ExportReportRequest=FakeRequest, export_report_pdf=fake_export)
-
-    with patch.object(adapter, "_ensure_legacy_imported", return_value=routes):
-        response = _run_async(adapter.export_report_response({"project_name": "项目一", "nodes": []}))
-
-    assert response.kind == "pdf"
-    assert captured["project_name"] == "项目一"
+    assert captured["api_key"] == "workflow-key"
+    inputs = captured["inputs"]
+    assert isinstance(inputs, dict)
+    assert "项目一" in str(inputs["system_prompt"])
+    assert "蓝图" in str(inputs["system_prompt"])
+    assert inputs["structured_data"] == "{\"requirements\": []}"
+    assert inputs["knowledge_query"] == "项目一 目录架构搭建"
+    assert inputs["requires_search"] == "false"
+    assert payload == {"structure_dict": {"id": "custom", "blocks": [{"id": "sec_1", "title": "第一章"}]}}
 
 
-def test_forge_document_response_maps_http_exception() -> None:
-    class FakeRequest:
-        def __init__(self, **kwargs: object) -> None:
-            self.payload = kwargs
+def test_generate_template_architecture_payload_wraps_list_output_like_legacy() -> None:
+    async def fake_call_dify_workflow(_api_key, _inputs):
+        return {"data": {"outputs": {"result": "- id: sec_1\n  title: 第一章\n"}}}
 
-    async def fake_forge(_: FakeRequest) -> None:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    with (
+        patch("app.services.bid_generator_service._get_workflow_key", return_value="workflow-key"),
+        patch("app.services.bid_generator_service._call_dify_workflow", side_effect=fake_call_dify_workflow),
+    ):
+        payload = _run_async(adapter.generate_template_architecture_payload({"project_name": "项目一"}))
 
-    routes = SimpleNamespace(_ForgeDocumentRequest=FakeRequest, forge_document=fake_forge)
+    assert payload == {
+        "structure_dict": {
+            "name": "项目一专属架构",
+            "id": "dynamic_struct_01",
+            "blocks": [{"id": "sec_1", "title": "第一章"}],
+        }
+    }
 
-    with patch.object(adapter, "_ensure_legacy_imported", return_value=routes):
-        try:
-            _run_async(adapter.forge_document_response({"project_id": "missing"}))
-        except Exception as exc:
-            assert getattr(exc, "status_code", None) == 404
-            assert getattr(exc, "code", "") == "RESOURCE_NOT_FOUND"
-            assert "项目不存在" in str(exc)
-        else:
-            raise AssertionError("expected PlatformError")
+
+def test_generate_template_architecture_payload_requires_native_workflow_key() -> None:
+    with patch("app.services.bid_generator_service._get_workflow_key", return_value=""):
+        with pytest.raises(PlatformError) as exc_info:
+            _run_async(adapter.generate_template_architecture_payload({"project_name": "项目一"}))
+
+    error = exc_info.value
+    assert error.code == "BID_TEMPLATE_GENERATE_FAILED"
+    assert error.status_code == 500
+    assert "DIFY_WORKFLOW_STRUCTURE_GENERATOR" in error.message
+
+
+def test_template_adapter_has_no_legacy_route_import_boundary() -> None:
+    assert not hasattr(adapter, "_ensure_legacy_imported")
 
 
 def _run_async(awaitable):

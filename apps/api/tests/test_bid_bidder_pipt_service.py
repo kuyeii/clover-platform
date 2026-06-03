@@ -141,3 +141,35 @@ def test_normalize_bidder_pipt_payload_returns_empty_for_invalid_bidder_info() -
     assert payload["mapping_table"] == {}
     assert payload["placeholder_manifest"] == {}
     assert payload["fields"] == []
+
+
+def test_validate_required_bidder_info_reports_missing_fields() -> None:
+    try:
+        service.validate_required_bidder_info({"orgName": "测试公司", "phone": "13800138000"})
+    except service.BidderInfoRequiredError as exc:
+        assert exc.missing_fields == ["法定代表人", "项目负责人"]
+        assert "正文生成前必须先配置投标人信息" in str(exc)
+    else:
+        raise AssertionError("expected BidderInfoRequiredError")
+
+
+def test_merge_bidder_pipt_context_combines_existing_mapping_and_hint() -> None:
+    conn = FakeConnection()
+    with patch.object(service, "get_engine", return_value=FakeEngine(conn)):
+        mapping, hint, context = service.merge_bidder_pipt_context(
+            mapping_table={"@@PIPT:v1:e000001:k11111111@@": "既有实体"},
+            placeholder_hint="既有提示",
+            bidder_info={
+                "orgName": "测试公司",
+                "legalRep": "张三",
+                "projectLead": "李四",
+                "phone": "13800138000",
+            },
+        )
+
+    assert mapping["@@PIPT:v1:e000001:k11111111@@"] == "既有实体"
+    assert len(mapping) == 5
+    assert "既有提示" in hint
+    assert "投标人信息占位符使用规则" in hint
+    assert len(context["fields"]) == 4
+    assert any("INSERT INTO bid_generator.entity_registry" in sql for sql in conn.executed_sql)

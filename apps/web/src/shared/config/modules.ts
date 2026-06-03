@@ -42,7 +42,6 @@ export const moduleEntries: PortalModule[] = [
     name: "标书生成",
     shortName: "标书",
     route: "/modules/bid-generator",
-    iframeRoute: "/modules/bid-generator",
     apiPrefix: "/api/v1/bid-generator",
     legacyFrontend: "legacy/bid-generator/frontend-web",
     description: "标书项目、需求提取、内容生成、文档组装和导出能力。",

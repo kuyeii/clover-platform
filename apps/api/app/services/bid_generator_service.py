@@ -2,35 +2,53 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import base64
 import json
 import os
-import importlib
 import logging
 import re
-import sys
 import threading
 import socket
 import time
 import io
 import html
 import copy
+import hashlib
 import uuid
 import zipfile
+import tempfile
+import subprocess
+import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from types import ModuleType
 from typing import Any, Mapping, Optional
 from urllib.parse import quote, urlparse
 
 import httpx
+import requests
 import yaml
 from fastapi import Request, UploadFile
 from fastapi.responses import StreamingResponse
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from app.core.config import get_api_settings
 from app.core.errors import PlatformError
 from app.services.bid_attachment_template_service import ATTACHMENT_LABELS, render_attachment
+from app.services.bid_bidder_pipt_service import (
+    merge_bidder_pipt_context,
+    validate_required_bidder_info,
+)
+from app.services.bid_content_placeholder_service import (
+    find_illegal_pipt_bidder_placeholders_native,
+    resolve_body_placeholders_native,
+)
 from app.services.bid_docanalysis_service import (
     build_docanalysis_groups,
     build_docanalysis_node_index,
@@ -42,6 +60,11 @@ from app.services.bid_docanalysis_service import (
     parse_docanalysis_result_map,
     split_bid_attachments_tag,
 )
+from app.services.bid_document_forge_service import (
+    add_scoring_table_and_attachments,
+    create_document_forge,
+)
+from app.services.bid_document_forge_engine.markdown_norm import normalize_generated_markdown
 from app.services.bid_outline_service import (
     build_outline_generation_bundle,
     build_seeded_outline_sections,
@@ -51,16 +74,15 @@ from app.services.bid_outline_service import (
     parse_dify_outputs,
 )
 from app.services import bid_workflow_execution_adapter
-from app.services.bid_task_execution_adapter import call_legacy_task_route, ensure_legacy_runtime, legacy_task_manager
+from app.services.bid_task_runtime_service import task_manager as native_task_manager
 from app.services.pipt_gateway_service import preprocess_internal_payload
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import SQLAlchemyError
 from packages.py_common.db.session import get_engine
 
 logger = logging.getLogger(__name__)
 
 _IMPORT_LOCK = threading.RLock()
-_LEGACY_MODULES: dict[str, ModuleType] = {}
 
 WORKFLOWS: tuple[tuple[str, str, str, bool, str], ...] = (
     ("structure_generator", "DIFY_WORKFLOW_STRUCTURE_GENERATOR", "大纲生成", True, "managed"),
@@ -168,60 +190,6 @@ def _bid_generator_legacy_root() -> Path:
 
 def _legacy_app_package_path() -> Path:
     return _bid_generator_root() / "app"
-
-
-def _gateway_out_path() -> Path:
-    return _bid_generator_legacy_root() / "gateway-out"
-
-
-def _dify_bridge_path() -> Path:
-    return _bid_generator_legacy_root() / "dify-bridge"
-
-
-def _ensure_legacy_package_namespace() -> None:
-    import app as platform_app
-
-    legacy_app_path = str(_legacy_app_package_path())
-    if legacy_app_path not in platform_app.__path__:
-        platform_app.__path__.append(legacy_app_path)
-
-
-def _extend_src_package_namespace() -> None:
-    src_package = sys.modules.get("src")
-    if src_package is None:
-        gateway_parent = str(_gateway_out_path())
-        if gateway_parent not in sys.path:
-            sys.path.insert(0, gateway_parent)
-        src_package = importlib.import_module("src")
-
-    src_paths = getattr(src_package, "__path__", None)
-    if src_paths is None:
-        return
-    for path in (_gateway_out_path() / "src", _dify_bridge_path() / "src"):
-        path_value = str(path)
-        if path.is_dir() and path_value not in src_paths:
-            src_paths.append(path_value)
-
-
-def _ensure_legacy_environment() -> None:
-    os.environ.setdefault("PRO_ENGINE_ROOT", str(_bid_generator_legacy_root()))
-    os.environ.setdefault("PIPT_ROOT", str(_bid_generator_root()))
-
-
-def _ensure_legacy_imported(name: str) -> ModuleType:
-    module = _LEGACY_MODULES.get(name)
-    if module is not None:
-        return module
-
-    with _IMPORT_LOCK:
-        module = _LEGACY_MODULES.get(name)
-        if module is not None:
-            return module
-        _ensure_legacy_environment()
-        _ensure_legacy_package_namespace()
-        module = importlib.import_module(name)
-        _LEGACY_MODULES[name] = module
-        return module
 
 
 def _read_root_env_value(env_var: str) -> str:
@@ -975,7 +943,7 @@ def get_task_status_payload(
     after_event_id: int = 0,
 ) -> dict[str, Any]:
     """读取后台任务状态；入参为任务 ID/项目 ID/事件游标，出参兼容 legacy 轮询结构。"""
-    task = _require_legacy_task_owner(task_id, project_id)
+    task = _require_task_owner(task_id, project_id)
     started_at = _utc_iso_from_timestamp(getattr(task, "created_at", None))
     updated_at = _utc_iso_from_timestamp(getattr(task, "updated_at", None))
     normalized_after_event_id = _non_negative_int(after_event_id)
@@ -1009,7 +977,7 @@ async def cancel_task_payload(task_id: str, *, project_id: str | None = None) ->
     """取消后台任务；入参为任务 ID/项目 ID，出参兼容 legacy cancel 响应。"""
     task_id_value = _required_string(task_id, field="task_id")
     normalized_project_id = str(project_id or "").strip() or None
-    task = _require_legacy_task_owner(task_id_value, normalized_project_id)
+    task = _require_task_owner(task_id_value, normalized_project_id)
     if str(getattr(task, "status", "") or "") != "running":
         raise PlatformError(code="RESOURCE_NOT_FOUND", message="任务不存在或已完成", status_code=404)
 
@@ -1020,7 +988,7 @@ async def cancel_task_payload(task_id: str, *, project_id: str | None = None) ->
         cancellable=False,
     )
     dify_stopped, remote_stop_status = await _stop_dify_workflows_for_task(task)
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     ok = bool(task_manager.cancel_task(task_id_value))
     if not ok and not dify_stopped:
         raise PlatformError(code="RESOURCE_NOT_FOUND", message="任务不存在或已完成", status_code=404)
@@ -1087,7 +1055,7 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
         auto_threshold=outline_auto_parallel_threshold,
     )
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     task_id = task_manager.create_task("outline", project_id, workflow_name="structure_generator")
     _persist_project_runtime(
         project_id,
@@ -1486,7 +1454,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     """启动正文后台任务；入参为正文生成 JSON，出参为 legacy task_id 响应。"""
     payload = _json_object_body(body)
     try:
-        _legacy_validate_required_bidder_info(payload.get("bidder_info", {}) or {})
+        _validate_required_bidder_info(payload.get("bidder_info", {}) or {})
     except Exception as exc:
         detail = str(exc)
         if detail:
@@ -1508,7 +1476,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     keywords = str(payload.get("keywords") or "").strip() or section_title
     analysis_context = str(payload.get("analysis_context") or "")
     slice_text = str(payload.get("section_outline_slice") or "")
-    writing_hint = _legacy_compose_runtime_writing_hint(
+    writing_hint = _compose_runtime_writing_hint(
         str(payload.get("writing_hint") or ""),
         section_title,
         expected_words,
@@ -1540,7 +1508,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     defer_diagram = bool(payload.get("defer_diagram", False))
     request_mapping_flat = _string_mapping(payload.get("mapping_table"))
     try:
-        request_mapping_flat, merged_placeholder_hint, _bidder_context = _legacy_merge_bidder_pipt_context(
+        request_mapping_flat, merged_placeholder_hint, _bidder_context = _merge_bidder_pipt_context(
             mapping_table=request_mapping_flat,
             placeholder_hint=str(payload.get("placeholder_hint", "") or ""),
             bidder_info=payload.get("bidder_info", {}) or {},
@@ -1549,7 +1517,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     except Exception:
         logger.warning("投标人信息 PIPT 归一化失败，正文任务使用请求原始占位符上下文", exc_info=True)
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     task_id = task_manager.create_task("content", project_id, workflow_name=workflow_name)
     _persist_project_runtime(
         project_id,
@@ -1713,7 +1681,7 @@ async def start_content_rewrite_task_payload(body: Mapping[str, Any]) -> dict[st
     """启动单章节重生成任务；入参为重生成 JSON，出参为 legacy task_id 响应。"""
     payload = _json_object_body(body)
     try:
-        _legacy_validate_required_bidder_info(payload.get("bidder_info", {}) or {})
+        _validate_required_bidder_info(payload.get("bidder_info", {}) or {})
     except Exception as exc:
         detail = str(exc)
         if detail:
@@ -1738,7 +1706,7 @@ async def start_content_rewrite_task_payload(body: Mapping[str, Any]) -> dict[st
     request_mapping_flat = _string_mapping(payload.get("mapping_table"))
     rewrite_placeholder_hint = str(payload.get("placeholder_hint") or "")
     try:
-        request_mapping_flat, rewrite_placeholder_hint, _bidder_context = _legacy_merge_bidder_pipt_context(
+        request_mapping_flat, rewrite_placeholder_hint, _bidder_context = _merge_bidder_pipt_context(
             mapping_table=request_mapping_flat,
             placeholder_hint=rewrite_placeholder_hint,
             bidder_info=payload.get("bidder_info", {}) or {},
@@ -1747,7 +1715,7 @@ async def start_content_rewrite_task_payload(body: Mapping[str, Any]) -> dict[st
         logger.warning("投标人信息 PIPT 归一化失败，重生成任务使用请求原始占位符上下文", exc_info=True)
     strip_structural_numbering = str(payload.get("generation_strategy", "general") or "general").strip() == "response_special"
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     task_id = task_manager.create_task("content", project_id, workflow_name="content_rewrite")
     _persist_project_runtime(
         project_id,
@@ -1837,7 +1805,7 @@ async def start_content_group_task_payload(body: Mapping[str, Any]) -> dict[str,
     """启动 H2 分组正文任务；入参为分组生成 JSON，出参为 task_id 响应。"""
     payload = _json_object_body(body)
     try:
-        _legacy_validate_required_bidder_info(payload.get("bidder_info", {}) or {})
+        _validate_required_bidder_info(payload.get("bidder_info", {}) or {})
     except Exception as exc:
         detail = str(exc)
         if detail:
@@ -1860,7 +1828,7 @@ async def start_content_group_task_payload(body: Mapping[str, Any]) -> dict[str,
     request_mapping_flat = _string_mapping(payload.get("mapping_table"))
     group_placeholder_hint = str(payload.get("placeholder_hint") or "")
     try:
-        request_mapping_flat, group_placeholder_hint, _bidder_context = _legacy_merge_bidder_pipt_context(
+        request_mapping_flat, group_placeholder_hint, _bidder_context = _merge_bidder_pipt_context(
             mapping_table=request_mapping_flat,
             placeholder_hint=group_placeholder_hint,
             bidder_info=payload.get("bidder_info", {}) or {},
@@ -1868,7 +1836,7 @@ async def start_content_group_task_payload(body: Mapping[str, Any]) -> dict[str,
     except Exception:
         logger.warning("投标人信息 PIPT 归一化失败，分组正文任务使用请求原始占位符上下文", exc_info=True)
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     task_id = task_manager.create_task("content", project_id, workflow_name="content_group_writer")
     _persist_project_runtime(
         project_id,
@@ -1981,30 +1949,28 @@ async def start_content_group_task_payload(body: Mapping[str, Any]) -> dict[str,
                 diagrams_generated: list[dict[str, Any]] = []
                 if child_can_generate_diagram:
                     diagram_specs = row.get("diagram_specs") or row.get("diagram_spec")
-                    task_routes = _legacy_task_routes_module()
-                    diagrams_generated, diagram_slot_reserved, diagram_error = await task_routes._execute_diagram_for_section(
-                        task_id,
-                        project_id,
-                        task_routes._get_deps(),
-                        diagram_key,
-                        enable_diagrams,
-                        child_need_diagram,
-                        child_diagram_brief,
-                        max_diagrams,
-                        str(child.get("diagram_type_hint") or "architecture"),
-                        str(child.get("section_title") or ""),
-                        str(child.get("writing_hint") or ""),
-                        str(child.get("keywords") or ""),
-                        group_outline_slice,
-                        content,
-                        diagram_specs,
+                    diagrams_generated, diagram_slot_reserved, diagram_error = await _execute_diagram_for_section(
+                        task_id=task_id,
+                        project_id=project_id,
+                        diagram_key=diagram_key,
+                        enable_diagrams=enable_diagrams,
+                        need_diagram=child_need_diagram,
+                        diagram_brief=child_diagram_brief,
+                        max_diagrams=max_diagrams,
+                        diagram_type_hint=str(child.get("diagram_type_hint") or "architecture"),
+                        section_title=str(child.get("section_title") or ""),
+                        writing_hint=str(child.get("writing_hint") or ""),
+                        raw_keywords=str(child.get("keywords") or ""),
+                        raw_global_outline=group_outline_slice,
+                        content_context=content,
+                        diagram_specs=diagram_specs,
                     )
                     if not diagrams_generated and diagram_slot_reserved:
                         await task_manager.release_diagram_slot(project_id)
                     if diagram_error:
                         row["diagram_error"] = diagram_error
                     if diagrams_generated:
-                        content = content + "\n" + "\n".join(task_routes._build_diagram_reference_tag(item) for item in diagrams_generated)
+                        content = content + "\n" + "\n".join(_build_diagram_reference_tag(item) for item in diagrams_generated)
                         row["content"] = content
                         row["word_count"] = _count_visible_chars(content)
                 if child_diagram_skip:
@@ -2077,7 +2043,7 @@ async def start_group_review_task_payload(body: Mapping[str, Any]) -> dict[str, 
     if not isinstance(sections, list) or not sections:
         raise PlatformError(code="INVALID_REQUEST", message="sections 不能为空", status_code=400)
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     task_id = task_manager.create_task("content", project_id, workflow_name="group_review_writer")
     _persist_project_runtime(
         project_id,
@@ -2137,7 +2103,7 @@ async def start_diagram_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     section_id = str(payload.get("section_id") or "")
     base_content = str(payload.get("base_content") or "")
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     if not _diagram_generation_enabled():
         task_id = task_manager.create_task("diagram", project_id, workflow_name=_get_diagram_workflow_name())
         _persist_project_runtime(
@@ -2228,7 +2194,7 @@ async def start_diagram_batch_task_payload(body: Mapping[str, Any]) -> dict[str,
     if not diagram_requests:
         raise PlatformError(code="INVALID_REQUEST", message="diagram_requests 不能为空", status_code=400)
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     if not _diagram_generation_enabled():
         task_id = task_manager.create_task("diagram", project_id, workflow_name=_get_diagram_workflow_name())
         sections = []
@@ -2349,7 +2315,7 @@ async def start_analyze_task_payload(
 ) -> dict[str, Any]:
     """启动解析报告后台任务；入参为原文/项目/节点选择，出参为 legacy task_id 响应。"""
     normalized_project_id = _ensure_safe_project_id(project_id)
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     dify_key = _get_workflow_key("doc_analysis") or _get_workflow_key("requirement_extractor")
     if not dify_key:
         raise PlatformError(code="TASK_START_FAILED", message="需求提取工作流 API Key 未配置", status_code=500)
@@ -2567,7 +2533,7 @@ async def start_extract_task_payload(
     suffix = Path(filename).suffix.lower()
     cache_id = normalized_project_id or uuid.uuid4().hex[:12]
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     task_id = task_manager.create_task("extract", normalized_project_id)
     _persist_project_runtime(
         normalized_project_id,
@@ -2583,15 +2549,15 @@ async def start_extract_task_payload(
             task_manager.update_stage(task_id, "解析文档结构")
             pdf_url = ""
             if suffix == ".pdf":
-                pdf_url = _legacy_cache_pdf_file(cache_id, content_bytes)
-                _legacy_extract_pdf_pages_text(content_bytes)
+                pdf_url = _cache_pdf_file_native(cache_id, content_bytes)
+                _extract_pdf_pages_text_native(content_bytes)
             elif suffix in {".docx", ".doc"}:
                 try:
-                    pdf_url = _legacy_convert_to_pdf_and_cache(cache_id, content_bytes, filename)
+                    pdf_url = _convert_to_pdf_and_cache_native(cache_id, content_bytes, filename)
                 except Exception as exc:
                     logger.warning("DOC/DOCX 转 PDF 失败: %s", exc)
 
-            raw_document, raw_image_map = _legacy_extract_raw_text_with_images(
+            raw_document, raw_image_map = _extract_raw_text_with_images_native(
                 filename,
                 content_bytes,
                 use_vision_parsing=use_vision_parsing,
@@ -2606,7 +2572,7 @@ async def start_extract_task_payload(
             text_for_dify = str(raw_document or "")
             if suffix in {".docx", ".doc"}:
                 try:
-                    loc_text, _loc_map, doc_blocks = _legacy_extract_docx_with_locators(content_bytes)
+                    loc_text, _loc_map, doc_blocks = _extract_docx_with_locators_native(content_bytes)
                     if doc_blocks:
                         _persist_project_doc_blocks_snapshot(project_id=cache_id, doc_blocks=doc_blocks)
                     if suffix == ".docx":
@@ -2715,12 +2681,82 @@ async def export_scoring_table_response(body: Mapping[str, Any]) -> Any:
 
 async def forge_document_response(body: Mapping[str, Any]) -> Any:
     """组装导出标书 DOCX；入参为 forge JSON，出参保持 legacy 二进制响应。"""
-    return await bid_workflow_execution_adapter.forge_document_response(body)
+    payload = _json_object_body(body)
+    project_name = str(payload.get("project_name") or "投标文件").strip() or "投标文件"
+    sections = payload.get("sections", [])
+    scoring_rows = payload.get("scoring_rows", [])
+    attachments = payload.get("attachments", [])
+    mapping_table = payload.get("mapping_table", {})
+    bidder_info = payload.get("bidder_info", {})
+    image_map = payload.get("image_map", {})
+    project_id = str(payload.get("project_id") or "").strip()
+    if not isinstance(sections, list):
+        raise PlatformError(code="INVALID_REQUEST", message="sections 必须是数组。", status_code=400)
+    if not isinstance(scoring_rows, list):
+        raise PlatformError(code="INVALID_REQUEST", message="scoring_rows 必须是数组。", status_code=400)
+    if not isinstance(attachments, list):
+        raise PlatformError(code="INVALID_REQUEST", message="attachments 必须是数组。", status_code=400)
+    if not isinstance(mapping_table, Mapping):
+        mapping_table = {}
+    if not isinstance(bidder_info, Mapping):
+        bidder_info = {}
+    if not isinstance(image_map, Mapping):
+        image_map = {}
+
+    try:
+        docx_bytes = _build_forge_document_docx(
+            project_id=project_id,
+            sections=sections,
+            scoring_rows=scoring_rows,
+            attachments=attachments,
+            mapping_table=dict(mapping_table),
+            bidder_info=dict(bidder_info),
+            image_map=dict(image_map),
+        )
+    except PlatformError:
+        raise
+    except Exception as exc:
+        logger.error("forge-document 失败: %s", exc, exc_info=True)
+        raise PlatformError(code="FORGE_FAILED", message=str(exc), status_code=500) from exc
+
+    safe_name = project_name.replace("/", "_").replace("\\", "_")
+    filename = f"{safe_name}_标书文件.docx"
+    content_disposition = f'attachment; filename="document.docx"; filename*=UTF-8\'\'{quote(filename, safe="")}'
+    return BidGeneratorFilePayload(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="document.docx",
+        inline=False,
+        cache_control="no-store",
+        headers={"Content-Disposition": content_disposition},
+    )
 
 
 async def export_report_response(body: Mapping[str, Any]) -> Any:
     """导出解析报告 PDF；入参为报告节点 JSON，出参保持 legacy 二进制响应。"""
-    return await bid_workflow_execution_adapter.export_report_response(body)
+    payload = _json_object_body(body)
+    project_name = str(payload.get("project_name") or "招标文件").strip() or "招标文件"
+    nodes = payload.get("nodes", [])
+    if not isinstance(nodes, list):
+        raise PlatformError(code="INVALID_REQUEST", message="nodes 必须是数组。", status_code=400)
+
+    try:
+        pdf_bytes = _build_analysis_report_pdf(project_name=project_name, nodes=nodes)
+    except PlatformError:
+        raise
+    except Exception as exc:
+        raise PlatformError(code="EXPORT_FAILED", message=f"导出解析报告失败: {exc}", status_code=500) from exc
+
+    filename = f"解析报告_{project_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    content_disposition = f'attachment; filename="analysis-report.pdf"; filename*=UTF-8\'\'{quote(filename, safe="")}'
+    return BidGeneratorFilePayload(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        filename="analysis-report.pdf",
+        inline=False,
+        cache_control="no-store",
+        headers={"Content-Disposition": content_disposition},
+    )
 
 
 async def stream_task_progress_response(
@@ -2735,7 +2771,7 @@ async def stream_task_progress_response(
 
     async def progress_stream() -> Any:
         try:
-            task = _require_legacy_task_owner(task_id_value, normalized_project_id)
+            task = _require_task_owner(task_id_value, normalized_project_id)
         except PlatformError as exc:
             yield _sse_data({"error": exc.message})
             return
@@ -2777,7 +2813,7 @@ async def stream_task_progress_response(
                 continue
 
             try:
-                task = _require_legacy_task_owner(task_id_value, normalized_project_id)
+                task = _require_task_owner(task_id_value, normalized_project_id)
             except PlatformError:
                 return
 
@@ -2992,7 +3028,7 @@ def list_kb_sync_jobs_payload() -> dict[str, Any]:
 def get_kb_sync_status_payload(job_id: str) -> dict[str, Any]:
     """查询知识库同步任务状态；入参为 job_id，出参兼容 legacy sync-status。"""
     normalized_job_id = _ensure_safe_kb_sync_job_id(job_id)
-    task = _get_legacy_task(normalized_job_id)
+    task = _get_task(normalized_job_id)
     if task is not None:
         mapped_status = {
             "running": "running",
@@ -3991,6 +4027,799 @@ def _build_scoring_table_xlsx(*, project_name: str, rows: list[Any]) -> bytes:
     return output.getvalue()
 
 
+def _build_analysis_report_pdf(*, project_name: str, nodes: list[Any]) -> bytes:
+    _register_report_font()
+    output = io.BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=A4,
+        leftMargin=14 * mm,
+        rightMargin=14 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+        title=f"{project_name} - 招标文件解析报告",
+    )
+    styles = _analysis_report_styles()
+    story: list[Any] = [
+        Paragraph(_escape_report_text(f"{project_name} - 招标文件解析报告"), styles["title"]),
+        Paragraph(f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["meta"]),
+        Spacer(1, 8),
+    ]
+    story.extend(_analysis_report_node_flowables(nodes, styles, depth=0))
+    document.build(story)
+    return output.getvalue()
+
+
+def _register_report_font() -> None:
+    for font_name in ("STSong-Light",):
+        try:
+            pdfmetrics.getFont(font_name)
+            return
+        except Exception:
+            try:
+                pdfmetrics.registerFont(UnicodeCIDFont(font_name))
+                return
+            except Exception:
+                continue
+
+
+def _analysis_report_styles() -> dict[str, ParagraphStyle]:
+    base = getSampleStyleSheet()
+    font_name = "STSong-Light"
+    return {
+        "title": ParagraphStyle(
+            "BidReportTitle",
+            parent=base["Title"],
+            fontName=font_name,
+            fontSize=18,
+            leading=24,
+            textColor=colors.HexColor("#0c4a6e"),
+            spaceAfter=4,
+        ),
+        "meta": ParagraphStyle(
+            "BidReportMeta",
+            parent=base["Normal"],
+            fontName=font_name,
+            fontSize=9,
+            leading=13,
+            textColor=colors.HexColor("#6b7280"),
+            spaceAfter=12,
+        ),
+        "h2": ParagraphStyle(
+            "BidReportH2",
+            parent=base["Heading2"],
+            fontName=font_name,
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor("#0c4a6e"),
+            spaceBefore=12,
+            spaceAfter=6,
+        ),
+        "h3": ParagraphStyle(
+            "BidReportH3",
+            parent=base["Heading3"],
+            fontName=font_name,
+            fontSize=12,
+            leading=16,
+            textColor=colors.HexColor("#1e3a5f"),
+            spaceBefore=8,
+            spaceAfter=4,
+        ),
+        "body": ParagraphStyle(
+            "BidReportBody",
+            parent=base["BodyText"],
+            fontName=font_name,
+            fontSize=10,
+            leading=15,
+            textColor=colors.HexColor("#374151"),
+            spaceAfter=6,
+        ),
+        "empty": ParagraphStyle(
+            "BidReportEmpty",
+            parent=base["BodyText"],
+            fontName=font_name,
+            fontSize=9,
+            leading=13,
+            textColor=colors.HexColor("#9ca3af"),
+            spaceAfter=6,
+        ),
+    }
+
+
+def _analysis_report_node_flowables(nodes: list[Any], styles: Mapping[str, ParagraphStyle], *, depth: int) -> list[Any]:
+    flowables: list[Any] = []
+    for raw_node in nodes:
+        if not isinstance(raw_node, Mapping):
+            continue
+        label = str(raw_node.get("label") or raw_node.get("title") or raw_node.get("id") or "未命名节点")
+        content = str(raw_node.get("content") or "")
+        children = raw_node.get("children") if isinstance(raw_node.get("children"), list) else []
+        heading_style = styles["h2"] if depth <= 0 else styles["h3"]
+        flowables.append(Paragraph(_escape_report_text(label), heading_style))
+        if children:
+            flowables.extend(_analysis_report_node_flowables(children, styles, depth=depth + 1))
+        elif content.strip():
+            flowables.extend(_analysis_report_content_flowables(content, styles))
+        else:
+            flowables.append(Paragraph("（未提取）", styles["empty"]))
+    return flowables
+
+
+def _analysis_report_content_flowables(content: str, styles: Mapping[str, ParagraphStyle]) -> list[Any]:
+    parsed_score_rows = _parse_analysis_score_rows(content)
+    if parsed_score_rows:
+        return [_build_analysis_score_table(parsed_score_rows, styles)]
+
+    field_rows = _parse_analysis_xml_fields(content)
+    if field_rows:
+        rows = [
+            [
+                Paragraph(_escape_report_text(label), styles["body"]),
+                Paragraph(_escape_report_text(value), styles["body"]),
+            ]
+            for label, value in field_rows
+        ]
+        table = Table(rows, colWidths=[35 * mm, 135 * mm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f8fafc")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        return [table, Spacer(1, 6)]
+
+    paragraphs = [line.strip() for line in content.replace("\r\n", "\n").split("\n") if line.strip()]
+    return [Paragraph(_escape_report_text(line), styles["body"]) for line in (paragraphs or [content])]
+
+
+def _parse_analysis_score_rows(content: str) -> list[Mapping[str, Any]]:
+    text_value = str(content or "").strip()
+    if not text_value or text_value[0:1] not in {"{", "[", '"'}:
+        return []
+    try:
+        parsed: Any = json.loads(text_value)
+        if isinstance(parsed, str):
+            parsed = json.loads(parsed)
+    except Exception:
+        return []
+    if isinstance(parsed, Mapping):
+        items = parsed.get("items")
+    elif isinstance(parsed, list):
+        items = parsed
+    else:
+        items = None
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, Mapping)]
+
+
+def _build_analysis_score_table(items: list[Mapping[str, Any]], styles: Mapping[str, ParagraphStyle]) -> Table:
+    rows: list[list[Any]] = [
+        [
+            Paragraph("评分项", styles["body"]),
+            Paragraph("评分规则", styles["body"]),
+            Paragraph("满分", styles["body"]),
+        ]
+    ]
+    total = 0.0
+    for item in items:
+        max_score = _number_value(item.get("max_score"))
+        total += max_score
+        rows.append(
+            [
+                Paragraph(_escape_report_text(str(item.get("name") or "")), styles["body"]),
+                Paragraph(_escape_report_text(str(item.get("criteria") or "")), styles["body"]),
+                Paragraph(_escape_report_text(f"{max_score:g}分"), styles["body"]),
+            ]
+        )
+    rows.append([Paragraph("合计", styles["body"]), "", Paragraph(_escape_report_text(f"{total:g}分"), styles["body"])])
+    table = Table(rows, colWidths=[35 * mm, 125 * mm, 20 * mm], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
+                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f3f4f6")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    return table
+
+
+def _parse_analysis_xml_fields(content: str) -> list[tuple[str, str]]:
+    rows = []
+    for label, value in re.findall(r"<([^/>\s][^>]*)>([\s\S]*?)</\1>", str(content or "")):
+        if label.startswith("要点"):
+            continue
+        text_value = re.sub(r"<[^>]+>", "", value).strip()
+        if text_value:
+            rows.append((label, text_value))
+    return rows
+
+
+def _escape_report_text(value: str) -> str:
+    return html.escape(str(value or "")).replace("\n", "<br/>")
+
+
+def _build_forge_document_docx(
+    *,
+    project_id: str,
+    sections: list[Any],
+    scoring_rows: list[Any],
+    attachments: list[Any],
+    mapping_table: dict[str, Any],
+    bidder_info: dict[str, Any],
+    image_map: dict[str, Any],
+) -> bytes:
+    normalized_sections = [dict(item) for item in sections if isinstance(item, Mapping)]
+    normalized_scoring_rows = [dict(item) for item in scoring_rows if isinstance(item, Mapping)]
+    normalized_attachments = [dict(item) for item in attachments if isinstance(item, Mapping)]
+    all_content = " ".join(
+        [str(section.get("content") or "") for section in normalized_sections]
+        + [str(attachment.get("content") or "") for attachment in normalized_attachments]
+    )
+    pipt_mapping = _load_forge_pipt_mapping(all_content)
+    dynamic_image_map = _load_forge_image_map(all_content)
+    full_mapping = {**pipt_mapping, **{str(key): str(value) for key, value in mapping_table.items()}}
+    merged_image_map = {**image_map, **dynamic_image_map}
+
+    forge = create_document_forge(
+        mapping_table=full_mapping,
+        bidder_info=bidder_info,
+        image_map=merged_image_map,
+        project_id=project_id,
+    )
+    has_docx_slice = any(
+        str(section.get("source_type") or "").strip().lower() == "docx_slice"
+        for section in normalized_sections
+    )
+    heading_sanitized = True
+    if has_docx_slice:
+        docx_bytes, heading_sanitized = _build_hybrid_forge_docx(
+            project_id=project_id,
+            sections=normalized_sections,
+            scoring_rows=normalized_scoring_rows,
+            attachments=normalized_attachments,
+            forge=forge,
+        )
+    else:
+        docx_bytes = forge.build(
+            sections=normalized_sections,
+            scoring_rows=normalized_scoring_rows,
+            attachments=normalized_attachments,
+        )
+    docx_bytes = _rebind_heading_numbering_bytes(docx_bytes)
+    return _apply_toc_for_export(
+        docx_bytes,
+        normalized_sections,
+        prefer_native=True,
+        heading_sanitized=heading_sanitized,
+    )
+
+
+def _build_hybrid_forge_docx(
+    *,
+    project_id: str,
+    sections: list[dict[str, Any]],
+    scoring_rows: list[dict[str, Any]],
+    attachments: list[dict[str, Any]],
+    forge: Any,
+) -> tuple[bytes, bool]:
+    try:
+        import docx as docx_module
+        from docx.enum.text import WD_BREAK
+        from docxcompose.composer import Composer
+    except ImportError as exc:
+        raise PlatformError(code="FORGE_FAILED", message=f"统一后端缺少 DOCX 拼装依赖: {exc}", status_code=500) from exc
+
+    normalized_project_id = _ensure_safe_project_id(project_id)
+    docx_segments: list[tuple[bytes, bool]] = []
+    heading_sanitized = True
+    pending_markdown_sections: list[dict[str, Any]] = []
+
+    def flush_markdown_sections() -> None:
+        nonlocal pending_markdown_sections
+        if not pending_markdown_sections:
+            return
+        markdown_segment = forge.build(
+            sections=pending_markdown_sections,
+            scoring_rows=[],
+            attachments=[],
+        )
+        docx_segments.append((markdown_segment, True))
+        pending_markdown_sections = []
+
+    def prepend_page_break(doc_obj: Any) -> Any:
+        paragraph = doc_obj.paragraphs[0].insert_paragraph_before() if doc_obj.paragraphs else doc_obj.add_paragraph()
+        paragraph.add_run().add_break(WD_BREAK.PAGE)
+        return doc_obj
+
+    for section in sections:
+        source_type = str(section.get("source_type") or "markdown").strip().lower()
+        if source_type == "docx_slice":
+            flush_markdown_sections()
+            if section.get("inject_title") and str(section.get("title") or "").strip():
+                heading_segment = forge.build(
+                    sections=[
+                        {
+                            "id": section.get("id", ""),
+                            "title": section.get("title", ""),
+                            "heading_number": section.get("heading_number", ""),
+                            "heading_text": section.get("heading_text", ""),
+                            "bookmark_id": section.get("bookmark_id", ""),
+                            "content": "",
+                            "heading_level": section.get("heading_level", 1),
+                            "title_only": True,
+                        }
+                    ],
+                    scoring_rows=[],
+                    attachments=[],
+                )
+                docx_segments.append((heading_segment, True))
+            slice_segment, sanitized_ok = _build_docx_slice_segment(section=section, project_id=normalized_project_id)
+            heading_sanitized = heading_sanitized and bool(sanitized_ok)
+            docx_segments.append((slice_segment, False))
+            continue
+
+        pending_markdown_sections.append({
+            "id": section.get("id", ""),
+            "title": section.get("title", ""),
+            "heading_number": section.get("heading_number", ""),
+            "heading_text": section.get("heading_text", ""),
+            "bookmark_id": section.get("bookmark_id", ""),
+            "content": section.get("content", ""),
+            "heading_level": section.get("heading_level", 1),
+            "title_only": section.get("title_only", False),
+        })
+
+    flush_markdown_sections()
+
+    if not docx_segments:
+        return forge.build(sections=sections, scoring_rows=scoring_rows, attachments=attachments), heading_sanitized
+
+    master = docx_module.Document(io.BytesIO(docx_segments[0][0]))
+    composer = Composer(master)
+    for segment_bytes, with_page_break in docx_segments[1:]:
+        segment_doc = docx_module.Document(io.BytesIO(segment_bytes))
+        composer.append(prepend_page_break(segment_doc) if with_page_break else segment_doc)
+
+    merged_buffer = io.BytesIO()
+    composer.save(merged_buffer)
+    merged_buffer.seek(0)
+
+    final_doc = docx_module.Document(merged_buffer)
+    add_scoring_table_and_attachments(final_doc, scoring_rows, attachments)
+    _rebind_heading_numbering_for_export(final_doc)
+
+    output = io.BytesIO()
+    final_doc.save(output)
+    output.seek(0)
+    return output.read(), heading_sanitized
+
+
+def _build_docx_slice_segment(*, section: Mapping[str, Any], project_id: str) -> tuple[bytes, bool]:
+    start_block_id = str(section.get("start_block_id") or "").strip()
+    end_block_id = str(section.get("end_block_id") or "").strip()
+    if not start_block_id or not end_block_id:
+        raise PlatformError(code="INVALID_REQUEST", message="docx_slice 段缺少 start_block_id/end_block_id", status_code=400)
+
+    blocks = get_project_doc_blocks_payload(project_id)["blocks"]
+    start_block = _find_doc_block_by_id(blocks, start_block_id)
+    end_block = _find_doc_block_by_id(blocks, end_block_id)
+    if start_block is None:
+        raise PlatformError(code="RESOURCE_NOT_FOUND", message=f"block_id {start_block_id} 未找到", status_code=404)
+    if end_block is None:
+        raise PlatformError(code="RESOURCE_NOT_FOUND", message=f"block_id {end_block_id} 未找到", status_code=404)
+
+    start_idx = _non_negative_int(start_block.get("body_idx"))
+    end_idx = _non_negative_int(end_block.get("body_idx"))
+    if start_idx > end_idx:
+        start_idx, end_idx = end_idx, start_idx
+
+    docx_path = _docx_cache_path(project_id)
+    if not docx_path.exists():
+        raise PlatformError(
+            code="BUSINESS_DIRECT_ERROR",
+            message="原始 DOCX 不可用，无法生成保格式切片；请上传原始 DOCX 重建定位缓存",
+            status_code=409,
+        )
+    try:
+        sliced = _slice_docx_bytes_by_body_range(docx_path.read_bytes(), start_idx, end_idx)
+    except Exception as exc:
+        raise PlatformError(code="FORGE_FAILED", message=f"DOCX 切片失败: {exc}", status_code=500) from exc
+    return _sanitize_docx_slice_heading_semantics(sliced)
+
+
+def _sanitize_docx_slice_heading_semantics(docx_bytes: bytes) -> tuple[bytes, bool]:
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    ns = {"w": word_namespace}
+
+    def qn(tag: str) -> str:
+        return f"{{{word_namespace}}}{tag}"
+
+    def is_heading_like_style_id(style_id: str) -> bool:
+        normalized = str(style_id or "").strip().lower()
+        return bool(re.match(r"heading[1-9]\d*$", normalized) or normalized.startswith("toc"))
+
+    input_buffer = io.BytesIO(docx_bytes)
+    output_buffer = io.BytesIO()
+    with zipfile.ZipFile(input_buffer, "r") as zin:
+        entries = {info.filename: zin.read(info.filename) for info in zin.infolist()}
+
+    doc_xml = entries.get("word/document.xml")
+    if not doc_xml:
+        return docx_bytes, False
+
+    heading_style_ids: set[str] = set()
+    style_font_size_map: dict[str, str] = {}
+    styles_xml = entries.get("word/styles.xml")
+    if styles_xml:
+        try:
+            styles_root = ET.fromstring(styles_xml)
+            for style in styles_root.findall(".//w:style", ns):
+                if style.attrib.get(qn("type")) != "paragraph":
+                    continue
+                style_id = style.attrib.get(qn("styleId"), "")
+                size_el = style.find("w:rPr/w:sz", ns)
+                if size_el is not None and size_el.attrib.get(qn("val")):
+                    style_font_size_map[style_id] = str(size_el.attrib.get(qn("val")))
+                name_el = style.find("w:name", ns)
+                style_name = name_el.attrib.get(qn("val"), "") if name_el is not None else ""
+                if is_heading_like_style_id(style_id) or str(style_name).strip().lower().startswith(("heading", "toc")):
+                    heading_style_ids.add(style_id)
+        except Exception:
+            heading_style_ids = set()
+            style_font_size_map = {}
+
+    changed = False
+    try:
+        root = ET.fromstring(doc_xml)
+        for paragraph_props in root.findall(".//w:p/w:pPr", ns):
+            p_style = paragraph_props.find("w:pStyle", ns)
+            if p_style is not None:
+                style_id = p_style.attrib.get(qn("val"), "")
+                if style_id in heading_style_ids or is_heading_like_style_id(style_id):
+                    inherited_size = style_font_size_map.get(style_id, "")
+                    paragraph_props.remove(p_style)
+                    changed = True
+                    if inherited_size:
+                        run_props = paragraph_props.find("w:rPr", ns)
+                        if run_props is None:
+                            run_props = ET.SubElement(paragraph_props, qn("rPr"))
+                        size = run_props.find("w:sz", ns)
+                        if size is None:
+                            size = ET.SubElement(run_props, qn("sz"))
+                        size.set(qn("val"), inherited_size)
+                        size_cs = run_props.find("w:szCs", ns)
+                        if size_cs is None:
+                            size_cs = ET.SubElement(run_props, qn("szCs"))
+                        size_cs.set(qn("val"), inherited_size)
+            outline_level = paragraph_props.find("w:outlineLvl", ns)
+            if outline_level is not None:
+                paragraph_props.remove(outline_level)
+                changed = True
+    except Exception:
+        return docx_bytes, False
+
+    if not changed:
+        return docx_bytes, True
+    entries["word/document.xml"] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    with zipfile.ZipFile(output_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+        for name, content in entries.items():
+            zout.writestr(name, content)
+    return output_buffer.getvalue(), True
+
+
+def _build_toc_entries(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for section in sections:
+        level = _non_negative_int(section.get("toc_level") or section.get("heading_level"))
+        if level < 1 or level > 3:
+            continue
+        number = str(section.get("heading_number") or "").strip()
+        raw_title = str(section.get("heading_text") or section.get("title") or "").strip()
+        title = f"{number} {raw_title}".strip() if number else raw_title
+        if title:
+            entries.append({"level": level, "text": title})
+    return entries
+
+
+def _doc_has_unexpected_heading_semantics(doc: Any, allowed_headings: set[str]) -> bool:
+    def normalized(value: str) -> str:
+        return re.sub(r"\s+", "", str(value or "")).strip().lower()
+
+    for paragraph in getattr(doc, "paragraphs", []) or []:
+        try:
+            style_name = (paragraph.style.name if paragraph.style else "") or ""
+        except Exception:
+            style_name = ""
+        text_value = str(getattr(paragraph, "text", "") or "").strip()
+        if not text_value:
+            continue
+        style_lower = style_name.lower()
+        if style_lower.startswith("toc"):
+            return True
+        if style_lower.startswith("heading") and normalized(text_value) not in allowed_headings and text_value != "目录":
+            return True
+    return False
+
+
+def _insert_toc_page(doc: Any, toc_entries: list[dict[str, Any]], *, use_native_toc: bool) -> None:
+    if not toc_entries:
+        return
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn as docx_qn
+
+    anchor = doc.paragraphs[0] if doc.paragraphs else doc.add_paragraph()
+    title_paragraph = anchor.insert_paragraph_before("目录")
+    title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if title_paragraph.runs:
+        title_paragraph.runs[0].bold = True
+
+    if use_native_toc:
+        field_paragraph = anchor.insert_paragraph_before("")
+        field = OxmlElement("w:fldSimple")
+        field.set(docx_qn("w:instr"), ' TOC \\o "1-3" \\h \\z \\u ')
+        run = OxmlElement("w:r")
+        text_node = OxmlElement("w:t")
+        text_node.text = "（在 Word 中右键目录并选择“更新域”）"
+        run.append(text_node)
+        field.append(run)
+        field_paragraph._p.append(field)
+    else:
+        for row in toc_entries:
+            indent = "    " * max(0, _non_negative_int(row.get("level")) - 1)
+            anchor.insert_paragraph_before(f"{indent}{row.get('text', '')}")
+
+    split_paragraph = anchor.insert_paragraph_before("")
+    split_paragraph.add_run().add_break(WD_BREAK.PAGE)
+
+
+def _rebind_heading_numbering_for_export(doc: Any) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn as docx_qn
+
+    try:
+        numbering = doc.part.numbering_part.numbering_definitions._numbering
+    except Exception:
+        return
+
+    abstract_ids = [
+        int(node.get(docx_qn("w:abstractNumId")))
+        for node in numbering.findall(docx_qn("w:abstractNum"))
+        if node.get(docx_qn("w:abstractNumId"))
+    ]
+    num_ids = [
+        int(node.get(docx_qn("w:numId")))
+        for node in numbering.findall(docx_qn("w:num"))
+        if node.get(docx_qn("w:numId"))
+    ]
+    next_abstract_id = max(abstract_ids, default=1999) + 1
+    next_num_id = max(num_ids, default=1999) + 1
+
+    abstract = OxmlElement("w:abstractNum")
+    abstract.set(docx_qn("w:abstractNumId"), str(next_abstract_id))
+    multi = OxmlElement("w:multiLevelType")
+    multi.set(docx_qn("w:val"), "multilevel")
+    abstract.append(multi)
+    for level, number_format, text_value in ((0, "chineseCounting", "%1、"), (1, "decimal", "%1.%2"), (2, "decimal", "%1.%2.%3")):
+        lvl = OxmlElement("w:lvl")
+        lvl.set(docx_qn("w:ilvl"), str(level))
+        start = OxmlElement("w:start")
+        start.set(docx_qn("w:val"), "1")
+        lvl.append(start)
+        fmt = OxmlElement("w:numFmt")
+        fmt.set(docx_qn("w:val"), number_format)
+        lvl.append(fmt)
+        if level >= 1:
+            lvl.append(OxmlElement("w:isLgl"))
+        lvl_text = OxmlElement("w:lvlText")
+        lvl_text.set(docx_qn("w:val"), text_value)
+        lvl.append(lvl_text)
+        lvl_jc = OxmlElement("w:lvlJc")
+        lvl_jc.set(docx_qn("w:val"), "left")
+        lvl.append(lvl_jc)
+        abstract.append(lvl)
+    numbering.append(abstract)
+
+    num = OxmlElement("w:num")
+    num.set(docx_qn("w:numId"), str(next_num_id))
+    abs_ref = OxmlElement("w:abstractNumId")
+    abs_ref.set(docx_qn("w:val"), str(next_abstract_id))
+    num.append(abs_ref)
+    numbering.append(num)
+
+    def heading_level(style_name: str) -> int:
+        normalized = str(style_name or "").strip().lower()
+        if normalized.startswith(("heading 1", "heading1", "标题1", "标题 1")):
+            return 1
+        if normalized.startswith(("heading 2", "heading2", "标题2", "标题 2")):
+            return 2
+        if normalized.startswith(("heading 3", "heading3", "标题3", "标题 3")):
+            return 3
+        return 0
+
+    for paragraph in getattr(doc, "paragraphs", []) or []:
+        text_value = str(getattr(paragraph, "text", "") or "").strip()
+        if not text_value or text_value == "目录":
+            continue
+        try:
+            level = heading_level(paragraph.style.name if paragraph.style else "")
+        except Exception:
+            level = 0
+        if level < 1:
+            continue
+        paragraph_props = paragraph._p.get_or_add_pPr()
+        old = paragraph_props.find(docx_qn("w:numPr"))
+        if old is not None:
+            paragraph_props.remove(old)
+        num_pr = OxmlElement("w:numPr")
+        ilvl = OxmlElement("w:ilvl")
+        ilvl.set(docx_qn("w:val"), str(level - 1))
+        num_id = OxmlElement("w:numId")
+        num_id.set(docx_qn("w:val"), str(next_num_id))
+        num_pr.append(ilvl)
+        num_pr.append(num_id)
+        paragraph_props.append(num_pr)
+
+
+def _rebind_heading_numbering_bytes(docx_bytes: bytes) -> bytes:
+    try:
+        import docx as docx_module
+
+        doc = docx_module.Document(io.BytesIO(docx_bytes))
+        _rebind_heading_numbering_for_export(doc)
+        output = io.BytesIO()
+        doc.save(output)
+        output.seek(0)
+        return output.read()
+    except Exception:
+        return docx_bytes
+
+
+def _apply_toc_for_export(
+    docx_bytes: bytes,
+    sections: list[dict[str, Any]],
+    *,
+    prefer_native: bool,
+    heading_sanitized: bool,
+) -> bytes:
+    try:
+        import docx as docx_module
+    except ImportError as exc:
+        raise PlatformError(code="FORGE_FAILED", message=f"统一后端缺少 python-docx 依赖: {exc}", status_code=500) from exc
+
+    def strip_heading_prefix(value: str) -> str:
+        return re.sub(r"^(([一二三四五六七八九十百千万]+、)|(\d+(?:\.\d+){1,2}))\s*", "", str(value or "").strip()).strip()
+
+    toc_entries = _build_toc_entries(sections)
+    if not toc_entries:
+        return docx_bytes
+
+    doc = docx_module.Document(io.BytesIO(docx_bytes))
+    allowed: set[str] = set()
+    for row in toc_entries:
+        text_value = str(row.get("text") or "").strip()
+        if text_value:
+            allowed.add(re.sub(r"\s+", "", text_value).strip().lower())
+        stripped = strip_heading_prefix(text_value)
+        if stripped:
+            allowed.add(re.sub(r"\s+", "", stripped).strip().lower())
+    use_native = bool(prefer_native and heading_sanitized and not _doc_has_unexpected_heading_semantics(doc, allowed))
+    _insert_toc_page(doc, toc_entries, use_native_toc=use_native)
+
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output.read()
+
+
+def _load_forge_pipt_mapping(content: str) -> dict[str, str]:
+    placeholders = _find_forge_pipt_placeholders(content)
+    if not placeholders:
+        return {}
+    legacy_placeholders = [item for item in placeholders if item.startswith("{{__PIPT_")]
+    strong_placeholders = [item for item in placeholders if _is_strong_pipt_token(item)]
+    mapping: dict[str, str] = {}
+    engine = get_engine()
+    with engine.connect() as conn:
+        exists = conn.execute(text("SELECT to_regclass('bid_generator.entity_registry') IS NOT NULL")).scalar_one()
+        if not exists:
+            return {}
+        stmt = text(
+            """
+            SELECT placeholder, strong_placeholder, original_text_enc
+            FROM bid_generator.entity_registry
+            WHERE placeholder IN :legacy_placeholders
+               OR strong_placeholder IN :strong_placeholders
+            """
+        ).bindparams(
+            bindparam("legacy_placeholders", expanding=True),
+            bindparam("strong_placeholders", expanding=True),
+        )
+        rows = conn.execute(
+            stmt,
+            {
+                "legacy_placeholders": legacy_placeholders or ["__none__"],
+                "strong_placeholders": strong_placeholders or ["__none__"],
+            },
+        ).mappings().all()
+    for row in rows:
+        original = _decrypt_forge_original_text(str(row.get("original_text_enc") or ""))
+        placeholder = str(row.get("placeholder") or "")
+        strong_placeholder = str(row.get("strong_placeholder") or "")
+        if placeholder in placeholders:
+            mapping[placeholder] = original
+        if strong_placeholder in placeholders:
+            mapping[strong_placeholder] = original
+    return mapping
+
+
+def _find_forge_pipt_placeholders(content: str) -> list[str]:
+    seen: set[str] = set()
+    placeholders: list[str] = []
+    for pattern in (r"\{\{__PIPT_[a-zA-Z0-9_]+__\}\}", r"@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@"):
+        for match in re.finditer(pattern, str(content or "")):
+            token = match.group(0)
+            if token not in seen:
+                seen.add(token)
+                placeholders.append(token)
+    return placeholders
+
+
+def _is_strong_pipt_token(value: str) -> bool:
+    return bool(re.fullmatch(r"@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@", str(value or "")))
+
+
+def _decrypt_forge_original_text(value: str) -> str:
+    raw_key = os.environ.get("PIPT_DB_KEY", "")
+    if not raw_key:
+        return value
+    try:
+        from cryptography.fernet import Fernet
+
+        return Fernet(raw_key.encode() if isinstance(raw_key, str) else raw_key).decrypt(value.encode("ascii")).decode("utf-8")
+    except Exception:
+        return value
+
+
+def _load_forge_image_map(content: str) -> dict[str, dict[str, str]]:
+    placeholders = sorted(set(re.findall(r"__PRO_IMG_[a-f0-9]+__", str(content or ""))))
+    if not placeholders:
+        return {}
+    image_hashes = [placeholder.replace("__PRO_IMG_", "").replace("__", "") for placeholder in placeholders]
+    engine = get_engine()
+    with engine.connect() as conn:
+        exists = conn.execute(text("SELECT to_regclass('bid_generator.image_registry') IS NOT NULL")).scalar_one()
+        if not exists:
+            return {}
+        stmt = text(
+            """
+            SELECT placeholder, abs_path, preview_url
+            FROM bid_generator.image_registry
+            WHERE image_hash IN :image_hashes
+            """
+        ).bindparams(bindparam("image_hashes", expanding=True))
+        rows = conn.execute(stmt, {"image_hashes": image_hashes or ["__none__"]}).mappings().all()
+    return {
+        str(row.get("placeholder") or ""): {
+            "abs_path": str(row.get("abs_path") or ""),
+            "preview_url": str(row.get("preview_url") or ""),
+        }
+        for row in rows
+        if str(row.get("placeholder") or "")
+    }
+
+
 def _analysis_report_mirror_path(project_id: str) -> Path:
     return _bid_generator_legacy_root() / "data" / "projects" / f"{project_id}_analysis.json"
 
@@ -4195,6 +5024,228 @@ def _knowledge_image_asset_payload(row: Mapping[str, Any], preview_url: str = ""
         "preview_url": preview_url,
         "created_at": _iso_value(row.get("created_at")),
     }
+
+
+def _parse_json_object_text(value: str) -> dict[str, Any]:
+    text_value = str(value or "").strip()
+    if not text_value:
+        return {}
+    code_block_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text_value, flags=re.IGNORECASE)
+    raw = code_block_match.group(1).strip() if code_block_match else text_value
+    object_match = re.search(r"\{[\s\S]*\}", raw)
+    if object_match:
+        raw = object_match.group(0)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _tag_image_with_vlm_native(image_path: Path) -> str:
+    """调用远端多模态服务给图片打标；未启用时返回空字符串。"""
+    try:
+        if os.environ.get("REMOTE_VISION_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+            return ""
+        vlm_api_url = os.environ.get("REMOTE_VISION_API_URL", "").strip()
+        vlm_model = os.environ.get("REMOTE_VISION_MODEL", "").strip()
+        if not vlm_api_url or not vlm_model:
+            logger.warning("REMOTE_VISION_API_URL / REMOTE_VISION_MODEL 未配置，跳过图片打标")
+            return ""
+        timeout_seconds = int(os.environ.get("REMOTE_VISION_TIMEOUT", "120") or "120")
+        max_tokens = int(os.environ.get("REMOTE_VISION_MAX_TOKENS", "400") or "400")
+        api_key = os.environ.get("REMOTE_VISION_API_KEY", "").strip()
+        encoded = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+        payload = {
+            "model": vlm_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "你是知识库图片标注器。请识别图片内容并只输出 JSON，不要输出解释。\n"
+                                "字段：caption(12-30字图注)、image_type(如系统架构图/流程图/截图/表格/其他)、"
+                                "summary(120字以内说明)、key_elements(字符串数组)、tags(字符串数组)。"
+                                "不得照抄图片中的真实人名、手机号、邮箱、IP、机构名称，需泛化为某人、某机构、[IP地址]。"
+                            ),
+                        },
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}},
+                    ],
+                }
+            ],
+            "max_tokens": max_tokens,
+        }
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        response = requests.post(vlm_api_url, json=payload, headers=headers, timeout=timeout_seconds)
+        if response.status_code != 200:
+            return ""
+        content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        return str(content or "").strip()
+    except Exception as exc:
+        logger.warning("远端图片打标失败 (%s): %s", image_path, exc)
+        return ""
+
+
+def _normalize_image_caption_payload(raw_caption: str, fallback_caption: str = "知识库配图") -> dict[str, Any]:
+    data = _parse_json_object_text(raw_caption)
+    caption = str(data.get("caption") or "").strip() if data else ""
+    image_type = str(data.get("image_type") or "").strip() if data else ""
+    summary = str(data.get("summary") or "").strip() if data else ""
+    tags = data.get("tags") if data else []
+    if not isinstance(tags, list):
+        tags = []
+    if not caption and raw_caption and len(raw_caption.strip()) >= 4:
+        caption = raw_caption.strip().splitlines()[0][:40]
+        summary = raw_caption.strip()[:180]
+    return {
+        "caption": caption or fallback_caption,
+        "image_type": image_type or "其他",
+        "summary": summary or caption or fallback_caption,
+        "tags": [str(item).strip() for item in tags if str(item).strip()][:8],
+        "caption_status": "captioned" if caption and caption != fallback_caption else "weak",
+    }
+
+
+def _build_knowledge_image_block(asset: Mapping[str, Any]) -> str:
+    tags = asset.get("tags") or []
+    tag_text = "、".join(tags) if isinstance(tags, list) else str(tags or "")
+    source = str(asset.get("source_doc") or "")
+    page = asset.get("source_page")
+    source_text = f"{source}，第 {page} 页" if source and page else source
+    caption = str(asset.get("caption") or "知识库配图")
+    placeholder = str(asset.get("placeholder") or "")
+    return "\n".join(
+        [
+            "【知识库图片】",
+            f"图片占位符：{placeholder}",
+            f"图注：{caption}",
+            f"类型：{asset.get('image_type', '其他')}",
+            f"来源：{source_text}",
+            f"说明：{asset.get('summary', '')}",
+            f"标签：{tag_text}",
+            f"使用规则：如正文需要引用该图，必须输出 ![图：{caption}]({placeholder})",
+        ]
+    ).strip()
+
+
+def _ensure_image_asset_tables(conn: Any) -> None:
+    registry_exists = conn.execute(text("SELECT to_regclass('bid_generator.image_registry') IS NOT NULL")).scalar_one()
+    assets_exists = conn.execute(text("SELECT to_regclass('bid_generator.knowledge_image_assets') IS NOT NULL")).scalar_one()
+    if not registry_exists or not assets_exists:
+        raise PlatformError(
+            code="DATABASE_ERROR",
+            message="知识库图片资产表不存在，请先执行数据库迁移。",
+            status_code=500,
+            details={"tables": ["bid_generator.image_registry", "bid_generator.knowledge_image_assets"]},
+        )
+
+
+def _register_knowledge_image_asset_native(
+    *,
+    filename: str,
+    image_bytes: bytes,
+    original_name: str,
+    fallback_caption: str = "知识库配图",
+    source_page: int | None = None,
+) -> tuple[str, str, dict[str, Any]]:
+    """持久化图片资产；入参为图片字节和来源信息，出参为占位符、图注和 image_map 条目。"""
+    image_hash = hashlib.md5(image_bytes).hexdigest()
+    safe_original_name = Path(original_name or "image.bin").name or "image.bin"
+    stored_name = f"{image_hash}_{safe_original_name}"
+    image_dir = _bid_generator_legacy_root() / "data" / "extracted_images"
+    image_path = image_dir / stored_name
+    try:
+        image_dir.mkdir(parents=True, exist_ok=True)
+        if not image_path.exists():
+            image_path.write_bytes(image_bytes)
+    except OSError as exc:
+        raise PlatformError(code="BUSINESS_DIRECT_ERROR", message="保存提取图片失败。", status_code=500) from exc
+
+    placeholder = f"__PRO_IMG_{image_hash}__"
+    preview_url = f"/api/extracted-images/{stored_name}"
+    caption_payload = _normalize_image_caption_payload(
+        _tag_image_with_vlm_native(image_path),
+        fallback_caption=fallback_caption,
+    )
+    caption = str(caption_payload["caption"])
+    try:
+        with get_engine().begin() as conn:
+            _ensure_image_asset_tables(conn)
+            registry_exists = conn.execute(
+                text("SELECT 1 FROM bid_generator.image_registry WHERE image_hash = :image_hash"),
+                {"image_hash": image_hash},
+            ).first()
+            if registry_exists is None:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO bid_generator.image_registry
+                          (image_hash, project_id, abs_path, preview_url, placeholder, vlm_caption, is_reference_only)
+                        VALUES
+                          (:image_hash, NULL, :abs_path, :preview_url, :placeholder, :vlm_caption, 1)
+                        """
+                    ),
+                    {
+                        "image_hash": image_hash,
+                        "abs_path": str(image_path),
+                        "preview_url": preview_url,
+                        "placeholder": placeholder,
+                        "vlm_caption": caption,
+                    },
+                )
+            asset_exists = conn.execute(
+                text("SELECT 1 FROM bid_generator.knowledge_image_assets WHERE image_hash = :image_hash"),
+                {"image_hash": image_hash},
+            ).first()
+            if asset_exists is None:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO bid_generator.knowledge_image_assets
+                          (image_hash, placeholder, source_doc, source_page, nearby_text_sanitized,
+                           caption, image_type, summary, tags_json, caption_status)
+                        VALUES
+                          (:image_hash, :placeholder, :source_doc, :source_page, '',
+                           :caption, :image_type, :summary, :tags_json, :caption_status)
+                        """
+                    ),
+                    {
+                        "image_hash": image_hash,
+                        "placeholder": placeholder,
+                        "source_doc": filename or "",
+                        "source_page": source_page,
+                        "caption": caption,
+                        "image_type": str(caption_payload["image_type"]),
+                        "summary": str(caption_payload["summary"]),
+                        "tags_json": json.dumps(caption_payload["tags"], ensure_ascii=False),
+                        "caption_status": str(caption_payload["caption_status"]),
+                    },
+                )
+    except PlatformError:
+        raise
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise _database_error(exc) from exc
+
+    image_info = {
+        "abs_path": str(image_path),
+        "preview_url": preview_url,
+        "description": caption,
+        "knowledge_block": _build_knowledge_image_block(
+            {
+                "placeholder": placeholder,
+                "caption": caption,
+                "image_type": caption_payload["image_type"],
+                "summary": caption_payload["summary"],
+                "tags": caption_payload["tags"],
+                "source_doc": filename or "",
+                "source_page": source_page,
+            }
+        ),
+        "caption_status": caption_payload["caption_status"],
+    }
+    return placeholder, caption, image_info
 
 
 def _knowledge_document_payload(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -4553,9 +5604,9 @@ def _ensure_safe_diagram_artifact_id(diagram_id: str) -> str:
     return normalized.lower()
 
 
-def _require_legacy_task_owner(task_id: str, project_id: str | None) -> Any:
+def _require_task_owner(task_id: str, project_id: str | None) -> Any:
     task_id_value = _required_string(task_id, field="task_id")
-    task = _get_legacy_task(task_id_value)
+    task = _get_task(task_id_value)
     if not task:
         raise PlatformError(code="RESOURCE_NOT_FOUND", message="任务不存在或已过期", status_code=404)
     pid = str(project_id or "").strip()
@@ -4565,78 +5616,398 @@ def _require_legacy_task_owner(task_id: str, project_id: str | None) -> Any:
     return task
 
 
-def _get_legacy_task(task_id: str) -> Any | None:
-    return _legacy_task_manager().get_task(task_id)
+def _get_task(task_id: str) -> Any | None:
+    return _task_manager().get_task(task_id)
 
 
-def _legacy_task_manager() -> Any:
-    return legacy_task_manager()
+def _task_manager() -> Any:
+    return native_task_manager
 
 
 async def _ensure_project_slot_native(project_id: str, task_type: str) -> None:
-    """复用 legacy task manager 的并发限制，但 ownership 留在 apps/api。"""
-    task_routes = _ensure_legacy_imported("app.api_lite.task_routes")
+    """检查项目任务并发槽位；入参为项目 ID/任务类型，不再调用 legacy task_routes 私有函数。"""
+    project_id_value = str(project_id or "").strip()
+    if not project_id_value:
+        raise PlatformError(code="INVALID_REQUEST", message="project_id 不能为空", status_code=400)
+    task_manager = _task_manager()
     try:
-        await task_routes._ensure_project_slot(project_id, task_type)
+        task_manager.ensure_backend_ready()
+    except RuntimeError as exc:
+        raise PlatformError(
+            code="TASK_BACKEND_UNAVAILABLE",
+            message=str(exc),
+            status_code=500,
+            details={"code": "TASK_BACKEND_UNAVAILABLE", "message": str(exc)},
+        ) from exc
+
+    limits = task_manager.get_limits()
+    content_project_limit = int(limits.get("max_project_content_running", 2) or 2)
+    project_limit_override = content_project_limit if task_type == "content" else None
+    type_limit_override = int(os.environ.get("MAX_DIAGRAM_RUNNING_TASKS", "1") or "1") if task_type == "diagram" else None
+    allowed, details = await task_manager.try_acquire_task_slot(
+        project_id_value,
+        task_type,
+        enforce_project_limit=(task_type != "diagram"),
+        max_project_running=project_limit_override,
+        max_type_running=type_limit_override,
+    )
+    if allowed:
+        return
+
+    reason = (details or {}).get("reason", "limit")
+    if reason == "global_limit":
+        message = "后台任务并发达到全局上限，请稍后重试"
+    elif reason == "project_limit":
+        limit_num = (details or {}).get("max_project_running")
+        if task_type == "content" and limit_num:
+            message = f"项目 {project_id_value} 正在运行 {limit_num} 个正文任务，请等待空闲后再发起"
+        else:
+            message = f"项目 {project_id_value} 正在运行任务，请等待当前任务完成后再发起"
+    else:
+        message = "任务并发受限，请稍后重试"
+    detail = {
+        "code": "TASK_LIMIT_REACHED",
+        "message": message,
+        "limit_reason": reason,
+        "requested_project_id": project_id_value,
+        "task_type": task_type,
+        "limits": task_manager.get_limits(),
+        "metrics": details,
+    }
+    raise PlatformError(code="TASK_LIMIT_REACHED", message=message, status_code=409, details=detail)
+
+
+def _cache_pdf_file_native(project_id: str, content_bytes: bytes) -> str:
+    """缓存上传 PDF；入参为项目 ID 和 PDF 字节，出参保持 legacy 预览 URL。"""
+    normalized_id = _ensure_safe_project_id(project_id)
+    pdf_path = _pdf_cache_path(normalized_id)
+    try:
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_path.write_bytes(content_bytes)
+    except OSError as exc:
+        raise PlatformError(code="BUSINESS_DIRECT_ERROR", message="缓存 PDF 文件失败。", status_code=500) from exc
+    return f"/api/projects/pdf/{normalized_id}"
+
+
+def _extract_pdf_pages_text_native(content_bytes: bytes) -> list[dict[str, Any]]:
+    """按页提取 PDF 文本；入参为 PDF 字节，出参为页码和文本列表。"""
+    pages_text: list[dict[str, Any]] = []
+    try:
+        import pymupdf
+
+        doc = pymupdf.open(stream=content_bytes, filetype="pdf")
+        try:
+            for page_idx, page in enumerate(doc):
+                pages_text.append({"page": page_idx, "text": page.get_text("text") or ""})
+        finally:
+            doc.close()
+    except ImportError:
+        logger.warning("PyMuPDF 未安装，无法进行分页文本索引")
     except Exception as exc:
-        status_code = getattr(exc, "status_code", None)
-        detail = getattr(exc, "detail", None)
-        if status_code == 400:
-            message = detail if isinstance(detail, str) else "project_id 不能为空"
-            raise PlatformError(code="INVALID_REQUEST", message=message, status_code=400) from exc
-        if status_code == 409:
-            if isinstance(detail, dict):
-                message = str(detail.get("message") or "任务并发受限，请稍后重试")
-                raise PlatformError(
-                    code=str(detail.get("code") or "TASK_LIMIT_REACHED"),
-                    message=message,
-                    status_code=409,
-                    details=detail,
-                ) from exc
-            raise PlatformError(code="TASK_LIMIT_REACHED", message=str(detail or "任务并发受限，请稍后重试"), status_code=409) from exc
-        raise
+        logger.warning("PDF 分页文本提取异常: %s", exc)
+    return pages_text
 
 
-def _legacy_routes_module() -> ModuleType:
-    return _ensure_legacy_imported("app.api_lite.routes")
+def _preprocess_docx_alignment_native(src_path: str) -> str:
+    """预处理 DOCX 对齐属性，降低 LibreOffice 转 PDF 时的字距异常概率。"""
+    try:
+        import docx as docx_module
+    except ImportError:
+        return src_path
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    bad_alignments = {
+        "distribute",
+        "distributeLetter",
+        "distributeAllLines",
+        "thaiDistribute",
+        "both",
+        "justify",
+        "lowKashida",
+        "mediumKashida",
+        "highKashida",
+    }
+    document = docx_module.Document(src_path)
+
+    def fix_paragraphs(paragraphs: Any) -> None:
+        for paragraph in paragraphs:
+            paragraph_props = paragraph._element.find(f"{{{word_namespace}}}pPr")
+            if paragraph_props is None:
+                continue
+            justification = paragraph_props.find(f"{{{word_namespace}}}jc")
+            if justification is None:
+                continue
+            value = str(justification.get(f"{{{word_namespace}}}val", "") or "")
+            if value in bad_alignments:
+                justification.set(f"{{{word_namespace}}}val", "left")
+
+    fix_paragraphs(document.paragraphs)
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                fix_paragraphs(cell.paragraphs)
+    document.save(src_path)
+    return src_path
 
 
-def _legacy_task_routes_module() -> ModuleType:
-    return _ensure_legacy_imported("app.api_lite.task_routes")
+def _convert_to_pdf_and_cache_native(project_id: str, content_bytes: bytes, filename: str) -> str:
+    """将 DOC/DOCX 转为缓存 PDF；入参为项目 ID、原文件字节和文件名，出参保持 legacy 预览 URL。"""
+    normalized_id = _ensure_safe_project_id(project_id)
+    pdf_path = _pdf_cache_path(normalized_id)
+    try:
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise PlatformError(code="BUSINESS_DIRECT_ERROR", message="创建 PDF 缓存目录失败。", status_code=500) from exc
+
+    ext = Path(filename or "").suffix.lower().lstrip(".") or "docx"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src_path = Path(tmp_dir) / f"source.{ext}"
+        src_path.write_bytes(content_bytes)
+        if ext == "docx":
+            try:
+                _preprocess_docx_alignment_native(str(src_path))
+            except Exception as exc:
+                logger.warning("DOCX 排版预处理失败，使用原文件: %s", exc)
+
+        try:
+            import docx2pdf
+
+            docx2pdf.convert(str(src_path), str(pdf_path))
+            if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                return f"/api/projects/pdf/{normalized_id}"
+        except Exception as exc:
+            logger.debug("docx2pdf 不可用: %s", exc)
+
+        try:
+            env = os.environ.copy()
+            env["SAL_USE_VCLPLUGIN"] = "svp"
+            result = subprocess.run(
+                [
+                    "libreoffice",
+                    "--headless",
+                    "--norestore",
+                    "--nofirststartwizard",
+                    "--convert-to",
+                    "pdf:writer_pdf_Export",
+                    "--outdir",
+                    tmp_dir,
+                    str(src_path),
+                ],
+                capture_output=True,
+                timeout=120,
+                env=env,
+                check=False,
+            )
+            converted_pdf = Path(tmp_dir) / "source.pdf"
+            if result.returncode == 0 and converted_pdf.exists():
+                shutil.copy(str(converted_pdf), str(pdf_path))
+                return f"/api/projects/pdf/{normalized_id}"
+            stderr_text = result.stderr.decode("utf-8", errors="replace")[:200]
+            logger.warning("LibreOffice 转换失败: %s", stderr_text)
+        except FileNotFoundError:
+            logger.warning("LibreOffice 未安装，DOCX/DOC 转 PDF 不可用")
+        except Exception as exc:
+            logger.warning("LibreOffice 转换异常: %s", exc)
+
+    logger.warning("所有 DOC/DOCX 转 PDF 方案均失败，project_id=%s", normalized_id)
+    return ""
 
 
-def _legacy_cache_pdf_file(project_id: str, content_bytes: bytes) -> str:
-    return str(_legacy_routes_module()._cache_pdf_file(project_id, content_bytes) or "")
+def _docx_blocks_to_locator_text(doc_blocks: list[dict[str, Any]]) -> tuple[str, dict[str, int]]:
+    locator_map: dict[str, int] = {}
+    lines: list[str] = []
+    for block in doc_blocks:
+        locator = str(block.get("locator") or "").strip().upper()
+        text_value = str(block.get("text") or "").strip()
+        if not locator or not text_value:
+            continue
+        try:
+            locator_map[locator] = int(block.get("body_idx") or 0)
+        except (TypeError, ValueError):
+            locator_map[locator] = 0
+        lines.append(f"[{locator}] {text_value}")
+    return "\n".join(lines), locator_map
 
 
-def _legacy_extract_pdf_pages_text(content_bytes: bytes) -> list[dict[str, Any]]:
-    pages = _legacy_routes_module()._extract_pdf_pages_text(content_bytes)
-    return pages if isinstance(pages, list) else []
+def _extract_docx_with_tables_native(content_bytes: bytes, *, filename: str = "", extract_images: bool = False) -> tuple[str, dict[str, Any]]:
+    """按 DOCX body 顺序提取段落/表格/图片；入参为 DOCX 字节，出参为文本和图片映射。"""
+    if not extract_images:
+        blocks = _extract_docx_blocks(content_bytes)
+        return "\n".join(str(block.get("text") or "") for block in blocks if str(block.get("text") or "").strip()), {}
+
+    try:
+        import docx as docx_module
+    except ImportError as exc:
+        raise PlatformError(code="BUSINESS_DIRECT_ERROR", message="统一后端缺少 python-docx 依赖。", status_code=500) from exc
+
+    document = docx_module.Document(io.BytesIO(content_bytes))
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    paragraph_tag = f"{{{word_namespace}}}p"
+    table_tag = f"{{{word_namespace}}}tbl"
+    row_tag = f"{{{word_namespace}}}tr"
+    cell_tag = f"{{{word_namespace}}}tc"
+    drawing_tag = f"{{{word_namespace}}}drawing"
+    drawing_namespace = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    blip_tag = f"{{{drawing_namespace}}}blip"
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    embed_attr = f"{{{relationship_namespace}}}embed"
+    image_map: dict[str, Any] = {}
+
+    def cell_text(cell_elem: Any) -> str:
+        texts: list[str] = []
+        for paragraph in cell_elem.findall(f".//{paragraph_tag}"):
+            text_value = "".join(node.text or "" for node in paragraph.iter(f"{{{word_namespace}}}t"))
+            if text_value.strip():
+                texts.append(text_value.strip())
+        return " ".join(texts)
+
+    def table_to_markdown(table_elem: Any) -> str:
+        rows = table_elem.findall(f".//{row_tag}")
+        if not rows:
+            return ""
+        markdown_rows: list[str] = []
+        for row in rows:
+            cells = row.findall(f".//{cell_tag}")
+            markdown_rows.append("| " + " | ".join(cell_text(cell) for cell in cells) + " |")
+        if len(markdown_rows) > 1:
+            column_count = markdown_rows[0].count("|") - 1
+            markdown_rows.insert(1, "| " + " | ".join(["---"] * max(column_count, 1)) + " |")
+        return "\n".join(markdown_rows)
+
+    def image_refs_from_element(element: Any) -> list[str]:
+        refs: list[str] = []
+        for drawing in element.findall(f".//{drawing_tag}"):
+            for blip in drawing.findall(f".//{blip_tag}"):
+                embed_id = blip.get(embed_attr)
+                if not embed_id or embed_id not in document.part.rels:
+                    continue
+                rel = document.part.rels[embed_id]
+                if "image" not in str(rel.reltype or ""):
+                    continue
+                image_bytes = rel.target_part.blob
+                original_name = Path(str(rel.target_part.partname).split("/")[-1]).name
+                placeholder, caption, image_info = _register_knowledge_image_asset_native(
+                    filename=filename,
+                    image_bytes=image_bytes,
+                    original_name=original_name,
+                )
+                image_map[placeholder] = image_info
+                refs.append(f"![{caption}]({placeholder})")
+        return refs
+
+    parts: list[str] = []
+    for child in document.element.body:
+        if child.tag == paragraph_tag:
+            text_value = "".join(node.text or "" for node in child.iter(f"{{{word_namespace}}}t"))
+            if text_value.strip():
+                parts.append(text_value)
+            parts.extend(image_refs_from_element(child))
+        elif child.tag == table_tag:
+            table_text = table_to_markdown(child)
+            if table_text:
+                parts.append(f"\n{table_text}\n")
+            parts.extend(image_refs_from_element(child))
+    return "\n".join(parts), image_map
 
 
-def _legacy_convert_to_pdf_and_cache(project_id: str, content_bytes: bytes, filename: str) -> str:
-    return str(_legacy_routes_module()._convert_to_pdf_and_cache(project_id, content_bytes, filename) or "")
+def _extract_docx_with_locators_native(content_bytes: bytes) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+    """提取 DOCX 定位符文本；入参为 DOCX 字节，出参为定位文本、定位映射和块结构。"""
+    blocks = _extract_docx_blocks(content_bytes)
+    locator_text, locator_map = _docx_blocks_to_locator_text(blocks)
+    return locator_text, locator_map, blocks
 
 
-def _legacy_extract_raw_text_with_images(filename: str, content_bytes: bytes, *, use_vision_parsing: bool) -> tuple[str, dict[str, Any]]:
-    text_value, image_map = _legacy_routes_module()._extract_raw_text_with_images(
-        filename,
-        content_bytes,
-        use_vision_parsing=use_vision_parsing,
-    )
-    return str(text_value or ""), image_map if isinstance(image_map, dict) else {}
+def _extract_pdf_text_native(content_bytes: bytes) -> str:
+    try:
+        import pymupdf
+
+        doc = pymupdf.open(stream=content_bytes, filetype="pdf")
+        try:
+            return "\n".join(page.get_text("text") or "" for page in doc)
+        finally:
+            doc.close()
+    except ImportError:
+        logger.warning("PyMuPDF 未安装，PDF 文本提取降级为字节解码")
+    except Exception as exc:
+        logger.warning("PyMuPDF 解析异常，PDF 文本提取降级为字节解码: %s", exc)
+    return content_bytes.decode("latin-1", errors="replace")
 
 
-def _legacy_extract_docx_with_locators(content_bytes: bytes) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
-    import docx as _docx_mod
+def _extract_pdf_text_with_images_native(filename: str, content_bytes: bytes) -> tuple[str, dict[str, Any]]:
+    image_map: dict[str, Any] = {}
+    try:
+        import pymupdf4llm
 
-    document = _docx_mod.Document(io.BytesIO(content_bytes))
-    text_value, locator_map, blocks = _legacy_routes_module()._extract_docx_with_locators(document)
-    return (
-        str(text_value or ""),
-        locator_map if isinstance(locator_map, dict) else {},
-        blocks if isinstance(blocks, list) else [],
-    )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "source.pdf"
+            images_dir = Path(temp_dir) / "images"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path.write_bytes(content_bytes)
+            markdown_text = pymupdf4llm.to_markdown(str(pdf_path), write_images=True, image_path=str(images_dir))
+            min_size = int(os.environ.get("VLM_MIN_IMAGE_SIZE_KB", "5") or "5") * 1024
+
+            def replace_image(match: re.Match[str]) -> str:
+                source_img = Path(temp_dir) / match.group(2)
+                try:
+                    if not source_img.exists() or source_img.stat().st_size < min_size:
+                        return ""
+                    placeholder, caption, image_info = _register_knowledge_image_asset_native(
+                        filename=filename,
+                        image_bytes=source_img.read_bytes(),
+                        original_name=source_img.name,
+                    )
+                    image_map[placeholder] = image_info
+                    return f"![{caption}]({placeholder})"
+                except Exception as exc:
+                    logger.warning("PDF 图片资产注册失败: %s", exc)
+                    return ""
+
+            return re.sub(r"!\[(.*?)\]\((.*?)\)", replace_image, markdown_text), image_map
+    except ImportError:
+        logger.warning("服务器缺少 pymupdf4llm，PDF 视觉解析降级为基础文本解析")
+    except Exception as exc:
+        logger.warning("PyMuPDF4LLM 解析异常，PDF 视觉解析降级为基础文本解析: %s", exc)
+    return _extract_pdf_text_native(content_bytes), image_map
+
+
+def _extract_doc_text_native(content_bytes: bytes) -> str:
+    if content_bytes[:4] == b"PK\x03\x04":
+        text_value, _image_map = _extract_docx_with_tables_native(content_bytes)
+        return text_value
+    if content_bytes[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        try:
+            import olefile
+
+            with olefile.OleFileIO(io.BytesIO(content_bytes)) as ole:
+                if ole.exists("WordDocument"):
+                    raw = ole.openstream("WordDocument").read()
+                    text_value = raw.decode("utf-16-le", errors="replace")
+                    text_value = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text_value)
+                    text_value = re.sub(r" {3,}", "\n", text_value).strip()
+                    if len(text_value) > 50:
+                        return text_value
+        except ImportError:
+            logger.warning("olefile 未安装，无法解析旧版 .doc 文件")
+        except Exception as exc:
+            logger.warning(".doc OLE2 解析失败: %s", exc)
+    return "[无法解析旧版 .doc 文件，请将文件另存为 .docx 后重新上传]"
+
+
+def _extract_raw_text_with_images_native(filename: str, content_bytes: bytes, *, use_vision_parsing: bool) -> tuple[str, dict[str, Any]]:
+    """提取上传文档文本；入参为文件名/字节/视觉开关，出参为文本和图片映射。"""
+    ext = Path(filename or "").suffix.lower().lstrip(".")
+    if ext == "pdf":
+        if use_vision_parsing:
+            return _extract_pdf_text_with_images_native(filename, content_bytes)
+        return _extract_pdf_text_native(content_bytes), {}
+    if ext == "docx":
+        return _extract_docx_with_tables_native(content_bytes, filename=filename, extract_images=use_vision_parsing)
+    if ext == "doc":
+        return _extract_doc_text_native(content_bytes), {}
+    try:
+        return content_bytes.decode("utf-8"), {}
+    except UnicodeDecodeError:
+        return content_bytes.decode("latin-1", errors="replace"), {}
 
 
 def _load_desensitize_profile(profile_name: str) -> dict[str, Any]:
@@ -4683,7 +6054,7 @@ def _run_bid_pipt_preprocess(*, text: str, project_id: str, task_id: str, profil
     return result
 
 
-def _legacy_compose_runtime_writing_hint(
+def _compose_runtime_writing_hint(
     writing_hint: str,
     section_title: str,
     expected_words: int,
@@ -4692,104 +6063,275 @@ def _legacy_compose_runtime_writing_hint(
     section_outline_slice: str = "",
     analysis_context: str = "",
 ) -> str:
-    module = _ensure_legacy_imported("app.api_lite.writing_hint_builder")
-    return str(
-        module.compose_runtime_writing_hint(
-            writing_hint,
-            section_title,
-            int(expected_words or 0),
-            keywords,
-            section_outline_slice=section_outline_slice,
-            analysis_context=analysis_context,
-        )
-        or ""
+    parts: list[str] = []
+    outline_block = _build_outline_slice_block(section_outline_slice)
+    if outline_block:
+        parts.append(outline_block)
+
+    bridge_block = _build_section_bridge_block(section_title, section_outline_slice)
+    if bridge_block:
+        parts.append(bridge_block)
+
+    core = _extract_core_writing_intent(writing_hint)
+    if core:
+        parts.append(core)
+
+    analysis_block = _build_analysis_context_block(analysis_context)
+    if analysis_block:
+        parts.append(analysis_block)
+
+    parts.append(_build_content_expansion_constraints(section_title, int(expected_words or 0), keywords))
+    return _join_hint_segments(parts)
+
+
+_RUNTIME_HINT_BLOCK_TITLES: tuple[str, ...] = (
+    "【本节目录层级定位（勿用 # 标题重复以下编号）】",
+    "【章内承接与开篇导入要求】",
+    "【招标文件解析参考（优先级最高，严格对应本章节要求）】",
+    "【正文扩写与技术深度约束（必须遵守）】",
+)
+
+_IMPLICIT_HINT_TAIL_ANCHORS: tuple[str, ...] = (
+    "正文应按“需求理解、方案机制、落地措施、验证与风险控制”展开",
+    "不要重复目录编号",
+    "不得编造缺乏依据",
+)
+
+
+def _normalize_hint_text(text_value: str) -> str:
+    return str(text_value or "").replace("\r\n", "\n").strip()
+
+
+def _join_hint_segments(segments: list[str]) -> str:
+    return "\n\n".join(part.strip() for part in segments if part and part.strip()).strip()
+
+
+def _find_hint_block_ranges(text_value: str) -> list[tuple[int, int]]:
+    matches = [
+        (title, text_value.find(title))
+        for title in _RUNTIME_HINT_BLOCK_TITLES
+        if text_value.find(title) >= 0
+    ]
+    matches.sort(key=lambda item: item[1])
+    return [
+        (start, matches[index + 1][1] if index + 1 < len(matches) else len(text_value))
+        for index, (_, start) in enumerate(matches)
+    ]
+
+
+def _build_outline_slice_block(section_outline_slice: str) -> str:
+    slice_text = _normalize_hint_text(section_outline_slice)
+    if not slice_text:
+        return ""
+    return (
+        "【本节目录层级定位（只用于理解，不得输出）】\n"
+        + slice_text
+        + "\n- 上述目录编号和标题由外部编辑器统一渲染，正文中不得复述、改写或另起同级/下级标题。"
     )
 
 
-def _legacy_validate_required_bidder_info(bidder_info: Mapping[str, Any] | None) -> None:
-    module = _ensure_legacy_imported("app.api_lite.bidder_pipt")
-    module.validate_required_bidder_info(dict(bidder_info or {}))
+def _build_analysis_context_block(analysis_context: str) -> str:
+    context_text = _normalize_hint_text(analysis_context)
+    if not context_text:
+        return ""
+    return "【招标文件解析参考（优先级最高，严格对应本章节要求）】\n" + context_text
 
 
-def _legacy_merge_bidder_pipt_context(
+def _parse_outline_lines(section_outline_slice: str) -> list[str]:
+    text_value = _normalize_hint_text(section_outline_slice)
+    if not text_value:
+        return []
+    return [line.rstrip() for line in text_value.splitlines() if line.strip()]
+
+
+def _outline_line_depth(line: str) -> int:
+    raw = re.sub(r"\[当前\]\s*", "", str(line or ""))
+    return len(raw) - len(raw.lstrip(" "))
+
+
+def _current_outline_item_is_first_sibling(lines: list[str]) -> bool:
+    for index, line in enumerate(lines):
+        if "[当前]" not in line:
+            continue
+        depth = _outline_line_depth(line)
+        for previous in reversed(lines[:index]):
+            if not previous.strip():
+                continue
+            previous_depth = _outline_line_depth(previous)
+            if previous_depth < depth:
+                break
+            if previous_depth == depth:
+                return False
+        return True
+    return False
+
+
+def _looks_like_first_section(section_title: str, section_outline_slice: str) -> bool:
+    title = _normalize_hint_text(section_title)
+    lines = _parse_outline_lines(section_outline_slice)
+    numbered_text = "\n".join(line.strip() for line in lines + [title])
+    if re.search(r"(^|\n)\s*(?:第一节|第1节|1[.．、]1|[（(]一[）)]|一[、.．])", numbered_text):
+        return True
+    if _current_outline_item_is_first_sibling(lines):
+        return True
+    single_section_titles = ("响应情况", "响应程度", "符合性响应", "符合性偏离", "偏离情况")
+    return len(lines) <= 1 and any(marker in title for marker in single_section_titles)
+
+
+def _build_section_bridge_block(section_title: str, section_outline_slice: str) -> str:
+    if not _looks_like_first_section(section_title, section_outline_slice):
+        return ""
+    return (
+        "【章内承接与开篇导入要求】\n"
+        "- 本节若是所在章节的第一个正文单元，开头仅写 1 个投标响应定位段，说明我方对采购需求、评分关注点、交付边界与响应策略的理解；\n"
+        "- 必须使用供应商/响应人视角，禁止把项目写成采购人战略宣传、城市宣传稿或立项报告，禁止使用“响应国家战略、关键举措、背景内涵、系统阐述”等宏大叙事套话；\n"
+        "- 导入段不得使用“本节主要介绍/该节将阐述”这类机械句式，不得直接罗列标题；\n"
+        "- 导入段之后立即进入具体响应内容，优先围绕需求理解、偏离控制、方案措施、交付物、验收与风险控制展开。"
+    )
+
+
+def _build_content_expansion_constraints(section_title: str, expected_words: int, keywords: str) -> str:
+    target = max(int(expected_words or 0), 0)
+    keyword_text = _normalize_hint_text(keywords)
+    density = (
+        "不少于 4 个技术要点段（每段需包含“结论 + 依据/机制 + 落地方式”）"
+        if target < 1200
+        else "不少于 6 个技术要点段（每段需包含“结论 + 依据/机制 + 落地方式”）"
+    )
+    return (
+        "【正文扩写与技术深度约束（必须遵守）】\n"
+        f"- 本节标题：{_normalize_hint_text(section_title) or '未命名章节'}\n"
+        "- 输出边界：只输出本节标题下面应出现的正文内容，第一行必须直接进入正文句子；\n"
+        "- 禁止在正文开头或段落独立行输出本节标题、章节编号、Markdown 标题、加粗标题；\n"
+        "- 禁止输出“一、/二、/三、”“1.1/1.2/1.1.1”这类独立小标题行；如需分层，只能在自然段内承接或使用普通列表项说明措施；\n"
+        f"- 目标篇幅：约 {target if target > 0 else 800} 字，建议控制在目标值的 90%-110%，不得明显短于用户设置字数；\n"
+        "- 允许的组织形式仅限：常规正文段落、普通有序/无序列表；列表项必须是具体措施或论证内容，不能退化成目录标题清单；\n"
+        "- 不得重复输出章节名或目录结构，不得把目录当正文写出；\n"
+        f"- 内容密度：{density}；\n"
+        "- 每个要点优先使用“技术方案 → 实施步骤 → 验证方式/度量指标”结构；\n"
+        "- 如涉及架构设计，需明确组件职责、接口边界、数据流与异常处理；\n"
+        "- 如涉及实施保障，需补充可执行细节（人员角色、里程碑、风险控制、验收标准）；\n"
+        "- 避免泛泛表述与同义反复，不得仅停留在原则层面；\n"
+        f"- 关键词覆盖：{keyword_text if keyword_text else '按章节主题提炼 3-5 个技术关键词并自然覆盖'}。"
+    )
+
+
+def _extract_core_writing_intent(writing_hint: str) -> str:
+    normalized = _normalize_hint_text(writing_hint)
+    if not normalized:
+        return ""
+
+    ranges = _find_hint_block_ranges(normalized)
+    if ranges:
+        segments: list[str] = []
+        cursor = 0
+        for start, end in ranges:
+            between = normalized[cursor:start].strip()
+            if between:
+                segments.append(between)
+            cursor = end
+        tail = normalized[cursor:].strip()
+        if tail:
+            segments.append(tail)
+        normalized = _join_hint_segments(segments)
+        if not normalized:
+            return ""
+
+    anchor_indexes = [
+        normalized.find(anchor)
+        for anchor in _IMPLICIT_HINT_TAIL_ANCHORS
+        if normalized.find(anchor) >= 0
+    ]
+    if anchor_indexes:
+        normalized = normalized[: min(anchor_indexes)].strip()
+    return normalized
+
+
+def _validate_required_bidder_info(bidder_info: Mapping[str, Any] | None) -> None:
+    validate_required_bidder_info(bidder_info)
+
+
+def _merge_bidder_pipt_context(
     *,
     mapping_table: dict[str, Any],
     placeholder_hint: str,
     bidder_info: Mapping[str, Any] | None,
 ) -> tuple[dict[str, str], str, Any]:
-    module = _ensure_legacy_imported("app.api_lite.bidder_pipt")
-    from app.api_lite.database import SessionLocal as LegacySessionLocal
-
-    db = LegacySessionLocal()
-    try:
-        merged_mapping_table, merged_placeholder_hint, bidder_context = module.merge_bidder_pipt_context(
-            mapping_table=mapping_table,
-            placeholder_hint=placeholder_hint,
-            bidder_info=dict(bidder_info or {}),
-            db=db,
-        )
-        db.commit()
-        return _string_mapping(merged_mapping_table), str(merged_placeholder_hint or ""), bidder_context
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    merged_mapping_table, merged_placeholder_hint, bidder_context = merge_bidder_pipt_context(
+        mapping_table=mapping_table,
+        placeholder_hint=placeholder_hint,
+        bidder_info=bidder_info,
+    )
+    return _string_mapping(merged_mapping_table), str(merged_placeholder_hint or ""), bidder_context
 
 
-def _legacy_resolve_body_placeholders(
+def _resolve_body_placeholders(
     *,
     content: str,
     request_mapping_flat: dict[str, str],
     audit_source: str,
 ) -> tuple[str, list[dict[str, Any]]]:
-    module = _ensure_legacy_imported("app.api_lite.content_placeholder_resolve")
-    from app.api_lite.database import SessionLocal as LegacySessionLocal
-
-    replace_map: dict[str, str] = {}
-    db = LegacySessionLocal()
-    try:
-        resolved, _replace_map, replace_report = module.resolve_body_placeholders(
-            content,
-            replace_map,
-            request_mapping_flat,
-            db_session=db,
-            audit_source=audit_source,
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
-        resolved, _replace_map, replace_report = module.resolve_body_placeholders(
-            content,
-            replace_map,
-            request_mapping_flat,
-            audit_source=audit_source,
-        )
-    finally:
-        db.close()
+    resolved, _replace_map, replace_report = resolve_body_placeholders_native(
+        content,
+        {},
+        request_mapping_flat,
+        audit_source=audit_source,
+    )
     return str(resolved or ""), replace_report if isinstance(replace_report, list) else []
 
 
-def _legacy_find_illegal_pipt_bidder_placeholders(content: str) -> list[str]:
-    module = _ensure_legacy_imported("app.api_lite.content_placeholder_resolve")
-    issues = module.find_illegal_pipt_bidder_placeholders(content)
-    if isinstance(issues, set):
-        return sorted(str(item) for item in issues if str(item).strip())
-    if isinstance(issues, list):
-        return sorted(str(item) for item in issues if str(item).strip())
-    return []
+def _find_illegal_pipt_bidder_placeholders(content: str) -> list[str]:
+    return find_illegal_pipt_bidder_placeholders_native(content)
 
 
 def _finalize_generated_body(content: str, section_title: str, *, strip_structural_numbering: bool = False) -> str:
-    task_routes = _legacy_task_routes_module()
-    return str(
-        task_routes._finalize_generated_body(
-            str(content or ""),
-            str(section_title or ""),
-            strip_structural_numbering=bool(strip_structural_numbering),
-        )
-        or ""
+    """正文保存前只做确定性格式清理，不依赖 legacy task_routes 私有函数。"""
+    body = _clean_markdown_artifacts(str(content or ""))
+    body = _normalize_generated_markdown(body, str(section_title or ""))
+    if strip_structural_numbering:
+        body = _strip_response_section_numbering(body)
+    return body.strip()
+
+
+def _clean_markdown_artifacts(text_value: str) -> str:
+    if not text_value:
+        return ""
+    cleaned = str(text_value).strip()
+    cleaned = re.sub(r"^\s*```(?:markdown|md)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^\s*#+\s*$", "", cleaned, flags=re.MULTILINE)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def _normalize_generated_markdown(content: str, section_title: str) -> str:
+    try:
+        return str(normalize_generated_markdown(content, section_title) or "")
+    except Exception:
+        return str(content or "").strip()
+
+
+def _strip_response_section_numbering(text_value: str) -> str:
+    if not text_value:
+        return ""
+    cleaned_lines: list[str] = []
+    pattern = re.compile(
+        r"^(?:"
+        r"[一二三四五六七八九十]+、"
+        r"|（[一二三四五六七八九十]+）"
+        r"|\([一二三四五六七八九十]+\)"
+        r"|\d+(?:\.\d+){1,3}"
+        r"|\d+\."
+        r")\s*"
     )
+    for raw_line in str(text_value).splitlines():
+        line = raw_line.strip()
+        if not line:
+            cleaned_lines.append("")
+            continue
+        line = pattern.sub("", line, count=1).strip()
+        if line:
+            cleaned_lines.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(cleaned_lines)).strip()
 
 
 def _resolve_content_workflow_name(generation_strategy: str = "") -> str:
@@ -4803,6 +6345,254 @@ def _extract_content_diagram_specs(outputs: dict[str, Any]) -> Any:
     if not isinstance(outputs, dict):
         return None
     return outputs.get("diagram_specs") or outputs.get("diagram_spec") or outputs.get("diagram") or None
+
+
+def _persist_diagram_artifact(project_id: str, section_id: str, svg: str) -> dict[str, Any]:
+    raw_svg = str(svg or "").strip()
+    if not raw_svg:
+        raise ValueError("svg 不能为空")
+    seed = f"{project_id}\n{section_id}\n{raw_svg}".encode("utf-8", errors="ignore")
+    diagram_id = hashlib.sha256(seed).hexdigest()[:24]
+    project_dir = _diagram_artifact_dir() / _safe_diagram_project_dir(project_id or "default")
+    project_dir.mkdir(parents=True, exist_ok=True)
+    path = project_dir / f"{diagram_id}.svg"
+    if not path.exists():
+        path.write_text(raw_svg, encoding="utf-8")
+    return {
+        "diagram_id": diagram_id,
+        "svg_length": len(raw_svg),
+        "svg_url": f"/api/diagram-artifacts/{diagram_id}.svg?project_id={project_id}",
+    }
+
+
+def _persist_mermaid_artifact(project_id: str, section_id: str, mermaid: str) -> dict[str, Any]:
+    raw_mermaid = str(mermaid or "").strip()
+    if not raw_mermaid:
+        raise ValueError("mermaid 不能为空")
+    seed = f"{project_id}\n{section_id}\n{raw_mermaid}".encode("utf-8", errors="ignore")
+    diagram_id = hashlib.sha256(seed).hexdigest()[:24]
+    project_dir = _diagram_artifact_dir() / _safe_diagram_project_dir(project_id or "default")
+    project_dir.mkdir(parents=True, exist_ok=True)
+    path = project_dir / f"{diagram_id}.mmd"
+    if not path.exists():
+        path.write_text(raw_mermaid, encoding="utf-8")
+    return {
+        "diagram_id": diagram_id,
+        "mermaid_length": len(raw_mermaid),
+        "mermaid_url": f"/api/diagram-artifacts/{diagram_id}.mmd?project_id={project_id}",
+    }
+
+
+def _build_diagram_reference_tag(diagram: dict[str, Any]) -> str:
+    diagram_id = str(diagram.get("diagram_id") or "").strip()
+    title = str(diagram.get("title") or "架构图").replace('"', "&quot;")
+    diagram_type = str(diagram.get("type") or "architecture").replace('"', "&quot;")
+    return f'<diagram data-diagram-id="{diagram_id}" type="{diagram_type}" title="{title}"></diagram>'
+
+
+def _build_diagram_source_context(
+    diagram_brief: str,
+    writing_hint: str,
+    keywords: str,
+    section_title: str,
+    global_outline: str,
+    diagram_type_hint: str,
+    content_context: str = "",
+    max_len: int = 2800,
+) -> str:
+    def clip(text_value: str, limit: int) -> str:
+        normalized = str(text_value or "").strip()
+        if not normalized:
+            return ""
+        if len(normalized) <= limit:
+            return normalized
+        return normalized[: max(1, limit - 8)].rstrip() + " ...(截断)"
+
+    def focus_hint(text_value: str, limit: int) -> str:
+        normalized = str(text_value or "").strip()
+        if not normalized:
+            return ""
+        lines = [line.strip() for line in re.split(r"[\n\r]+", normalized) if line.strip()]
+        keep: list[str] = []
+        hot_words = (
+            "架构", "模块", "接口", "数据", "链路", "流程", "分层", "服务", "数据库", "缓存",
+            "消息", "安全", "鉴权", "高可用", "容灾", "监控", "日志", "告警", "规则", "算法",
+        )
+        for line in lines:
+            if any(word in line for word in hot_words):
+                keep.append(line)
+            if len("\n".join(keep)) >= limit:
+                break
+        if not keep:
+            keep = lines[:8]
+        return clip("\n".join(keep), limit)
+
+    def outline_window(outline: str, title: str, limit: int) -> str:
+        raw = str(outline or "").strip()
+        if not raw:
+            return ""
+        lines = [line.rstrip() for line in raw.splitlines() if line.strip()]
+        if not lines:
+            return ""
+        anchor = str(title or "").strip()
+        index = -1
+        if anchor:
+            for idx, line in enumerate(lines):
+                if anchor in line:
+                    index = idx
+                    break
+        if index < 0:
+            return clip("\n".join(lines[:20]), limit)
+        return clip("\n".join(lines[max(0, index - 8): min(len(lines), index + 12)]), limit)
+
+    diagram_type = str(diagram_type_hint or "architecture").strip()
+    parts = [
+        clip(
+            "【图生成硬约束】\n"
+            "1) 必须体现分层边界与主链路；\n"
+            "2) 节点命名必须是技术实体（服务/模块/中间件/存储）；\n"
+            "3) 必须包含关键连线语义（调用/数据/约束）；\n"
+            f"4) 图类型优先按 {diagram_type} 组织结构。",
+            260,
+        )
+    ]
+    for label, value in (
+        ("【diagramBrief】\n", clip(diagram_brief, 850)),
+        ("【章节标题】", clip(section_title, 120)),
+        ("【关键词】", clip(keywords, 220)),
+        ("【写作引导-技术相关摘要】\n", focus_hint(writing_hint, 1200)),
+        ("【已生成正文摘要】\n", clip(content_context, 1200)),
+        ("【大纲邻域窗口】\n", outline_window(global_outline, section_title, 650)),
+    ):
+        if value:
+            parts.append(label + value)
+    out = "\n\n---\n\n".join(part for part in parts if part.strip())
+    if len(out) > max_len:
+        out = out[: max(1, max_len - 8)].rstrip() + " ...(截断)"
+    return out
+
+
+def _extract_svg_from_candidate(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        text_value = raw.strip()
+        if not text_value:
+            return ""
+        svg_match = re.search(r"<svg\b[\s\S]*?</svg>", text_value, flags=re.IGNORECASE)
+        if svg_match:
+            return svg_match.group(0).strip()
+        parsed = _try_parse_jsonish(text_value)
+        if parsed is not None and parsed is not raw:
+            return _extract_svg_from_candidate(parsed)
+        return ""
+    if isinstance(raw, Mapping):
+        for key in ("svg", "svg_content", "content", "result", "text", "output", "structured_output"):
+            svg = _extract_svg_from_candidate(raw.get(key))
+            if svg:
+                return svg
+        for value in raw.values():
+            svg = _extract_svg_from_candidate(value)
+            if svg:
+                return svg
+    if isinstance(raw, list):
+        for item in raw:
+            svg = _extract_svg_from_candidate(item)
+            if svg:
+                return svg
+    return ""
+
+
+def _extract_mermaid_from_candidate(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        text_value = raw.strip()
+        if not text_value:
+            return ""
+        fence = re.search(r"```mermaid\s*([\s\S]*?)```", text_value, flags=re.IGNORECASE)
+        if fence:
+            return fence.group(1).strip()
+        parsed = _try_parse_jsonish(text_value)
+        if parsed is not None and parsed is not raw:
+            return _extract_mermaid_from_candidate(parsed)
+        first_line = text_value.splitlines()[0].strip().lower() if text_value.splitlines() else ""
+        if first_line.startswith(("graph ", "flowchart ", "sequencediagram", "classdiagram", "statediagram", "erdiagram", "journey", "gantt", "pie ")):
+            return text_value
+        return ""
+    if isinstance(raw, Mapping):
+        for key in ("mermaid", "mermaid_source", "mmd", "code", "content", "result", "text", "output", "structured_output"):
+            mermaid = _extract_mermaid_from_candidate(raw.get(key))
+            if mermaid:
+                return mermaid
+        for value in raw.values():
+            mermaid = _extract_mermaid_from_candidate(value)
+            if mermaid:
+                return mermaid
+    if isinstance(raw, list):
+        for item in raw:
+            mermaid = _extract_mermaid_from_candidate(item)
+            if mermaid:
+                return mermaid
+    return ""
+
+
+def _extract_diagram_svg_output(outputs: dict[str, Any]) -> str:
+    if not isinstance(outputs, dict):
+        return ""
+    for key in ("svg", "svg_content", "result", "text", "output", "structured_output"):
+        svg = _extract_svg_from_candidate(outputs.get(key))
+        if svg:
+            return svg
+    for value in outputs.values():
+        svg = _extract_svg_from_candidate(value)
+        if svg:
+            return svg
+    return ""
+
+
+def _extract_diagram_mermaid_output(outputs: dict[str, Any]) -> str:
+    if not isinstance(outputs, dict):
+        return ""
+    for key in ("mermaid", "mermaid_source", "mmd", "code", "result", "text", "output", "structured_output"):
+        mermaid = _extract_mermaid_from_candidate(outputs.get(key))
+        if mermaid:
+            return mermaid
+    for value in outputs.values():
+        mermaid = _extract_mermaid_from_candidate(value)
+        if mermaid:
+            return mermaid
+    return ""
+
+
+def _is_fallback_diagram_svg(svg: str) -> bool:
+    text_value = re.sub(r"\s+", "", str(svg or ""))
+    if not text_value:
+        return False
+    if "架构图" in text_value and "降级模板" in text_value:
+        return True
+    return ">上游模块<" in text_value and ">下游模块<" in text_value
+
+
+def _normalize_diagram_spec_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, Mapping):
+        return [dict(value)]
+    return []
+
+
+def _parse_diagram_specs(raw: Any) -> dict[str, list[Any]]:
+    parsed = _try_parse_jsonish(raw)
+    if isinstance(parsed, list):
+        parsed = {"elements": parsed}
+    if not isinstance(parsed, Mapping):
+        return {"elements": [], "flows": [], "emphasis": []}
+    return {
+        "elements": _normalize_diagram_spec_list(parsed.get("elements") or parsed.get("nodes") or parsed.get("components") or parsed.get("modules") or []),
+        "flows": _normalize_diagram_spec_list(parsed.get("flows") or parsed.get("edges") or parsed.get("links") or parsed.get("relations") or []),
+        "emphasis": _normalize_diagram_spec_list(parsed.get("emphasis") or parsed.get("highlights") or parsed.get("key_nodes") or []),
+    }
 
 
 def _summarize_workflow_outputs(outputs: dict[str, Any]) -> str:
@@ -4823,7 +6613,7 @@ async def _collect_workflow_outputs(
     _r: Any = None,
     initial_stage: str,
 ) -> dict[str, Any]:
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     task_manager.update_stage(task_id, initial_stage)
     outputs: dict[str, Any] = {}
     got_finished = False
@@ -4884,12 +6674,12 @@ def _finalize_legacy_content_output(
             strip_structural_numbering=strip_structural_numbering,
         )
 
-    content, replace_report = _legacy_resolve_body_placeholders(
+    content, replace_report = _resolve_body_placeholders(
         content=content,
         request_mapping_flat=request_mapping_flat or {},
         audit_source=audit_source,
     )
-    placeholder_issues = _legacy_find_illegal_pipt_bidder_placeholders(content)
+    placeholder_issues = _find_illegal_pipt_bidder_placeholders(content)
     if placeholder_issues:
         raise RuntimeError("占位符格式异常且无法可靠还原")
     unresolved_placeholders = [
@@ -4930,33 +6720,31 @@ async def _run_inline_content_diagram(
             "section_title": str(payload.get("section_title") or ""),
         }, diagram_specs
 
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     project_id = str(payload.get("project_id") or "").strip() or "legacy-content"
     task_id = task_manager.create_task("diagram", project_id, workflow_name=_get_diagram_workflow_name())
 
     try:
-        task_routes = _legacy_task_routes_module()
-        diagrams_generated, diagram_slot_reserved, diagram_error = await task_routes._execute_diagram_for_section(
-            task_id,
-            project_id,
-            task_routes._get_deps(),
-            diagram_key,
-            enable_diagrams,
-            need_diagram,
-            diagram_brief,
-            max_diagrams,
-            str(payload.get("diagram_type_hint") or "architecture"),
-            str(payload.get("section_title") or ""),
-            writing_hint,
-            str(payload.get("keywords") or ""),
-            str(payload.get("global_outline") or ""),
-            content,
-            diagram_specs,
+        diagrams_generated, diagram_slot_reserved, diagram_error = await _execute_diagram_for_section(
+            task_id=task_id,
+            project_id=project_id,
+            diagram_key=diagram_key,
+            enable_diagrams=enable_diagrams,
+            need_diagram=need_diagram,
+            diagram_brief=diagram_brief,
+            max_diagrams=max_diagrams,
+            diagram_type_hint=str(payload.get("diagram_type_hint") or "architecture"),
+            section_title=str(payload.get("section_title") or ""),
+            writing_hint=writing_hint,
+            raw_keywords=str(payload.get("keywords") or ""),
+            raw_global_outline=str(payload.get("global_outline") or ""),
+            content_context=content,
+            diagram_specs=diagram_specs,
         )
         if not diagrams_generated and diagram_slot_reserved:
             await task_manager.release_diagram_slot(project_id)
         if diagrams_generated:
-            content = content + "\n" + "\n".join(task_routes._build_diagram_reference_tag(item) for item in diagrams_generated)
+            content = content + "\n" + "\n".join(_build_diagram_reference_tag(item) for item in diagrams_generated)
         task_manager.set_result(
             task_id,
             {
@@ -5039,6 +6827,158 @@ def _build_diagram_task_result(
     if diagram_error:
         result_payload["diagram_error"] = diagram_error
     return result_payload
+
+
+async def _execute_diagram_for_section(
+    *,
+    task_id: str,
+    project_id: str,
+    diagram_key: str | None,
+    enable_diagrams: bool,
+    need_diagram: bool,
+    diagram_brief: str,
+    max_diagrams: int,
+    diagram_type_hint: str,
+    section_title: str,
+    writing_hint: str,
+    raw_keywords: str,
+    raw_global_outline: str,
+    content_context: str = "",
+    diagram_specs: Any = None,
+) -> tuple[list[dict[str, Any]], bool, dict[str, Any] | None]:
+    """执行图表工作流；入参为章节上下文，出参为生成图表、额度占用标记和错误载荷。"""
+    skip_reasons: list[str] = []
+    if not enable_diagrams:
+        skip_reasons.append("enable_diagrams=false")
+    if not need_diagram:
+        skip_reasons.append("need_diagram=false")
+    if not str(diagram_brief or "").strip():
+        skip_reasons.append("diagram_brief=empty")
+    if max_diagrams <= 0:
+        skip_reasons.append(f"max_diagrams={max_diagrams}")
+    if not diagram_key:
+        skip_reasons.append("diagram_key_missing")
+    if skip_reasons:
+        logger.info(
+            "[Task %s] 图表生成跳过: section=%s; reasons=%s",
+            task_id,
+            str(section_title or "").strip() or "<unknown>",
+            ", ".join(skip_reasons),
+        )
+        return [], False, None
+
+    task_manager = _task_manager()
+    diagram_slot_reserved = await task_manager.reserve_diagram_slot(project_id, max_diagrams)
+    if not diagram_slot_reserved:
+        task_manager.update_stage(task_id, "⏭️ 图表额度已满，跳过图表")
+        return [], False, None
+
+    try:
+        task_manager.update_stage(task_id, "🎨 图表生成中")
+        source_context = _build_diagram_source_context(
+            diagram_brief,
+            writing_hint,
+            raw_keywords,
+            section_title,
+            raw_global_outline,
+            diagram_type_hint,
+            content_context,
+        )
+        spec_payload = _parse_diagram_specs(diagram_specs)
+        diagram_inputs = {
+            "diagram_type": diagram_type_hint,
+            "diagram_title": (section_title or "架构图")[:120],
+            "source_excerpt": source_context,
+            "elements": json.dumps(spec_payload["elements"], ensure_ascii=False),
+            "flows": json.dumps(spec_payload["flows"], ensure_ascii=False),
+            "emphasis": json.dumps(spec_payload["emphasis"], ensure_ascii=False),
+            "style_preset": "consulting",
+        }
+        outputs: dict[str, Any] = {}
+        svg_content = ""
+        mermaid_content = ""
+        workflow_run_id = ""
+        async for chunk in _call_dify_workflow_stream(str(diagram_key), diagram_inputs):
+            _ensure_task_running(task_id)
+            if not isinstance(chunk, dict):
+                continue
+            workflow_run_id = str(chunk.get("workflow_run_id") or workflow_run_id or "")
+            if chunk.get("dify_task_id"):
+                task_manager.set_dify_task_id(task_id, chunk["dify_task_id"])
+            if chunk.get("__error__"):
+                raise RuntimeError(str(chunk.get("error") or "图表工作流返回错误事件"))
+            if chunk.get("__finished__"):
+                outputs = chunk.get("outputs", {}) or {}
+                svg_content = _extract_diagram_svg_output(outputs)
+                mermaid_content = "" if svg_content else _extract_diagram_mermaid_output(outputs)
+                break
+
+        if not svg_content and not mermaid_content and workflow_run_id:
+            try:
+                fallback_data = await _get_dify_workflow_run_result(str(diagram_key), workflow_run_id)
+                fallback_outputs = (((fallback_data or {}).get("data") or {}).get("outputs") or {}) if isinstance(fallback_data, dict) else {}
+                if isinstance(fallback_outputs, dict):
+                    outputs = fallback_outputs
+                    svg_content = _extract_diagram_svg_output(outputs)
+                    mermaid_content = "" if svg_content else _extract_diagram_mermaid_output(outputs)
+            except Exception as exc:
+                logger.warning("[Task %s] 图表 workflow_run fallback 失败: %s", task_id, exc)
+
+        if svg_content:
+            output_keys = list(outputs.keys()) if isinstance(outputs, dict) else []
+            if _is_fallback_diagram_svg(svg_content):
+                error_payload: dict[str, Any] = {
+                    "code": "diagram_fallback_svg",
+                    "message": "图表工作流返回了降级模板，已拦截并保留正文。",
+                    "output_keys": output_keys,
+                    "svg_length": len(svg_content),
+                    "section_title": str(section_title or "").strip() or "未命名章节",
+                }
+                if isinstance(outputs, dict):
+                    for field in ("quality_report", "layout_plan", "semantic_plan"):
+                        value = str(outputs.get(field) or "").strip()
+                        if value:
+                            error_payload[field] = _shrink_error_text(value, limit=800)
+                return [], True, error_payload
+            artifact = _persist_diagram_artifact(project_id, section_title, svg_content.strip())
+            return (
+                [{
+                    "title": (section_title or "架构图")[:120],
+                    "type": diagram_type_hint,
+                    "diagram_id": artifact["diagram_id"],
+                    "svg_url": artifact["svg_url"],
+                    "svg_length": artifact["svg_length"],
+                }],
+                True,
+                None,
+            )
+
+        if mermaid_content:
+            artifact = _persist_mermaid_artifact(project_id, section_title, mermaid_content.strip())
+            return (
+                [{
+                    "title": (section_title or "架构图")[:120],
+                    "type": diagram_type_hint,
+                    "diagram_id": artifact["diagram_id"],
+                    "mermaid_url": artifact["mermaid_url"],
+                    "mermaid_length": artifact["mermaid_length"],
+                }],
+                True,
+                None,
+            )
+
+        return [], True, {
+            "code": "diagram_output_missing",
+            "message": "图表工作流已完成，但未返回可识别的 SVG 或 Mermaid 输出。",
+            "output_keys": list(outputs.keys()) if isinstance(outputs, dict) else [],
+            "section_title": str(section_title or "").strip() or "未命名章节",
+        }
+    except Exception as exc:
+        error_payload = _build_diagram_error_payload(exc, section_title)
+        logger.warning("[Task %s] 图表生成失败: %s", task_id, error_payload["message"])
+        if diagram_slot_reserved:
+            await task_manager.release_diagram_slot(project_id)
+        return [], False, error_payload
 
 
 def _emit_outline_stage_event_local(task_id: str, label: str, *, elapsed_sec: int = 0, heartbeat: bool = False) -> None:
@@ -5151,7 +7091,7 @@ async def _run_diagram_request(
     expected_words = _int_or_default(request.get("expected_words"), default=900)
     analysis_context = str(request.get("analysis_context") or "")
     slice_text = str(request.get("section_outline_slice") or "")
-    composed_hint = _legacy_compose_runtime_writing_hint(
+    composed_hint = _compose_runtime_writing_hint(
         writing_hint,
         section_title,
         expected_words,
@@ -5174,31 +7114,29 @@ async def _run_diagram_request(
         if isinstance(row, dict) and row.get("placeholder"):
             replace_map_seed[str(row["placeholder"])] = str(row.get("original", ""))
 
-    task_routes = _legacy_task_routes_module()
-    diagrams_generated, diagram_slot_reserved, diagram_error = await task_routes._execute_diagram_for_section(
-        task_id,
-        project_id,
-        task_routes._get_deps(),
-        diagram_key,
-        enable_diagrams,
-        need_diagram,
-        diagram_brief,
-        max_diagrams,
-        diagram_type_hint,
-        section_title,
-        composed_hint,
-        keywords,
-        raw_global_outline,
-        base_content,
-        diagram_specs,
+    diagrams_generated, diagram_slot_reserved, diagram_error = await _execute_diagram_for_section(
+        task_id=task_id,
+        project_id=project_id,
+        diagram_key=diagram_key,
+        enable_diagrams=enable_diagrams,
+        need_diagram=need_diagram,
+        diagram_brief=diagram_brief,
+        max_diagrams=max_diagrams,
+        diagram_type_hint=diagram_type_hint,
+        section_title=section_title,
+        writing_hint=composed_hint,
+        raw_keywords=keywords,
+        raw_global_outline=raw_global_outline,
+        content_context=base_content,
+        diagram_specs=diagram_specs,
     )
     if not diagrams_generated and diagram_slot_reserved:
-        await _legacy_task_manager().release_diagram_slot(project_id)
+        await _task_manager().release_diagram_slot(project_id)
 
     content = base_content
     if diagrams_generated:
-        content = content + "\n" + "\n".join(task_routes._build_diagram_reference_tag(item) for item in diagrams_generated)
-    content, replace_report = _legacy_resolve_body_placeholders(
+        content = content + "\n" + "\n".join(_build_diagram_reference_tag(item) for item in diagrams_generated)
+    content, replace_report = _resolve_body_placeholders(
         content=content,
         request_mapping_flat=request_mapping_flat,
         audit_source="apps_api.task.diagram_section",
@@ -5292,7 +7230,7 @@ def _build_group_writing_children(children: list[dict]) -> list[dict]:
                 "section_title": section_title,
                 "keywords": keywords,
                 "expected_words": expected_words,
-                "writing_hint": _legacy_compose_runtime_writing_hint(
+                "writing_hint": _compose_runtime_writing_hint(
                     str(child.get("writing_hint") or ""),
                     section_title,
                     expected_words,
@@ -5388,7 +7326,7 @@ def _finalize_single_content_result(
             quality_score = int(float(raw_score))
         except (TypeError, ValueError):
             quality_score = None
-    placeholder_issues = _legacy_find_illegal_pipt_bidder_placeholders(content)
+    placeholder_issues = _find_illegal_pipt_bidder_placeholders(content)
     unresolved_placeholders = [
         str(item.get("placeholder") or "")
         for item in replace_report
@@ -5500,7 +7438,7 @@ async def _repair_group_failed_sections(
     child_by_id = {child["section_id"]: child for child in children}
     repaired: list[dict[str, Any]] = []
     still_failed: list[dict[str, Any]] = []
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     for failed in failed_sections:
         section_id = str(failed.get("section_id") or "").strip()
         child = child_by_id.get(section_id)
@@ -5517,7 +7455,7 @@ async def _repair_group_failed_sections(
         task_manager.update_stage(task_id, f"🩹 子章节补生成中：{child['section_title']}")
         inputs: dict[str, Any] = {
             "section_title": child["section_title"],
-            "writing_hint": _legacy_compose_runtime_writing_hint(
+            "writing_hint": _compose_runtime_writing_hint(
                 str(child.get("writing_hint") or ""),
                 child["section_title"],
                 _int_or_default(child.get("expected_words"), default=0),
@@ -5859,15 +7797,15 @@ def _prepare_extract_document(
     pages_text: list[dict[str, Any]] = []
     cache_id = project_id or uuid.uuid4().hex[:12]
     if suffix == ".pdf":
-        pdf_url = _legacy_cache_pdf_file(cache_id, content_bytes)
-        pages_text = _legacy_extract_pdf_pages_text(content_bytes)
+        pdf_url = _cache_pdf_file_native(cache_id, content_bytes)
+        pages_text = _extract_pdf_pages_text_native(content_bytes)
     elif suffix in {".docx", ".doc"}:
         try:
-            pdf_url = _legacy_convert_to_pdf_and_cache(cache_id, content_bytes, filename)
+            pdf_url = _convert_to_pdf_and_cache_native(cache_id, content_bytes, filename)
         except Exception as exc:
             logger.warning("DOC/DOCX 转 PDF 失败: %s", exc)
 
-    raw_document, raw_image_map = _legacy_extract_raw_text_with_images(
+    raw_document, raw_image_map = _extract_raw_text_with_images_native(
         filename,
         content_bytes,
         use_vision_parsing=use_vision_parsing,
@@ -5882,7 +7820,7 @@ def _prepare_extract_document(
     text_for_dify = raw_document
     if suffix in {".docx", ".doc"}:
         try:
-            loc_text, _loc_map, doc_blocks = _legacy_extract_docx_with_locators(content_bytes)
+            loc_text, _loc_map, doc_blocks = _extract_docx_with_locators_native(content_bytes)
             if doc_blocks:
                 _persist_project_doc_blocks_snapshot(project_id=cache_id, doc_blocks=doc_blocks)
             if suffix == ".docx":
@@ -6051,7 +7989,7 @@ def _persist_project_runtime(
 
 
 def _push_task_event(task_id: str, event: str, payload: dict[str, Any]) -> None:
-    task_manager = _legacy_task_manager()
+    task_manager = _task_manager()
     encoded = json.dumps({"event": event, **(payload or {})}, ensure_ascii=False)
     task_manager.update_stage(task_id, f"{_TASK_EVENT_STAGE_PREFIX}{encoded}")
 
@@ -6070,7 +8008,7 @@ def _sync_project_runtime_from_task(task: Any | None) -> None:
 
 
 def _ensure_task_running(task_id: str) -> None:
-    task = _get_legacy_task(task_id)
+    task = _get_task(task_id)
     if task is None:
         raise RuntimeError("任务不存在或已过期")
     status = str(getattr(task, "status", "") or "")
@@ -6469,7 +8407,7 @@ async def generate_content_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     """同步生成章节正文；入参为章节生成 JSON，出参兼容 legacy generate-content。"""
     payload = _json_object_body(body)
     try:
-        _legacy_validate_required_bidder_info(payload.get("bidder_info", {}) or {})
+        _validate_required_bidder_info(payload.get("bidder_info", {}) or {})
     except Exception as exc:
         detail = str(exc)
         if detail:
@@ -6488,7 +8426,7 @@ async def generate_content_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     section_title = str(payload.get("section_title") or "")
     expected_words = _int_or_default(payload.get("expected_words"), default=500)
     keywords = str(payload.get("keywords") or "").strip() or section_title
-    writing_hint_merged = _legacy_compose_runtime_writing_hint(
+    writing_hint_merged = _compose_runtime_writing_hint(
         str(payload.get("writing_hint") or ""),
         section_title,
         expected_words,
@@ -6499,7 +8437,7 @@ async def generate_content_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     request_mapping_flat = _string_mapping(payload.get("mapping_table"))
     merged_placeholder_hint = str(payload.get("placeholder_hint") or "")
     try:
-        request_mapping_flat, merged_placeholder_hint, _bidder_context = _legacy_merge_bidder_pipt_context(
+        request_mapping_flat, merged_placeholder_hint, _bidder_context = _merge_bidder_pipt_context(
             mapping_table=request_mapping_flat,
             placeholder_hint=merged_placeholder_hint,
             bidder_info=payload.get("bidder_info", {}) or {},
@@ -6577,7 +8515,7 @@ async def generate_content_stream_response(body: Mapping[str, Any]) -> Any:
     """流式生成章节正文；入参为章节生成 JSON，出参保持 legacy SSE 协议。"""
     payload = _json_object_body(body)
     try:
-        _legacy_validate_required_bidder_info(payload.get("bidder_info", {}) or {})
+        _validate_required_bidder_info(payload.get("bidder_info", {}) or {})
     except Exception as exc:
         detail = str(exc)
         if detail:
@@ -6596,7 +8534,7 @@ async def generate_content_stream_response(body: Mapping[str, Any]) -> Any:
     section_title = str(payload.get("section_title") or "")
     expected_words = _int_or_default(payload.get("expected_words"), default=500)
     keywords = str(payload.get("keywords") or "").strip() or section_title
-    writing_hint_merged = _legacy_compose_runtime_writing_hint(
+    writing_hint_merged = _compose_runtime_writing_hint(
         str(payload.get("writing_hint") or ""),
         section_title,
         expected_words,
@@ -6607,7 +8545,7 @@ async def generate_content_stream_response(body: Mapping[str, Any]) -> Any:
     request_mapping_flat = _string_mapping(payload.get("mapping_table"))
     merged_placeholder_hint = str(payload.get("placeholder_hint") or "")
     try:
-        request_mapping_flat, merged_placeholder_hint, _bidder_context = _legacy_merge_bidder_pipt_context(
+        request_mapping_flat, merged_placeholder_hint, _bidder_context = _merge_bidder_pipt_context(
             mapping_table=request_mapping_flat,
             placeholder_hint=merged_placeholder_hint,
             bidder_info=payload.get("bidder_info", {}) or {},

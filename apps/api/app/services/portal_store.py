@@ -39,7 +39,9 @@ def app_ids() -> list[str]:
         codes = [
             str(app.get("code") or "")
             for _, app in iter_ordered_apps(apps_config)
-            if isinstance(app, dict) and bool(app.get("iframe_enabled", False))
+            if isinstance(app, dict)
+            and bool(app.get("enabled", True))
+            and str(app.get("code") or "") not in {"", "apps-web", "portal", "platform-api"}
         ]
         resolved = [code for code in codes if code and code != "platform-api"]
         return resolved or list(FALLBACK_APP_IDS)
