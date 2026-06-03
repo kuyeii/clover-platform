@@ -1815,8 +1815,7 @@ function ResultDetailDrawer({
   selectedScoreItem,
   activeTab,
   onTabChange,
-  onClose,
-  onExport
+  onClose
 }) {
   const [mounted, setMounted] = useState(open);
 
@@ -1877,9 +1876,6 @@ function ResultDetailDrawer({
                   <h3>{targetName} vs {selectedCompetitor.name}</h3>
                   <p>围绕产品服务、技术力、近期动态与战略威胁展开对比。</p>
                 </div>
-                <button type="button" className="export-btn report-export-btn" onClick={onExport}>
-                  <Icon name="download" />导出报告
-                </button>
                 {selectedReport?.status === "loading" && <span className="status-dot"><ResultPendingText>报告生成中</ResultPendingText></span>}
                 {selectedReport?.status === "error" && <span className="status-dot status-dot--error">生成失败</span>}
               </div>
@@ -2328,9 +2324,14 @@ function ResultsPage({
       <section className="competitor-section">
         <div className="section-title-row">
           <h2>竞争对手列表 <span>（{competitors.length}家）</span></h2>
-          {isLoading && finalizing && <span className="loading-chip"><ResultPendingText>正在保存完整结果</ResultPendingText></span>}
-          {scoreStatus === "loading" && <span className="loading-chip"><ResultPendingText>评分生成中</ResultPendingText></span>}
-          {scoreStatus === "error" && <span className="status-dot status-dot--error">评分失败</span>}
+          <div className="section-title-actions">
+            {isLoading && finalizing && <span className="loading-chip"><ResultPendingText>正在保存完整结果</ResultPendingText></span>}
+            {scoreStatus === "loading" && <span className="loading-chip"><ResultPendingText>评分生成中</ResultPendingText></span>}
+            {scoreStatus === "error" && <span className="status-dot status-dot--error">评分失败</span>}
+            <button type="button" className="export-btn section-export-btn" onClick={onExport} disabled={competitors.length === 0}>
+              <Icon name="download" />导出报告
+            </button>
+          </div>
         </div>
         {apiError && <p className="api-error api-error--inline">{apiError}</p>}
         {scoreStatus === "error" && scoreError && <p className="api-error api-error--inline">评分失败：{scoreError}</p>}
@@ -2384,7 +2385,6 @@ function ResultsPage({
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onClose={closeDetailDrawer}
-        onExport={onExport}
       />
     </main>
   );
