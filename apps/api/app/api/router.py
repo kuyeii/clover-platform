@@ -11,6 +11,7 @@ from app.api import (
     feedback,
     health,
     modules,
+    patent_disclosure,
     rag_proxy,
     runtime,
     users,
@@ -31,3 +32,4 @@ api_router.include_router(competitor_analysis.router, tags=["competitor-analysis
 api_router.include_router(rag_proxy.router, tags=["rag"])
 api_router.include_router(contract_review_proxy.router, tags=["contract-review"])
 api_router.include_router(bid_generator_proxy.router, tags=["bid-generator"])
+api_router.include_router(patent_disclosure.router, tags=["patent-disclosure"])

@@ -32,6 +32,7 @@ const legacyAppRoutes: Record<PortalModule["code"], string> = {
   "bid-generator": "/apps/bid-generator",
   "contract-review": "/apps/contract-review",
   "competitor-analysis": "/apps/competitor-analysis",
+  "patent-disclosure": "/apps/patent-disclosure",
   "rag-web-search": "/apps/rag-web-search",
 };
 
@@ -39,6 +40,7 @@ const modulePathAliases: Record<PortalModule["code"], string[]> = {
   "bid-generator": ["/apps/bid-generator", "/modules/bid-generator"],
   "contract-review": ["/apps/contract-review", "/modules/contract-review"],
   "competitor-analysis": ["/apps/competitor-analysis", "/modules/competitor-analysis"],
+  "patent-disclosure": ["/apps/patent-disclosure", "/modules/patent-disclosure"],
   "rag-web-search": ["/apps/rag-web-search", "/apps/rag", "/modules/rag"],
 };
 

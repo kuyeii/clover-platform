@@ -1,0 +1,30 @@
+module_key: patent_disclosure
+app_code: patent-disclosure
+name: 专利交底书
+shortName: 专利
+description: 基于项目资料自动挖掘专利点、执行国知局查新并生成技术交底书。
+frontend:
+  slug: patent-disclosure
+  route: /modules/patent-disclosure
+  compatible_route: /apps/patent-disclosure
+backend:
+  prefix: /api/v1/patent-disclosure
+permissions:
+  default: true
+  app_code: patent-disclosure
+storage:
+  namespace: patent_disclosure
+  env: PATENT_DISCLOSURE_DATA_DIR
+features:
+  sse_progress: true
+  cnipa_prior_art: true
+  openai_compatible_llm: true
+  local_volume_storage: true
+disabled_features:
+  - iframe
+  - dify
+  - polling
+  - cancel_job
+  - artifact_preview
+  - iteration
+

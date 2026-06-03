@@ -29,19 +29,25 @@ FALLBACK_APP_IDS = [
     "contract-review",
     "competitor-analysis",
     "rag-web-search",
+    "patent-disclosure",
 ]
+PLATFORM_APP_IDS = {"apps-web", "platform-api", "portal"}
 
 
 @lru_cache(maxsize=1)
 def app_ids() -> list[str]:
     try:
         apps_config = load_apps_config(get_api_settings().repo_root)
-        codes = [
-            str(app.get("code") or "")
-            for _, app in iter_ordered_apps(apps_config)
-            if isinstance(app, dict) and bool(app.get("iframe_enabled", False))
-        ]
-        resolved = [code for code in codes if code and code != "platform-api"]
+        codes = []
+        for _, app in iter_ordered_apps(apps_config):
+            if not isinstance(app, dict) or not bool(app.get("enabled", True)):
+                continue
+            code = str(app.get("code") or "")
+            if not code or code in PLATFORM_APP_IDS:
+                continue
+            if bool(app.get("iframe_enabled", False)) or bool(app.get("permission_default", False)):
+                codes.append(code)
+        resolved = codes
         return resolved or list(FALLBACK_APP_IDS)
     except Exception:
         return list(FALLBACK_APP_IDS)

@@ -8,13 +8,14 @@ export type AppStatus =
 
 export type HealthStatus = "healthy" | "unhealthy" | "unknown" | "checking";
 
-export type AppTheme = "blue" | "emerald" | "amber" | "orange";
+export type AppTheme = "blue" | "emerald" | "amber" | "orange" | "violet";
 
 export type AppIconName =
   | "file-text"
   | "shield-check"
   | "chart-line"
-  | "message-circle";
+  | "message-circle"
+  | "file-pen-line";
 
 export interface ToolkitApp {
   id: ModuleCode;

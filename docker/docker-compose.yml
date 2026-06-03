@@ -50,6 +50,15 @@ services:
       ENABLE_DIAGRAM_GENERATION: ${ENABLE_DIAGRAM_GENERATION:-false}
       MAX_DIAGRAM_RUNNING_TASKS: ${MAX_DIAGRAM_RUNNING_TASKS:-1}
       DIAGRAM_ARTIFACT_DIR: ${DIAGRAM_ARTIFACT_DIR:-/app/legacy/bid-generator/data/diagram_artifacts}
+      PATENT_DISCLOSURE_ENABLED: ${PATENT_DISCLOSURE_ENABLED:-true}
+      PATENT_DISCLOSURE_DATA_DIR: ${PATENT_DISCLOSURE_DATA_DIR:-/app/data/patent_disclosure}
+      PATENT_DISCLOSURE_SKILL_DIR: ${PATENT_DISCLOSURE_SKILL_DIR:-/app/packages/patent_disclosure_skill/upstream}
+      PATENT_DISCLOSURE_LLM_BASE_URL: ${PATENT_DISCLOSURE_LLM_BASE_URL:-}
+      PATENT_DISCLOSURE_LLM_API_KEY: ${PATENT_DISCLOSURE_LLM_API_KEY:-}
+      PATENT_DISCLOSURE_LLM_MODEL: ${PATENT_DISCLOSURE_LLM_MODEL:-}
+      PATENT_DISCLOSURE_CNIPA_ENABLED: ${PATENT_DISCLOSURE_CNIPA_ENABLED:-true}
+      PATENT_DISCLOSURE_CNIPA_TIMEOUT_SECONDS: ${PATENT_DISCLOSURE_CNIPA_TIMEOUT_SECONDS:-300}
+      PATENT_DISCLOSURE_TOOL_TIMEOUT_SECONDS: ${PATENT_DISCLOSURE_TOOL_TIMEOUT_SECONDS:-300}
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,6 +73,7 @@ services:
       - bid_generator_knowledge_base:/app/legacy/bid-generator/data/knowledge_base
       - bid_generator_templates:/app/legacy/bid-generator/data/templates
       - bid_generator_diagram_artifacts:/app/legacy/bid-generator/data/diagram_artifacts
+      - ../data/patent_disclosure:/app/data/patent_disclosure
     expose:
       - "5220"
 

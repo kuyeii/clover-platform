@@ -8,6 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app:/app/apps/api:/app/legacy/contract_review \
     PIPT_ROOT=/app/legacy/bid-generator/pipt-flask \
     PRO_ENGINE_ROOT=/app/legacy/bid-generator \
+    PUPPETEER_SKIP_DOWNLOAD=true \
     SOFFICE_PATH=/usr/bin/libreoffice
 
 WORKDIR /app
@@ -25,6 +26,8 @@ RUN apt-get update \
       libreoffice \
       libreoffice-writer \
       libreoffice-l10n-zh-cn \
+      nodejs \
+      npm \
       pkg-config \
       poppler-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -46,6 +49,7 @@ RUN python -m pip install \
       "markdown>=3.6" \
       "olefile>=0.47" \
       "pymupdf4llm>=0.0.5"
+RUN python -m playwright install --with-deps chromium
 
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
@@ -59,8 +63,11 @@ COPY packages ./packages
 COPY scripts ./scripts
 COPY runtime/.gitkeep ./runtime/.gitkeep
 
+RUN npm ci --prefix packages/patent_disclosure_skill/upstream/tools
+
 RUN mkdir -p \
       /app/runtime \
+      /app/data/patent_disclosure \
       /app/legacy/contract_review/data/uploads \
       /app/legacy/contract_review/data/runs \
       /app/legacy/bid-generator/data/pdf_cache \

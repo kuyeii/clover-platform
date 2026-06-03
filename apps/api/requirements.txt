@@ -10,12 +10,17 @@ PyYAML
 httpx
 requests
 python-docx
+matplotlib>=3.8.0
+mammoth
+python-pptx
 docxcompose
 reportlab>=4.2.0
 svglib>=1.5.1
 json_repair
 lxml
 PyMuPDF
+playwright
+beautifulsoup4
 pdf2docx
 opencv-python-headless<4.12
 cryptography

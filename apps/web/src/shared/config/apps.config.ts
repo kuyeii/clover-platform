@@ -82,6 +82,24 @@ export const appsConfig: ToolkitApp[] = [
     moduleRepo: "app-rag-web-search",
     group: "app-modules",
   },
+  {
+    id: "patent-disclosure",
+    name: "专利交底书",
+    shortName: "专利",
+    description: "从项目材料挖掘专利点，执行国知局查新，自动生成技术交底书。",
+    bannerText: "专利挖掘 · 国知局查新 · 交底书生成",
+    ctaLabel: "开始生成",
+    backgroundImage: "/app-backgrounds/patent-disclosure.png",
+    url: buildRuntimeUrl(5300, "/modules/patent-disclosure"),
+    backendUrl: buildRuntimeUrl(5220),
+    healthUrl: buildRuntimeUrl(5220, "/api/v1/patent-disclosure/api/health"),
+    status: "running",
+    healthStatus: "unknown",
+    theme: "violet",
+    icon: "file-pen-line",
+    moduleRepo: "app-patent-disclosure",
+    group: "app-modules",
+  },
 ];
 
 export function getAppById(appId: string) {
