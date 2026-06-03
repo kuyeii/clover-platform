@@ -1942,14 +1942,21 @@
 }
 
 .competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input input {
-  padding-right: 112px;
+  padding-right: 42px;
 }
 
-.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--fetching input {
-  padding-right: 168px;
-}
-
-.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--waiting input {
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--waiting input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--loading input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--ready input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--error input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--fetching input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--refreshing input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--localSearching input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--localMatched input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--localEmpty input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--webSearching input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--webMatched input,
+.competitor-analysis-legacy-viewport .main-canvas--home .company-validation-input--empty input {
   padding-right: 168px;
 }
 
@@ -2214,7 +2221,9 @@
   background: var(--color-brand);
 }
 
-.competitor-analysis-legacy-viewport .validation-loading-row, .competitor-analysis-legacy-viewport .validation-empty {
+.competitor-analysis-legacy-viewport .validation-loading-row,
+.competitor-analysis-legacy-viewport .validation-refreshing-row,
+.competitor-analysis-legacy-viewport .validation-empty {
   min-height: 62px;
   padding: 14px;
   display: flex;
@@ -2224,6 +2233,44 @@
   font-size: 13px;
   font-weight: 800;
   line-height: 1.45;
+}
+
+.competitor-analysis-legacy-viewport .validation-refreshing-row {
+  min-height: 44px;
+  border-bottom: 1px solid var(--color-divider);
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.competitor-analysis-legacy-viewport .validation-option--stale {
+  cursor: default;
+  opacity: 0.52;
+  background: var(--color-bg-soft);
+}
+
+.competitor-analysis-legacy-viewport .validation-option--stale:hover {
+  background: var(--color-bg-soft);
+}
+
+.competitor-analysis-legacy-viewport .validation-option--stale strong {
+  color: var(--color-text-secondary);
+}
+
+.competitor-analysis-legacy-viewport .validation-more-option {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface);
+  color: var(--color-brand);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+  cursor: pointer;
+}
+
+.competitor-analysis-legacy-viewport .validation-more-option:hover {
+  background: var(--color-brand-soft);
 }
 
 .competitor-analysis-legacy-viewport .validation-empty {

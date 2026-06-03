@@ -17,7 +17,9 @@ const lookupCompanyNameValidationCache = runCompanyNameValidationWorkflow;
 
 const DEFAULT_COMPETITOR_ROWS = 1;
 const MAX_COMPETITOR_COUNT = 5;
-const COMPANY_VALIDATION_DEBOUNCE_MS = 2000;
+const COMPANY_VALIDATION_LOCAL_DEBOUNCE_MS = 300;
+const COMPANY_VALIDATION_WEB_DELAY_MS = 1200;
+const COMPANY_VALIDATION_MIN_KEYWORD_LENGTH = 2;
 const DEFAULT_PROVINCE = "全国";
 const SAME_COMPANY_NAME_ERROR = "竞争对手名称不能与我方企业名称相同。";
 const DUPLICATE_COMPETITOR_NAME_ERROR = "竞争对手名称不能重复。";
@@ -893,6 +895,24 @@ function getCompanySuggestionItems(result, fallbackName = "") {
   return normalizeCandidateCompanyItems([...(result?.candidateItems || []), result?.company, companyName]);
 }
 
+function decorateCompanySuggestionItems(items, { source = "local", keyword = "", stale = false } = {}) {
+  return normalizeCandidateCompanyItems(items).map((item) => ({
+    ...item,
+    source,
+    keyword,
+    stale,
+    disabled: stale
+  }));
+}
+
+function markCompanySuggestionsStale(items) {
+  return (items || []).map((item) => ({
+    ...item,
+    stale: true,
+    disabled: true
+  }));
+}
+
 function isSameCompanyName(left, right) {
   const leftName = String(left || "").trim();
   const rightName = String(right || "").trim();
@@ -979,9 +999,23 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
   const confirmedValueRef = useRef("");
   const selectingValueRef = useRef("");
   const requestSeqRef = useRef(0);
+  const localTimerRef = useRef(null);
+  const webTimerRef = useRef(null);
+  const webSearchingKeywordRef = useRef("");
   const keyword = String(value || "").trim();
   const isValidated = validationState === "validated";
   const showPendingStatus = shouldShowValidationPendingStatus(validationState, keyword);
+
+  const clearSearchTimers = () => {
+    if (localTimerRef.current) {
+      window.clearTimeout(localTimerRef.current);
+      localTimerRef.current = null;
+    }
+    if (webTimerRef.current) {
+      window.clearTimeout(webTimerRef.current);
+      webTimerRef.current = null;
+    }
+  };
 
   const confirmCompany = (company, fallbackName = "") => {
     const normalizedCompany = {
@@ -990,6 +1024,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       business: company?.business || ""
     };
     const confirmedName = normalizedCompany.name || fallbackName;
+    clearSearchTimers();
     selectingValueRef.current = "";
     confirmedValueRef.current = confirmedName;
     onChange(confirmedName, true, normalizedCompany);
@@ -998,6 +1033,125 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     setValidationMeta({ searchResult: "已确认企业", note: "", error: "" });
     setShowDropdown(false);
   };
+
+  const applyImmediateLookupPayload = (payload, { currentKeyword, requestId, source = "web", fromCacheOnly = false } = {}) => {
+    if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return true;
+    const result = extractCompanyValidationResult(payload);
+    const candidateItems = decorateCompanySuggestionItems(getCompanySuggestionItems(result, currentKeyword), {
+      source,
+      keyword: currentKeyword,
+      stale: false
+    });
+    const hasAnyCompanyInfo = Boolean(result.company?.name || result.company?.intro || result.company?.business);
+    const isExactCompanyCache = Boolean(
+      result.cacheHit &&
+      hasCompanyDetails(result.company) &&
+      isSameCompanyName(result.company?.name, currentKeyword)
+    );
+
+    if (isExactCompanyCache) {
+      confirmCompany(result.company, currentKeyword);
+      return true;
+    }
+
+    if (fromCacheOnly && result.cacheMiss) {
+      return false;
+    }
+
+    if (hasAnyCompanyInfo) {
+      if (requireCompanyDetails && !hasCompanyDetails(result.company)) {
+        setSuggestions(candidateItems);
+        setValidationMeta({
+          searchResult: "企业信息确认失败",
+          note: "",
+          error: "未获取到企业介绍和主营业务，请补充更准确的企业名称。"
+        });
+        setValidationState(candidateItems.length ? "ready" : "error");
+        setShowDropdown(true);
+        return true;
+      }
+      setSuggestions(candidateItems);
+      setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
+      setValidationState(source === "local" ? "localMatched" : "webMatched");
+      setShowDropdown(true);
+      return true;
+    }
+
+    if (result.candidateItems.length) {
+      setSuggestions(decorateCompanySuggestionItems(result.candidateItems, {
+        source,
+        keyword: currentKeyword,
+        stale: false
+      }));
+      setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
+      setValidationState(source === "local" ? "localMatched" : "webMatched");
+      setShowDropdown(true);
+      return true;
+    }
+
+    return false;
+  };
+
+  const runImmediateLookup = async ({ skipLocal = false } = {}) => {
+    const currentKeyword = String(value || "").trim();
+    if (suspendValidation || currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) return;
+
+    clearSearchTimers();
+    requestSeqRef.current += 1;
+    const requestId = requestSeqRef.current;
+    setSuggestions((prev) => markCompanySuggestionsStale(prev));
+    setValidationMeta({
+      searchResult: skipLocal ? "本地未找到，正在联网查找..." : "正在匹配本地企业...",
+      note: "",
+      error: ""
+    });
+    setValidationState(skipLocal ? "webSearching" : "localSearching");
+    setShowDropdown(true);
+
+    try {
+      if (!skipLocal) {
+        const cachedPayload = await lookupCompanyNameValidationCache({ companyName: currentKeyword, cacheOnly: true });
+        if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
+        const handledFromCache = applyImmediateLookupPayload(cachedPayload, {
+          currentKeyword,
+          requestId,
+          source: "local",
+          fromCacheOnly: true
+        });
+        if (handledFromCache) return;
+      }
+
+      setSuggestions([]);
+      setValidationMeta({ searchResult: "本地未找到，正在联网查找...", note: "", error: "" });
+      setValidationState("webSearching");
+      const payload = await runCompanyNameValidationWorkflow({
+        companyName: currentKeyword,
+        ...(skipLocal ? { forceRefresh: true } : {})
+      });
+      if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
+      const handled = applyImmediateLookupPayload(payload, { currentKeyword, requestId, source: "web" });
+      if (!handled) {
+        setSuggestions([]);
+        setValidationMeta({ searchResult: "未找到匹配企业，可继续修改企业名称", note: "", error: "" });
+        setValidationState("empty");
+        setShowDropdown(true);
+      }
+    } catch (error) {
+      if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
+      setSuggestions([]);
+      setValidationMeta({
+        searchResult: "搜索失败，请稍后重试，或继续手动输入企业名称",
+        note: "",
+        error: error.message || String(error)
+      });
+      setValidationState("error");
+      setShowDropdown(true);
+    }
+  };
+
+  useEffect(() => {
+    return () => clearSearchTimers();
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -1013,10 +1167,13 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
   useEffect(() => {
     const currentKeyword = String(value || "").trim();
 
+    clearSearchTimers();
+
     if (!currentKeyword) {
       requestSeqRef.current += 1;
       confirmedValueRef.current = "";
       selectingValueRef.current = "";
+      webSearchingKeywordRef.current = "";
       setValidationState("idle");
       setSuggestions([]);
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1027,6 +1184,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     if (suspendValidation) {
       requestSeqRef.current += 1;
       selectingValueRef.current = "";
+      webSearchingKeywordRef.current = "";
       setValidationState("idle");
       setSuggestions([]);
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1036,6 +1194,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
 
     if (confirmedValueRef.current === currentKeyword) {
       selectingValueRef.current = "";
+      webSearchingKeywordRef.current = "";
       setValidationState("validated");
       setSuggestions([]);
       setValidationMeta({ searchResult: "已确认企业", note: "", error: "" });
@@ -1054,12 +1213,17 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     requestSeqRef.current += 1;
     const requestId = requestSeqRef.current;
     let cancelled = false;
-    let fullLookupTimer = null;
 
-    const applyValidationPayload = (payload, { fromCacheOnly = false } = {}) => {
+    const isLatestSearch = () => !cancelled && requestSeqRef.current === requestId && currentKeyword === String(value || "").trim();
+
+    const applyValidationPayload = (payload, { source = "web", fromCacheOnly = false } = {}) => {
       if (cancelled || requestSeqRef.current !== requestId) return true;
       const result = extractCompanyValidationResult(payload);
-      const candidateItems = getCompanySuggestionItems(result, currentKeyword);
+      const candidateItems = decorateCompanySuggestionItems(getCompanySuggestionItems(result, currentKeyword), {
+        source,
+        keyword: currentKeyword,
+        stale: false
+      });
       const hasAnyCompanyInfo = Boolean(result.company?.name || result.company?.intro || result.company?.business);
       const isExactCompanyCache = Boolean(
         result.cacheHit &&
@@ -1090,15 +1254,19 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
         }
         setSuggestions(candidateItems);
         setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
-        setValidationState("ready");
+        setValidationState(source === "local" ? "localMatched" : "webMatched");
         setShowDropdown(true);
         return true;
       }
 
       if (result.candidateItems.length) {
-        setSuggestions(result.candidateItems);
+        setSuggestions(decorateCompanySuggestionItems(result.candidateItems, {
+          source,
+          keyword: currentKeyword,
+          stale: false
+        }));
         setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
-        setValidationState("ready");
+        setValidationState(source === "local" ? "localMatched" : "webMatched");
         setShowDropdown(true);
         return true;
       }
@@ -1112,42 +1280,90 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       return false;
     };
 
-    const runFullLookup = async () => {
-      if (cancelled || requestSeqRef.current !== requestId) return;
-      setValidationState("loading");
-      setSuggestions([]);
-      setValidationMeta({ searchResult: "正在检索企业库", note: "", error: "" });
+    const runWebLookup = async () => {
+      if (!isLatestSearch()) return;
+      if (webSearchingKeywordRef.current === currentKeyword) return;
+      webSearchingKeywordRef.current = currentKeyword;
+      setValidationState("webSearching");
+      setValidationMeta({ searchResult: "本地未找到，正在联网查找...", note: "", error: "" });
       setShowDropdown(true);
 
       try {
-        const cachedPayload = await lookupCompanyNameValidationCache({ companyName: currentKeyword });
-        const handledFromCache = applyValidationPayload(cachedPayload, { fromCacheOnly: true });
-        if (handledFromCache || cancelled || requestSeqRef.current !== requestId) return;
         const payload = await runCompanyNameValidationWorkflow({ companyName: currentKeyword });
-        applyValidationPayload(payload);
+        if (!isLatestSearch()) return;
+        const handled = applyValidationPayload(payload, { source: "web" });
+        if (!handled) {
+          setSuggestions([]);
+          setValidationMeta({ searchResult: "未找到匹配企业，可继续修改企业名称", note: "", error: "" });
+          setValidationState("empty");
+          setShowDropdown(true);
+        }
       } catch (error) {
-        if (cancelled || requestSeqRef.current !== requestId) return;
+        if (!isLatestSearch()) return;
         setSuggestions([]);
         setValidationMeta({
-          searchResult: "企业库检索失败",
+          searchResult: "搜索失败，请稍后重试，或继续手动输入企业名称",
+          note: "",
+          error: error.message || String(error)
+        });
+        setValidationState("error");
+        setShowDropdown(true);
+      } finally {
+        if (webSearchingKeywordRef.current === currentKeyword) {
+          webSearchingKeywordRef.current = "";
+        }
+      }
+    };
+
+    if (currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) {
+      setValidationState("idle");
+      setSuggestions([]);
+      setValidationMeta({ searchResult: "", note: "", error: "" });
+      setShowDropdown(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSuggestions((prev) => markCompanySuggestionsStale(prev));
+    setValidationState(suggestions.length ? "refreshing" : "waiting");
+    setValidationMeta({ searchResult: "正在重新匹配...", note: "", error: "" });
+    setShowDropdown(suggestions.length > 0);
+
+    localTimerRef.current = window.setTimeout(async () => {
+      if (!isLatestSearch()) return;
+      setValidationState("localSearching");
+      setValidationMeta({ searchResult: "正在匹配本地企业...", note: "", error: "" });
+      setShowDropdown(true);
+
+      try {
+        const cachedPayload = await lookupCompanyNameValidationCache({ companyName: currentKeyword, cacheOnly: true });
+        if (!isLatestSearch()) return;
+        const handledFromCache = applyValidationPayload(cachedPayload, { source: "local", fromCacheOnly: true });
+        if (handledFromCache || !isLatestSearch()) return;
+
+        setSuggestions([]);
+        setValidationMeta({ searchResult: "本地未找到，准备联网查找...", note: "", error: "" });
+        setValidationState("localEmpty");
+        setShowDropdown(true);
+
+        webTimerRef.current = window.setTimeout(runWebLookup, COMPANY_VALIDATION_WEB_DELAY_MS);
+      } catch (error) {
+        if (!isLatestSearch()) return;
+        setSuggestions([]);
+        setValidationMeta({
+          searchResult: "搜索失败，请稍后重试，或继续手动输入企业名称",
           note: "",
           error: error.message || String(error)
         });
         setValidationState("error");
         setShowDropdown(true);
       }
-    };
-
-    setValidationState("waiting");
-    setSuggestions([]);
-    setValidationMeta({ searchResult: "等待用户输入完成", note: "", error: "" });
-    setShowDropdown(false);
-
-    fullLookupTimer = window.setTimeout(runFullLookup, COMPANY_VALIDATION_DEBOUNCE_MS);
+    }, COMPANY_VALIDATION_LOCAL_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
-      if (fullLookupTimer) window.clearTimeout(fullLookupTimer);
+      clearSearchTimers();
     };
   }, [requireCompanyDetails, suspendValidation, value]);
 
@@ -1156,15 +1372,18 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     onChange(nextValue, false, null);
     confirmedValueRef.current = "";
     selectingValueRef.current = "";
+    webSearchingKeywordRef.current = "";
+    clearSearchTimers();
+    requestSeqRef.current += 1;
 
     if (nextValue.trim()) {
       const nextMeta = suspendValidation
         ? { searchResult: "", note: "", error: "" }
-        : { searchResult: "等待用户输入完成", note: "", error: "" };
-      setValidationState(suspendValidation ? "idle" : "waiting");
+        : { searchResult: "正在重新匹配...", note: "", error: "" };
+      setSuggestions((prev) => markCompanySuggestionsStale(prev));
+      setValidationState(suspendValidation ? "idle" : "refreshing");
       setValidationMeta(nextMeta);
-      setSuggestions([]);
-      setShowDropdown(false);
+      setShowDropdown((prev) => Boolean(prev || suggestions.length));
     } else {
       setValidationState("idle");
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1179,6 +1398,8 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       : selectedItem || {};
     const name = String(selectedCompany.name || "").trim();
     if (!name) return;
+    if (selectedCompany.disabled || selectedCompany.stale || (selectedCompany.keyword && selectedCompany.keyword !== keyword)) return;
+    clearSearchTimers();
     if (hasCompanyDetails(selectedCompany)) {
       confirmCompany(selectedCompany, name);
       return;
@@ -1235,6 +1456,14 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
         onFocus={() => {
           if (keyword && !suspendValidation && !isValidated && validationState !== "fetching" && validationState !== "idle") setShowDropdown(true);
         }}
+        onKeyDown={(event) => {
+          inputProps.onKeyDown?.(event);
+          if (event.defaultPrevented) return;
+          if (event.key === "Enter" && keyword.length >= COMPANY_VALIDATION_MIN_KEYWORD_LENGTH && !isValidated && !suspendValidation) {
+            event.preventDefault();
+            runImmediateLookup();
+          }
+        }}
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -1254,29 +1483,52 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
 
       {shouldShowValidationDropdown({ showDropdown, keyword, isValidated, validationState }) && (
         <div className="validation-dropdown">
-          {validationState === "loading" ? (
+          {suggestions.length > 0 ? (
+            <>
+              {["refreshing", "waiting", "localSearching", "localEmpty", "webSearching"].includes(validationState) && (
+                <div className="validation-refreshing-row">
+                  <span className="validation-spinner" aria-hidden />
+                  <span>{validationMeta.searchResult || "正在重新匹配..."}</span>
+                </div>
+              )}
+              <div className="validation-option-list">
+                {suggestions.map((item, index) => {
+                  const isStale = Boolean(item.stale || item.disabled);
+                  return (
+                    <button
+                      type="button"
+                      className={`validation-option ${isStale ? "validation-option--stale" : ""}`.trim()}
+                      key={`${item.name}-${index}`}
+                      onClick={() => handleSelect(item)}
+                      disabled={isStale}
+                      aria-disabled={isStale ? "true" : undefined}
+                    >
+                      <span>
+                        <strong>{item.name}</strong>
+                        <em>{isStale ? "旧候选，正在重新匹配" : item.source === "web" ? "联网搜索" : "本地企业库"}</em>
+                      </span>
+                    </button>
+                  );
+                })}
+                {["localMatched", "webMatched"].includes(validationState) && (
+                  <button
+                    type="button"
+                    className="validation-more-option"
+                    onClick={() => runImmediateLookup({ skipLocal: true })}
+                  >
+                    联网搜索更多
+                  </button>
+                )}
+              </div>
+            </>
+          ) : ["loading", "localSearching", "localEmpty", "webSearching"].includes(validationState) ? (
             <div className="validation-loading-row">
               <span className="validation-spinner" aria-hidden />
-              <span>正在检索企业库，请稍候</span>
-            </div>
-          ) : suggestions.length > 0 ? (
-            <div className="validation-option-list">
-              {suggestions.map((item, index) => (
-                <button
-                  type="button"
-                  className="validation-option"
-                  key={`${item.name}-${index}`}
-                  onClick={() => handleSelect(item)}
-                >
-                  <span>
-                    <strong>{item.name}</strong>
-                  </span>
-                </button>
-              ))}
+              <span>{validationMeta.searchResult || "正在匹配企业，请稍候"}</span>
             </div>
           ) : (
             <div className={`validation-empty ${validationState === "error" ? "validation-empty--error" : ""}`.trim()}>
-              {validationMeta.error || validationMeta.note || "未返回候选企业，请补充更完整的企业名称。"}
+              {validationMeta.error || validationMeta.searchResult || validationMeta.note || "未找到匹配企业，可继续修改企业名称"}
             </div>
           )}
         </div>

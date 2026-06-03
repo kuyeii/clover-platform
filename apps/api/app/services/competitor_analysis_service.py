@@ -1569,6 +1569,7 @@ def run_company_name_validation_workflow(
     targetCompanyName: str = "",
     competitorCompanyName: str = "",
     cacheOnly: bool = False,
+    forceRefresh: bool = False,
     sourceQuery: str = "",
     **_: Any,
 ) -> Dict[str, Any]:
@@ -1576,13 +1577,14 @@ def run_company_name_validation_workflow(
     if not company_name:
         raise AppError("请先输入企业名称。", status_code=400, code="BAD_REQUEST")
 
-    cached_response = read_company_validation_query_cache(company_name)
-    if cached_response:
-        return cached_response
+    if not forceRefresh:
+        cached_response = read_company_validation_query_cache(company_name)
+        if cached_response:
+            return cached_response
 
-    cached_company = read_company_profile_cache(company_name)
-    if cached_company:
-        return build_company_profile_cache_response(cached_company)
+        cached_company = read_company_profile_cache(company_name)
+        if cached_company:
+            return build_company_profile_cache_response(cached_company)
 
     if cacheOnly:
         return build_company_cache_miss_response(company_name)

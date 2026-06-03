@@ -104,6 +104,45 @@ class CompetitorAnalysisServiceTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "DEMO_HISTORY_DISABLED")
 
+    def test_company_name_validation_force_refresh_bypasses_cache(self) -> None:
+        calls: list[str] = []
+        original_read_query_cache = service.read_company_validation_query_cache
+        original_read_profile_cache = service.read_company_profile_cache
+        original_post_workflow = service.post_dify_workflow
+        original_write_cache = service.write_company_validation_cache
+        try:
+            service.read_company_validation_query_cache = lambda _name: {
+                "company": {"name": "缓存企业", "intro": "旧介绍", "business": "旧业务"},
+                "candidateItems": [],
+                "cacheHit": True,
+            }
+            service.read_company_profile_cache = lambda _name: None
+
+            def fake_post_workflow(**_kwargs: object) -> dict:
+                calls.append("workflow")
+                return {
+                    "data": {
+                        "outputs": {
+                            "text": '{"企业名称":"联网企业","企业介绍":"新介绍","主营业务":"新业务","搜索结果":"联网命中"}'
+                        }
+                    }
+                }
+
+            service.post_dify_workflow = fake_post_workflow
+            service.write_company_validation_cache = lambda _name, _response: calls.append("write_cache")
+
+            cached = service.run_company_name_validation_workflow(companyName="测试企业")
+            refreshed = service.run_company_name_validation_workflow(companyName="测试企业", forceRefresh=True)
+
+            self.assertEqual(cached["company"]["name"], "缓存企业")
+            self.assertEqual(refreshed["company"]["name"], "联网企业")
+            self.assertEqual(calls, ["workflow", "write_cache"])
+        finally:
+            service.read_company_validation_query_cache = original_read_query_cache
+            service.read_company_profile_cache = original_read_profile_cache
+            service.post_dify_workflow = original_post_workflow
+            service.write_company_validation_cache = original_write_cache
+
 
 if __name__ == "__main__":
     unittest.main()
