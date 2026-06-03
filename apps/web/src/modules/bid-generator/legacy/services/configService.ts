@@ -1,4 +1,9 @@
-import api from './api';
+import {
+    deleteTemplateConfig,
+    fetchTemplateConfig,
+    updateGlobalConfig,
+    updateTemplateConfig,
+} from '../../services/bidGeneratorApi';
 
 export interface TemplateBlock {
     id: string;
@@ -55,14 +60,23 @@ export interface TemplateConfigResponse {
     current_template: string;
 }
 
+function toTemplateConfigResponse(value: any): TemplateConfigResponse {
+    return {
+        config_dict: (value?.config_dict || {}) as ConfigYaml,
+        template_dict: (value?.template_dict || {}) as StandardYaml,
+        available_templates: Array.isArray(value?.available_templates)
+            ? value.available_templates.map((item: unknown) => String(item))
+            : [],
+        current_template: String(value?.current_template || ''),
+    };
+}
+
 export const configService = {
     /**
      * 获取全局系统配置与大纲模板
      */
     getTemplateAndConfig: (templateName?: string): Promise<TemplateConfigResponse> => {
-        return api.get('/config/template', {
-            params: templateName ? { template_name: templateName } : {}
-        });
+        return fetchTemplateConfig({ templateName }).then(toTemplateConfigResponse);
     },
 
     /**
@@ -71,7 +85,7 @@ export const configService = {
      * @param template_dict 模板内容
      */
     updateTemplate: (template_name: string, template_dict: StandardYaml): Promise<{ status: string; message: string }> => {
-        return api.put('/config/template', { template_name, template_dict });
+        return updateTemplateConfig(template_name, template_dict) as Promise<{ status: string; message: string }>;
     },
 
     /**
@@ -79,7 +93,7 @@ export const configService = {
      * @param template_name 文件名
      */
     deleteTemplate: (template_name: string): Promise<{ status: string; message: string }> => {
-        return api.delete('/config/template', { params: { template_name } });
+        return deleteTemplateConfig(template_name) as Promise<{ status: string; message: string }>;
     },
 
     /**
@@ -87,6 +101,6 @@ export const configService = {
      * @param config_dict
      */
     updateConfig: (config_dict: ConfigYaml): Promise<{ status: string; message: string }> => {
-        return api.put('/config/global', { config_dict });
+        return updateGlobalConfig(config_dict) as Promise<{ status: string; message: string }>;
     },
 };

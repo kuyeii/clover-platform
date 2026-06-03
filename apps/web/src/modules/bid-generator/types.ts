@@ -159,6 +159,82 @@ export interface BidWorkflowStatusItem {
   lifecycle?: string;
 }
 
+export interface BidTemplateConfig {
+  config_dict?: Record<string, unknown>;
+  template_dict?: Record<string, unknown>;
+  available_templates?: string[];
+  current_template?: string;
+}
+
+export interface BidPiptAuditLog {
+  id?: string;
+  operation?: string;
+  status?: string;
+  source?: string;
+  session_id?: string | null;
+  project_id?: string | null;
+  task_id?: string | null;
+  placeholder?: string | null;
+  entity_type?: string | null;
+  original_hash?: string | null;
+  text_hash?: string | null;
+  details?: Record<string, unknown>;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+export interface PiptGatewayStatus {
+  service?: string;
+  status?: string;
+  version?: string;
+  mode?: string;
+  capabilities?: Record<string, boolean>;
+}
+
+export interface PiptGatewayValidation {
+  valid?: boolean;
+  supported?: string[];
+  unsupported?: string[];
+  expected?: string[];
+  unexpected?: string[];
+  supported_count?: number;
+  unsupported_count?: number;
+  unexpected_count?: number;
+}
+
+export interface PiptGatewayPreprocessResult {
+  request_id?: string;
+  module_code?: string;
+  purpose?: string;
+  mode?: string;
+  enabled?: boolean;
+  input_text_hash?: string;
+  output_text_hash?: string;
+  text?: string;
+  mapping_table_count?: number;
+  placeholder_manifest?: Record<string, Record<string, string>>;
+  placeholder_policy?: Record<string, unknown>;
+  workflow_fields?: Record<string, unknown>;
+  validation?: PiptGatewayValidation;
+  audit?: Record<string, unknown>;
+}
+
+export interface PiptGatewayPostprocessResult {
+  request_id?: string;
+  module_code?: string;
+  purpose?: string;
+  mode?: string;
+  text?: string;
+  output_text_hash?: string;
+  restored_text_hash?: string;
+  restored_count?: number;
+  validation?: PiptGatewayValidation & {
+    missing?: string[];
+    missing_count?: number;
+  };
+  audit?: Record<string, unknown>;
+}
+
 export interface BidKnowledgeDocument {
   id: string;
   name: string;
@@ -168,16 +244,24 @@ export interface BidKnowledgeDocument {
   chunks?: number;
 }
 
+export interface BidKnowledgeImageAsset {
+  image_hash?: string;
+  placeholder?: string;
+  source_doc?: string;
+  source_page?: number | string | null;
+  caption?: string;
+  image_type?: string;
+  summary?: string;
+  tags?: string[];
+  caption_status?: string;
+  preview_url?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
 export interface BidKnowledgeResponse {
   dataset_info?: Record<string, unknown>;
   documents?: BidKnowledgeDocument[];
-}
-
-export interface BidKnowledgeSyncResponse {
-  message?: string;
-  status?: string;
-  task_id?: string;
-  job_id?: string;
 }
 
 export interface BidKbSyncJob {

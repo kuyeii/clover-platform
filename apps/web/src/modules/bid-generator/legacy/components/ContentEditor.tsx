@@ -56,12 +56,16 @@ function makeResponsiveSvg(svg: string): string {
     return processed;
 }
 
-/** 基础 SVG 清洗：移除 script/foreignObject 与内联事件，降低注入风险 */
+/**
+ * 基础 SVG 清洗：移除 script 与危险事件属性，保留 Mermaid 依赖的 foreignObject。
+ * Why:
+ * Mermaid 的流程图/数据流图标签经常落在 foreignObject 里；如果这里整块删除，
+ * 前端会出现“图框存在但文字全部消失”，而导出文件仍正常的错位现象。
+ */
 function sanitizeSvg(svg: string): string {
     if (!svg) return '';
     let safe = svg;
     safe = safe.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
-    safe = safe.replace(/<foreignObject[\s\S]*?>[\s\S]*?<\/foreignObject>/gi, '');
     safe = safe.replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, '');
     safe = safe.replace(/\s(?:href|xlink:href)\s*=\s*(['"])javascript:[\s\S]*?\1/gi, '');
     return safe;

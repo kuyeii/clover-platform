@@ -4,8 +4,6 @@ import {
     CheckCircle2, MinusCircle, RefreshCw
 } from 'lucide-react';
 import clsx from 'clsx';
-import api from '../../services/api';
-import { bidGeneratorFetch } from '../../services/apiBase';
 import type { Project, ScoringRow } from '../../services/projectService';
 import { projectService } from '../../services/projectService';
 
@@ -34,23 +32,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
     const handleInitialize = async () => {
         setInitializing(true);
         try {
-            const scoreReqs = (project.requirements ?? [])
-                .filter(r => r.type === 'score')
-                .map((r, i) => ({ id: `score_${i}`, content: r.content, points: r.points ?? 10 }));
-            const res: any = await api.post('/projects/build-scoring-table', {
-                project_id: project.id,
-                score_requirements: scoreReqs,
-                scoring_table_template: project.scoringTableTemplate || [],
-            });
-            const newRows: ScoringRow[] = (res.rows ?? []).map((r: any) => ({
-                id: r.id,
-                indicator: r.indicator,
-                maxScore: r.max_score,
-                criteria: r.criteria ?? '',
-                selfResponse: '',
-                selfComment: '',
-                evidenceRefs: [],
-            }));
+            const newRows = await projectService.buildScoringTable(project);
             setRows(newRows);
             setInitialized(true);
             persistRows(newRows);
@@ -78,22 +60,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
         setLoadingRows(prev => new Set(prev).add(row.id));
         setErrors(prev => ({ ...prev, [row.id]: '' }));
         try {
-            const reqsContext = (project.requirements ?? [])
-                .map(r => `[${r.type}] ${r.content}`)
-                .join('\n').substring(0, 800);
-            const res: any = await api.post('/projects/fill-scoring-row', {
-                row_id: row.id,
-                indicator: row.indicator,
-                max_score: row.maxScore,
-                criteria: row.criteria,
-                project_summary: project.summary ?? '',
-                requirements_context: reqsContext,
-            });
-            patchRow(row.id, {
-                selfResponse: res.self_response as 'full' | 'partial',
-                selfComment: res.self_comment ?? '',
-                evidenceRefs: res.evidence_refs ?? [],
-            });
+            patchRow(row.id, await projectService.fillScoringRow(project, row));
         } catch (e: any) {
             setErrors(prev => ({ ...prev, [row.id]: e?.response?.data?.detail || 'AI 填写失败' }));
         } finally {
@@ -114,24 +81,7 @@ export function ScoringTable({ project, onRowsUpdated }: Props) {
     const handleExport = async () => {
         setExporting(true);
         try {
-            const res = await bidGeneratorFetch('/projects/export-scoring-table', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    project_name: project.name,
-                    rows: rows.map(r => ({
-                        id: r.id, indicator: r.indicator, max_score: r.maxScore,
-                        criteria: r.criteria, self_response: r.selfResponse,
-                        self_comment: r.selfComment, evidence_refs: r.evidenceRefs,
-                    })),
-                }),
-            });
-            if (!res.ok) throw new Error('导出失败');
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = `${project.name}_自评评分表.xlsx`;
-            a.click(); URL.revokeObjectURL(url);
+            await projectService.exportScoringTable(project, rows);
         } catch (e: any) {
             setErrors({ _export: e.message || '导出失败' });
         } finally { setExporting(false); }

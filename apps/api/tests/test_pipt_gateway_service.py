@@ -13,6 +13,7 @@ if API_ROOT_VALUE not in sys.path:
     sys.path.insert(0, API_ROOT_VALUE)
 
 from app.services import pipt_gateway_service as service
+from app.services import pipt_recognition_adapter
 from app.services.pipt_redaction_service import apply_current_document_global_redactions
 
 
@@ -62,7 +63,7 @@ class PiptGatewayServiceTests(unittest.TestCase):
         )
 
         with (
-            patch.object(service, "_legacy_desensitize_engine", return_value=fake_engine),
+            patch.object(service, "desensitize_with_platform_recognizer", side_effect=fake_engine.desensitize),
             patch.object(service, "_persist_mapping_vault", return_value=True) as persist,
             patch.object(service, "_persist_event_from_result", return_value=True),
             patch.object(
@@ -100,7 +101,7 @@ class PiptGatewayServiceTests(unittest.TestCase):
         )
 
         with (
-            patch.object(service, "_legacy_desensitize_engine", return_value=fake_engine),
+            patch.object(service, "desensitize_with_platform_recognizer", side_effect=fake_engine.desensitize),
             patch.object(service, "_persist_mapping_vault", return_value=True),
             patch.object(service, "_persist_event_from_result", return_value=True),
             patch.object(service, "_load_historical_mapping_candidates", return_value=[]),
@@ -118,6 +119,83 @@ class PiptGatewayServiceTests(unittest.TestCase):
         self.assertNotIn("张三", result["text"])
         self.assertEqual(result["text"], f"第一段 {token} 未替换。第二段 {token} 已替换。")
         self.assertEqual(result["audit"]["details"]["current_document_global_replace_count"], 1)
+
+    def test_recognition_adapter_forwards_to_provider_boundary(self) -> None:
+        fake_provider = Mock()
+        fake_provider.desensitize.return_value = SimpleNamespace(desensitized_text="@@PIPT:v1:e000001:k11111111@@")
+
+        with patch.object(pipt_recognition_adapter, "get_recognition_provider", return_value=fake_provider):
+            result = pipt_recognition_adapter.desensitize_with_platform_recognizer(
+                text="张三",
+                target_entities=["name"],
+                llm_mode="augment",
+                audit_context={"source": "test"},
+            )
+
+        self.assertEqual(result.desensitized_text, "@@PIPT:v1:e000001:k11111111@@")
+        fake_provider.desensitize.assert_called_once_with(
+            text="张三",
+            target_entities=["name"],
+            method="placeholder",
+            placeholder_protocol="strong",
+            llm_mode="augment",
+            audit_context={"source": "test"},
+        )
+
+    def test_recognition_adapter_recognize_forwards_to_provider_boundary(self) -> None:
+        fake_provider = Mock()
+        fake_provider.recognize.return_value = [SimpleNamespace(entity_type="name")]
+
+        with patch.object(pipt_recognition_adapter, "get_recognition_provider", return_value=fake_provider):
+            result = pipt_recognition_adapter.recognize_with_platform_recognizer(
+                text="张三",
+                target_entities=["name"],
+                llm_mode="verify_only",
+            )
+
+        self.assertEqual(len(result), 1)
+        fake_provider.recognize.assert_called_once_with(
+            text="张三",
+            target_entities=["name"],
+            llm_mode="verify_only",
+        )
+
+    def test_native_recognition_provider_forwards_to_native_engine(self) -> None:
+        fake_engine = Mock()
+        fake_engine.desensitize.return_value = SimpleNamespace(desensitized_text="@@PIPT:v1:e000001:k11111111@@")
+        fake_engine.recognize.return_value = [SimpleNamespace(entity_type="name")]
+        provider = pipt_recognition_adapter.NativePiptRecognitionProvider()
+
+        with patch.object(pipt_recognition_adapter, "_native_desensitize_engine", return_value=fake_engine):
+            entities = provider.recognize(
+                text="张三",
+                target_entities=["name"],
+                llm_mode="verify_only",
+            )
+            result = provider.desensitize(
+                text="张三",
+                target_entities=["name"],
+                llm_mode="augment",
+                audit_context={"source": "test"},
+            )
+
+        self.assertEqual(len(entities), 1)
+        fake_engine.recognize.assert_called_once_with("张三", ["name"], llm_mode_override="verify_only")
+        self.assertEqual(result.desensitized_text, "@@PIPT:v1:e000001:k11111111@@")
+        fake_engine.desensitize.assert_called_once_with(
+            text="张三",
+            target_entities=["name"],
+            method="placeholder",
+            placeholder_protocol="strong",
+            db_session=None,
+            llm_mode="augment",
+            audit_context={"source": "test"},
+        )
+
+    def test_recognition_adapter_does_not_expose_legacy_engine_boundary(self) -> None:
+        self.assertFalse(hasattr(pipt_recognition_adapter, "_ensure_legacy_runtime"))
+        self.assertFalse(hasattr(pipt_recognition_adapter, "_legacy_desensitize_engine"))
+        self.assertFalse(hasattr(pipt_recognition_adapter, "LegacyPiptRecognitionProvider"))
 
     def test_unified_redaction_service_replaces_current_document_missed_same_entity_globally(self) -> None:
         token = "@@PIPT:v1:e000001:k11111111@@"

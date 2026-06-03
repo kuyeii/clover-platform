@@ -16,6 +16,7 @@
 | 10-G | [stage-10-g-unified-acceptance-and-release-readiness.md](./stage-10-g-unified-acceptance-and-release-readiness.md) | P0 | 对当前统一前后端主链路做总体验收和发布准备。 |
 | 11-A | [stage-11-a-legacy-runtime-decoupling.md](./stage-11-a-legacy-runtime-decoupling.md) | P1 | 逐步移除 `apps/api` 对 legacy 运行时代码的硬依赖。 |
 | 11-B | [stage-11-b-platform-common-capabilities.md](./stage-11-b-platform-common-capabilities.md) | P1 | 补齐统一 Dify、文件、任务、workflow 运行记录等公共能力。 |
+| 11-C | [stage-11-c-bid-generator-native-convergence.md](./stage-11-c-bid-generator-native-convergence.md) | P1 | 按 RAG/竞对模式推进标书生成原生化，PIPT 归入统一后端能力。 |
 | 12-A | [stage-12-a-frontend-shared-packages.md](./stage-12-a-frontend-shared-packages.md) | P2 | 将稳定的前端 API client、UI、共享类型沉淀到 packages。 |
 | 12-B | [stage-12-b-iframe-and-legacy-retirement.md](./stage-12-b-iframe-and-legacy-retirement.md) | P2 | 在验收充分后下线 iframe 和 legacy 前端回滚配置。 |
 

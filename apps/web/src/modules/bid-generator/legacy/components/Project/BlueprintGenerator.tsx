@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Sparkles, Loader2, CheckCircle2, ChevronRight, AlertCircle, RefreshCw, Target, Map, Award, FileText } from 'lucide-react';
 import type { Project, BlueprintData } from '../../services/projectService';
 import { projectService } from '../../services/projectService';
-import api from '../../services/api';
 
 interface Props {
     project: Project;
@@ -21,16 +20,7 @@ export function BlueprintGenerator({ project, onConfirm }: Props) {
         setGenerating(true);
         setError(null);
         try {
-            const reqs = (project.requirements || []).filter(r => r.type !== 'score').map(r => ({ type: r.type, content: r.content }));
-            const outl = (project.outline || []).map(s => ({ title: s.title }));
-            const res: any = await api.post('/projects/generate-blueprint', {
-                project_id: project.id,
-                bid_type: project.bidType || 'tech',
-                project_summary: project.summary || '',
-                requirements: reqs,
-                outline: outl,
-            });
-            const bp = res.blueprint as BlueprintData;
+            const bp = await projectService.generateBlueprint(project);
             projectService.update(project.id, { blueprint: bp });
             setBlueprint(bp);
         } catch (err: any) {

@@ -4,8 +4,7 @@ import {
     CheckCircle2, AlertCircle, Loader2, Copy, Paperclip
 } from 'lucide-react';
 import clsx from 'clsx';
-import api from '../../services/api';
-import type { Project } from '../../services/projectService';
+import { projectService, type Project } from '../../services/projectService';
 
 // ─── 附件类型定义 ───────────────────────────────────────
 interface AttachmentType {
@@ -58,21 +57,15 @@ export function AttachmentFiller({ project }: Props) {
         setLoadingKey(type.key);
         setErrors(prev => ({ ...prev, [type.key]: '' }));
         try {
-            const res: any = await api.post('/projects/generate-attachment', {
-                attachment_type: type.key,
-                attachment_name: type.label,
-                attachment_desc: type.desc,
-                project_id: project.id,
-                org_name: bidder?.orgName || '',
-                legal_rep: bidder?.legalRep || '',
-                project_lead: bidder?.projectLead || '',
-                phone: bidder?.phone || '',
-                doc_date: bidder?.docDate || '',
-                project_name: project.name,
+            const res = await projectService.generateAttachment({
+                project,
+                attachmentType: type.key,
+                attachmentName: type.label,
+                attachmentDesc: type.desc,
                 recipient,
-                bid_no: bidNo,
-                agent_name: agentName,
-                agent_id: agentId,
+                bidNo,
+                agentName,
+                agentId,
             });
             setResults(prev => ({ ...prev, [type.key]: { label: res.label, content: res.content } }));
             setExpandedKey(type.key);
@@ -129,7 +122,7 @@ export function AttachmentFiller({ project }: Props) {
                 {!bidderConfigured && (
                     <div className="mb-3 flex items-start gap-2 text-sm text-warning bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-3 py-2 rounded-lg">
                         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                        侧边栏"投标人信息"尚未配置，附件将以占位符填充，建议先完善。
+                        投标人信息尚未配置，附件将以占位符填充，建议先完善。
                     </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">

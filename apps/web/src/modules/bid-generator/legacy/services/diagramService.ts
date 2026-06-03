@@ -1,4 +1,9 @@
-import { bidGeneratorFetch } from './apiBase';
+import {
+    cancelTask as cancelTaskApi,
+    fetchDiagramArtifactText,
+    getTaskStatus as getTaskStatusApi,
+    startDiagramBatchTask,
+} from '../../services/bidGeneratorApi';
 export interface PlaceholderReplaceRow {
     placeholder: string;
     original: string;
@@ -146,20 +151,20 @@ export const diagramService = {
     async getDiagramSvg(diagramId: string, projectId?: string): Promise<string> {
         const id = String(diagramId || '').trim();
         if (!id) return '';
-        const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
         try {
-            const resp = await bidGeneratorFetch(`/diagram-artifacts/${encodeURIComponent(id)}.svg${query}`);
-            if (resp.ok) {
-                const svg = await resp.text();
+            try {
+                const svg = await fetchDiagramArtifactText(id, 'svg', projectId);
                 if (!isMermaidFallbackSvg(svg)) return svg;
-                const mmdResp = await bidGeneratorFetch(`/diagram-artifacts/${encodeURIComponent(id)}.mmd${query}`);
-                if (!mmdResp.ok) return svg;
-                const source = await mmdResp.text();
-                return await renderMermaidToSvg(source).catch(() => svg);
+                try {
+                    const source = await fetchDiagramArtifactText(id, 'mmd', projectId);
+                    return await renderMermaidToSvg(source).catch(() => svg);
+                } catch {
+                    return svg;
+                }
+            } catch {
+                // SVG artifact 不存在时尝试读取 Mermaid 源码并在前端渲染。
             }
-            const mmdResp = await bidGeneratorFetch(`/diagram-artifacts/${encodeURIComponent(id)}.mmd${query}`);
-            if (!mmdResp.ok) return '';
-            const mermaid = await mmdResp.text();
+            const mermaid = await fetchDiagramArtifactText(id, 'mmd', projectId);
             return await renderMermaidToSvg(mermaid).catch(() => mermaidToPreviewSvg(mermaid));
         } catch {
             return '';
@@ -168,37 +173,31 @@ export const diagramService = {
 
     /** 启动后端批量图表任务。正文已交付，图表只作为增强内容回填。 */
     async startDiagramBatch(projectId: string, requests: DiagramRequest[], signal?: AbortSignal): Promise<string> {
-        const resp = await bidGeneratorFetch(`/tasks/start-diagram-batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_id: projectId,
-                diagram_requests: requests,
-                enable_diagrams: true,
-            }),
-            signal,
-        });
-        if (!resp.ok) {
-            const body = await resp.json().catch(() => ({}));
-            throw new DiagramServiceError(resp.status, body?.detail || body);
+        try {
+            const body = await startDiagramBatchTask({
+                projectId,
+                diagramRequests: requests,
+                signal,
+            });
+            return String(body.task_id || '');
+        } catch (error) {
+            throw new DiagramServiceError(
+                typeof (error as any)?.status === 'number' ? (error as any).status : 500,
+                (error as any)?.response || (error as any)?.details || error,
+            );
         }
-        const body = await resp.json();
-        return String(body.task_id || '');
     },
 
     /** 查询图表任务状态，支持 afterEventId 增量拉取 partial_events。 */
     async getDiagramTaskStatus(taskId: string, projectId: string, afterEventId = 0): Promise<DiagramTaskStatus> {
-        const query = `?project_id=${encodeURIComponent(projectId)}&after_event_id=${encodeURIComponent(String(afterEventId))}`;
-        const resp = await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/status${query}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        return await resp.json();
+        const status = await getTaskStatusApi(taskId, projectId, { afterEventId });
+        return status as DiagramTaskStatus;
     },
 
     /** 取消图表任务。取消失败通常代表任务已经结束，调用方不需要弹窗。 */
     async cancelDiagramTask(taskId: string, projectId: string): Promise<void> {
-        const query = `?project_id=${encodeURIComponent(projectId)}`;
         try {
-            await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/cancel${query}`, { method: 'POST' });
+            await cancelTaskApi(taskId, projectId);
         } catch {
             // 图表是增强任务，取消失败静默处理。
         }
