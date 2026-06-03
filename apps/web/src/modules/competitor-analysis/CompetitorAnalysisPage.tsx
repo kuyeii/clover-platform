@@ -7,7 +7,7 @@ export function CompetitorAnalysisPage() {
     <div
       className="competitor-analysis-legacy-viewport"
       data-module="competitor-analysis"
-      style={{ "--competitor-portal-offset-top": "56px" } as CSSProperties}
+      style={{ "--competitor-portal-offset-top": "var(--portal-topbar-height)" } as CSSProperties}
     >
       <LegacyCompetitorAnalysisApp />
     </div>

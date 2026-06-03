@@ -493,23 +493,41 @@ workflow:
           import json
           import re
 
-          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
-          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+          LEGAL_RE = re.compile(r"(?:\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}|@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@)")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})|@@[^@\s]*(?:PIPT|BIDDER)[^@\s]*@@?", re.IGNORECASE)
 
-          def _find_issues(text):
+          def _find_allowed(placeholder_hint):
+              allowed = []
+              hint = str(placeholder_hint or "")
+              marker = "PIPT_ALLOWED_PLACEHOLDERS_JSON:"
+              if marker in hint:
+                  raw_json = hint.split(marker, 1)[1].split("\n", 1)[0].strip()
+                  try:
+                      for token in json.loads(raw_json):
+                          if isinstance(token, str) and LEGAL_RE.fullmatch(token) and token not in allowed:
+                              allowed.append(token)
+                  except Exception:
+                      allowed = []
+              if allowed:
+                  return allowed
+              for token in LEGAL_RE.findall(hint):
+                  if token not in allowed:
+                      allowed.append(token)
+              return allowed
+
+          def _find_issues(text, allowed):
               issues = []
+              allowed_set = set(allowed)
               for match in SUSPECT_RE.finditer(str(text or "")):
                   token = match.group(0)
-                  if not LEGAL_RE.fullmatch(token) and token not in issues:
+                  is_legal = bool(LEGAL_RE.fullmatch(token))
+                  if (not is_legal or (allowed_set and token not in allowed_set)) and token not in issues:
                       issues.append(token)
               return issues
 
           def main(text: str, feedback: str, quality_score, placeholder_hint: str) -> dict:
-              issues = _find_issues(text)
-              allowed = []
-              for token in LEGAL_RE.findall(str(placeholder_hint or "")):
-                  if token not in allowed:
-                      allowed.append(token)
+              allowed = _find_allowed(placeholder_hint)
+              issues = _find_issues(text, allowed)
 
               result = {
                   "text": str(text or "").strip(),
@@ -635,14 +653,14 @@ workflow:
 
             任务：根据问题清单，为每个畸形占位符给出最小替换方案。
             允许格式只有：
+            - @@PIPT:v1:e000001:kxxxxxxxx@@
             - {{__PIPT_类型_序号__}}
-            - {{__BIDDER_KEY__}}
 
             规则：
             - 只处理问题清单中的 token。
             - 只能修复占位符格式，不得改写任何正文。
             - 能确定的修复为合法占位符；不能确定时不要给 replacement。
-            - {{BIDDER_ORG}} 应修复为 {{__BIDDER_ORG__}}。
+            - {{BIDDER_ORG}} 属于旧投标人占位符样式，当前无法可靠修复为 strong token，必须跳过。
             - {{PIPT_name_1}} 应修复为 {{__PIPT_name_1__}}。
             - {{PIPT_1}} 缺少类型，无法可靠修复，必须跳过。
 
@@ -685,8 +703,8 @@ workflow:
           import json
           import re
 
-          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
-          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+          LEGAL_RE = re.compile(r"(?:\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}|@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@)")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})|@@[^@\s]*(?:PIPT|BIDDER)[^@\s]*@@?", re.IGNORECASE)
 
           def _load_json(raw, fallback):
               text = str(raw or "").strip()
@@ -703,16 +721,20 @@ workflow:
                           return fallback
               return fallback
 
-          def _find_issues(text):
+          def _find_issues(text, allowed):
               issues = []
+              allowed_set = set(allowed)
               for match in SUSPECT_RE.finditer(str(text or "")):
                   token = match.group(0)
-                  if not LEGAL_RE.fullmatch(token):
+                  is_legal = bool(LEGAL_RE.fullmatch(token))
+                  if not is_legal or (allowed_set and token not in allowed_set):
                       issues.append(token)
               return issues
 
-          def main(text: str, feedback: str, quality_score, repair_text: str, placeholder_issues: str) -> dict:
+          def main(text: str, feedback: str, quality_score, repair_text: str, placeholder_issues: str, allowed_placeholders_json: str) -> dict:
               issue_tokens = set(_load_json(placeholder_issues, []))
+              allowed = [token for token in _load_json(allowed_placeholders_json, []) if isinstance(token, str) and LEGAL_RE.fullmatch(token)]
+              allowed_set = set(allowed)
               repair_payload = _load_json(repair_text, {})
               replacements = repair_payload.get("replacements") if isinstance(repair_payload, dict) else []
               rewritten = str(text or "")
@@ -723,7 +745,7 @@ workflow:
                       continue
                   src = str(repl.get("from") or "")
                   dst = str(repl.get("to") or "")
-                  if not src or src not in issue_tokens or not LEGAL_RE.fullmatch(dst):
+                  if not src or src not in issue_tokens or not LEGAL_RE.fullmatch(dst) or (allowed_set and dst not in allowed_set):
                       continue
                   if src in rewritten:
                       rewritten = rewritten.replace(src, dst)
@@ -732,8 +754,8 @@ workflow:
               result = {
                   "text": rewritten.strip(),
                   "feedback": str(feedback or "").strip(),
-                  "placeholder_issues": json.dumps(_find_issues(rewritten), ensure_ascii=False),
-                  "placeholder_validation_failed": bool(_find_issues(rewritten)),
+                  "placeholder_issues": json.dumps(_find_issues(rewritten, allowed), ensure_ascii=False),
+                  "placeholder_validation_failed": bool(_find_issues(rewritten, allowed)),
                   "placeholder_repair_report": json.dumps(applied, ensure_ascii=False),
               }
               if quality_score is not None:
@@ -788,6 +810,11 @@ workflow:
           - placeholder_issues
           value_type: string
           variable: placeholder_issues
+        - value_selector:
+          - placeholder_scan
+          - allowed_placeholders_json
+          value_type: string
+          variable: allowed_placeholders_json
       height: 52
       id: apply_placeholder_repair
       position:

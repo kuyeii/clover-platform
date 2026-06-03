@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "./index.css";
 import "./App.css";
 import { getHistoryRecord, listHistory, runAnalysisStream, runCompanyNameValidationWorkflow } from "../services/competitorApi";
@@ -254,8 +255,15 @@ function getNewsHref(item) {
   return "";
 }
 
+function stripThinkContent(value) {
+  return String(value || "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<\/?think>/gi, "")
+    .trim();
+}
+
 function renderInlineMarkdown(text) {
-  const raw = String(text ?? "").replace(/\\\*/g, "*");
+  const raw = stripThinkContent(text).replace(/\\\*/g, "*");
   if (!raw) return "";
 
   const segments = [];
@@ -297,11 +305,38 @@ function renderInlineMarkdown(text) {
 
 function MarkdownReport({ text }) {
   const normalizeMarkdownText = (value) => {
-    const withoutFences = String(value || "")
+    let raw = stripThinkContent(value);
+    if ((raw.startsWith("\"") && raw.endsWith("\"")) || (raw.startsWith("'") && raw.endsWith("'"))) {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        raw = raw.slice(1, -1);
+      }
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      raw = parsed?.markdown || parsed?.report || parsed?.text || parsed?.content || raw;
+    } catch {
+      const jsonMatch = raw.match(/^\s*\{[\s\S]*\}\s*$/);
+      if (jsonMatch) {
+        raw = raw
+          .replace(/^\s*\{\s*"?(markdown|report|text|content)"?\s*:\s*"?/i, "")
+          .replace(/"?\s*\}\s*$/, "");
+      }
+    }
+
+    const withoutFences = String(raw || "")
       .replace(/```[a-z]*\s*/gi, "")
       .replace(/```/g, "")
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, "\"")
+      .replace(/\\\*/g, "*")
+      .replace(/\\#/g, "#")
+      .replace(/\\\|/g, "|")
       .trim();
-    return withoutFences.includes("\n") ? withoutFences : withoutFences.replace(/\\n/g, "\n");
+    return withoutFences;
   };
 
   const parseMarkdownTableRow = (line) => {
@@ -1389,20 +1424,30 @@ function CompanyOverview({ targetName, targetCompanyInfo, targetDetail, detailSt
   );
 }
 
-function InfoGrid({ companyName, companyIntro, analysisSummary }) {
+function InfoGrid({ companyName, companyIntro, analysisSummary, onOpenDrawer }) {
   return (
-    <div className="detail-summary-grid">
-      <div className="detail-text-block">
-        <h3>公司名称</h3>
-        <p className="detail-company-name">{companyName || "暂无公司名称。"}</p>
+    <div className="detail-overview">
+      <div className="detail-overview-head">
+        <div>
+          <p className="section-eyebrow">竞争对手总体信息</p>
+          <h3>{companyName || "暂无公司名称。"}</h3>
+        </div>
+        <div className="detail-overview-actions">
+          <button type="button" className="secondary-action secondary-action--brand" onClick={() => onOpenDrawer("公司近况")}>
+            查看近况与报告
+          </button>
+        </div>
       </div>
-      <div className="detail-text-block">
-        <h3>公司简介</h3>
-        <p>{companyIntro || "暂无企业简介。"}</p>
-      </div>
-      <div className="detail-text-block">
-        <h3>竞争分析小结</h3>
-        <p>{analysisSummary || "暂无竞争分析小结。"}</p>
+
+      <div className="detail-overview-copy">
+        <div>
+          <h4>公司简介</h4>
+          <p>{companyIntro || "暂无企业简介。"}</p>
+        </div>
+        <div>
+          <h4>竞争分析小结</h4>
+          <p>{analysisSummary || "暂无竞争分析小结。"}</p>
+        </div>
       </div>
     </div>
   );
@@ -1432,7 +1477,7 @@ function DynamicsPanel({ competitorDetail, status = "idle", error = "" }) {
       return items;
     }
 
-    const summary = typeof detail?.lately === "string" ? detail.lately.trim() : "";
+    const summary = typeof detail?.lately === "string" ? stripThinkContent(detail.lately) : "";
     if (!summary || summary === "暂无近期动态" || summary === "未检索到企业近期信息") {
       return [];
     }
@@ -1468,8 +1513,8 @@ function DynamicsPanel({ competitorDetail, status = "idle", error = "" }) {
                   </h4>
                   {item.type && <span className="timeline-type">{item.type}</span>}
                 </div>
-                <p>{item.content || item.impact || "暂无详情。"}</p>
-                {item.source && <small>来源：{item.source}</small>}
+                <p>{stripThinkContent(item.content || item.impact || "暂无详情。")}</p>
+                {item.source && <small>来源：{stripThinkContent(item.source)}</small>}
               </div>
             </div>
           </article>
@@ -1482,18 +1527,9 @@ function DynamicsPanel({ competitorDetail, status = "idle", error = "" }) {
 }
 
 function DetailPanel({
-  targetName,
-  targetCompanyInfo,
-  targetDetail,
   selectedCompetitor,
-  selectedDetail,
-  selectedDetailStatus,
-  selectedDetailError,
-  selectedReport,
   selectedScoreItem,
-  activeTab,
-  setActiveTab,
-  singleMode
+  onOpenDrawer
 }) {
   if (!selectedCompetitor) {
     return (
@@ -1506,61 +1542,121 @@ function DetailPanel({
 
   return (
     <section className="details-panel card-panel">
-      <div className="tabbar">
-        {RESULT_TABS.map(({ label: tab }) => (
-          <button
-            type="button"
-            key={tab}
-            className={activeTab === tab ? "tab-btn tab-btn--active" : "tab-btn"}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+      <InfoGrid
+        companyName={selectedCompetitor.name}
+        companyIntro={selectedCompetitor.intro}
+        analysisSummary={selectedScoreItem?.竞争分析小结}
+        onOpenDrawer={onOpenDrawer}
+      />
+    </section>
+  );
+}
 
-      {activeTab === DEFAULT_RESULT_TAB && (
-        <InfoGrid
-          companyName={selectedCompetitor.name}
-          companyIntro={selectedCompetitor.intro}
-          analysisSummary={selectedScoreItem?.竞争分析小结}
-        />
-      )}
-      {activeTab === "公司近况" && (
-        <DynamicsPanel competitorDetail={selectedDetail} status={selectedDetailStatus} error={selectedDetailError} />
-      )}
-      {activeTab === "对比分析报告" && (
-        <div className="report-wrap">
-          <div className="report-title-row">
-            <div>
-              <h3>{targetName} vs {selectedCompetitor.name}</h3>
-              <p>围绕产品服务、技术力、近期动态与战略威胁展开对比。</p>
-            </div>
-            {selectedReport?.status === "loading" && <span className="status-dot"><ResultPendingText>报告生成中</ResultPendingText></span>}
-            {selectedReport?.status === "error" && <span className="status-dot status-dot--error">生成失败</span>}
+function ResultDetailDrawer({
+  open,
+  targetName,
+  selectedCompetitor,
+  selectedDetail,
+  selectedDetailStatus,
+  selectedDetailError,
+  selectedReport,
+  selectedScoreItem,
+  activeTab,
+  onTabChange,
+  onClose,
+  onExport
+}) {
+  const [mounted, setMounted] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      return undefined;
+    }
+    const timer = setTimeout(() => setMounted(false), 260);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  if (!mounted || !selectedCompetitor || typeof document === "undefined") {
+    return null;
+  }
+
+  const drawerTab = activeTab === "对比分析报告" ? "对比分析报告" : "公司近况";
+
+  return createPortal(
+    <div className={`competitor-analysis-legacy-viewport competitor-drawer-layer result-detail-drawer-layer ${open ? "result-detail-drawer-layer--open" : "result-detail-drawer-layer--closing"}`} role="presentation">
+      <button
+        type="button"
+        className="competitor-drawer-backdrop"
+        aria-label="关闭竞争对手分析详情"
+        onClick={onClose}
+      />
+      <aside className="competitor-drawer result-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="result-detail-drawer-title">
+        <div className="competitor-drawer-head result-detail-drawer-head">
+          <div>
+            <h2 id="result-detail-drawer-title">{selectedCompetitor.name}</h2>
+            <p>{targetName} 的竞争对手延展信息</p>
           </div>
-          {selectedReport?.status === "loading" ? (
-            <AnalysisLoadingCard
-              title="对比分析报告生成中"
-              steps={[
-                { label: "企业信息与动态已接入", state: "done" },
-                { label: "生成产品、技术与近期动态对比", state: "active", detail: "正在组织报告段落与关键判断" },
-                { label: "汇总战略威胁结论", state: "pending" }
-              ]}
-            />
-          ) : selectedReport?.status === "error" ? (
-            <p className="api-error">{selectedReport.error}</p>
+          <button type="button" className="competitor-drawer-close" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <div className="result-detail-drawer-tabs" role="tablist" aria-label="竞争对手详情类型">
+          {["公司近况", "对比分析报告"].map((tab) => (
+            <button
+              type="button"
+              key={tab}
+              className={drawerTab === tab ? "result-detail-drawer-tab result-detail-drawer-tab--active" : "result-detail-drawer-tab"}
+              onClick={() => onTabChange(tab)}
+              role="tab"
+              aria-selected={drawerTab === tab}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        <div className="competitor-drawer-body result-detail-drawer-body">
+          {drawerTab === "公司近况" ? (
+            <DynamicsPanel competitorDetail={selectedDetail} status={selectedDetailStatus} error={selectedDetailError} />
           ) : (
-            <MarkdownReport text={selectedReport?.text || selectedScoreItem?.竞争分析小结 || "暂无报告。"} />
+            <div className="report-wrap">
+              <div className="report-title-row">
+                <div>
+                  <h3>{targetName} vs {selectedCompetitor.name}</h3>
+                  <p>围绕产品服务、技术力、近期动态与战略威胁展开对比。</p>
+                </div>
+                <button type="button" className="export-btn report-export-btn" onClick={onExport}>
+                  <Icon name="download" />导出报告
+                </button>
+                {selectedReport?.status === "loading" && <span className="status-dot"><ResultPendingText>报告生成中</ResultPendingText></span>}
+                {selectedReport?.status === "error" && <span className="status-dot status-dot--error">生成失败</span>}
+              </div>
+              {selectedReport?.status === "loading" ? (
+                <AnalysisLoadingCard
+                  title="对比分析报告生成中"
+                  steps={[
+                    { label: "企业信息与动态已接入", state: "done" },
+                    { label: "生成产品、技术与近期动态对比", state: "active", detail: "正在组织报告段落与关键判断" },
+                    { label: "汇总战略威胁结论", state: "pending" }
+                  ]}
+                />
+              ) : selectedReport?.status === "error" ? (
+                <p className="api-error">{selectedReport.error}</p>
+              ) : (
+                <MarkdownReport text={selectedReport?.text || selectedScoreItem?.竞争分析小结 || "暂无报告。"} />
+              )}
+            </div>
           )}
         </div>
-      )}
-    </section>
+      </aside>
+    </div>,
+    document.body
   );
 }
 
 function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLoading, apiError, resetSeed }) {
   const [modeError, setModeError] = useState("");
+  const [competitorDrawerOpen, setCompetitorDrawerOpen] = useState(false);
   const getRowsFromForm = useCallback((value) => {
     const names = splitCompetitorNames(value);
     const rows = names.length ? names.slice(0, MAX_COMPETITOR_COUNT) : [];
@@ -1595,6 +1691,10 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
   const hasSameAsTargetCompetitor = sameAsTargetCompetitorIndexes.size > 0;
   const hasDuplicateCompetitor = duplicateCompetitorIndexes.size > 0;
   const hasBlockingCompetitorError = matchMode === "exact" && (hasSameAsTargetCompetitor || hasDuplicateCompetitor);
+  const competitorNames = useMemo(
+    () => competitorRows.map((item) => item.trim()).filter(Boolean).slice(0, MAX_COMPETITOR_COUNT),
+    [competitorRows]
+  );
 
   useEffect(() => {
     const rows = getRowsFromForm("");
@@ -1680,14 +1780,17 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
 
     if (matchMode === "exact" && splitCompetitorNames(form.competitorCompanyName).length === 0) {
       setModeError("请至少输入一家竞争对手企业名称。");
+      setCompetitorDrawerOpen(true);
       return;
     }
     if (matchMode === "exact" && hasSameAsTargetCompetitor) {
       setModeError(SAME_COMPANY_NAME_ERROR);
+      setCompetitorDrawerOpen(true);
       return;
     }
     if (matchMode === "exact" && hasDuplicateCompetitor) {
       setModeError(DUPLICATE_COMPETITOR_NAME_ERROR);
+      setCompetitorDrawerOpen(true);
       return;
     }
 
@@ -1756,7 +1859,7 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
 
                 <div className="home-form-column home-form-column--right">
                   {matchMode === "auto" ? (
-                    <div className="match-mode-content match-mode-content--auto" key="auto">
+                    <div className="match-mode-content match-mode-content--auto home-mode-panel" key="auto">
                       <FieldGroup
                         icon="search"
                         label="选择省份"
@@ -1771,59 +1874,24 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
                           {PROVINCES.map((province) => <option value={province} key={province}>{province}</option>)}
                         </select>
                       </FieldGroup>
+                      <p className="home-mode-note">自动匹配会根据省份筛选 5 家对手，适合快速生成第一版竞争分析。</p>
                     </div>
                   ) : (
-                    <div className="match-mode-content match-mode-content--exact competitor-field-card" key="exact">
-                      <div className="manual-list-head">
-                        <span className="field-title"><Icon name="user" />竞争对手名称</span>
-                        <button
-                          type="button"
-                          className="mini-add"
-                          onClick={addCompetitor}
-                          disabled={competitorRows.length >= MAX_COMPETITOR_COUNT}
-                          aria-label="新增竞争对手输入行"
-                        >
-                          + 添加对手
-                        </button>
-                      </div>
-                      <div className="competitor-input-list">
-                        {competitorRows.map((name, index) => {
-                          const isSameAsTarget = sameAsTargetCompetitorIndexes.has(index);
-                          const isDuplicateCompetitor = duplicateCompetitorIndexes.has(index);
-                          const rowError = isSameAsTarget
-                            ? SAME_COMPANY_NAME_ERROR
-                            : isDuplicateCompetitor
-                              ? DUPLICATE_COMPETITOR_NAME_ERROR
-                              : "";
-                          const errorId = `competitor-name-error-${index}`;
-                          return (
-                            <div className={`competitor-input-row ${rowError ? "competitor-input-row--error" : ""}`.trim()} key={`competitor-row-${index}`}>
-                              <CompanyValidationInput
-                                value={name}
-                                onChange={(value) => updateCompetitorAt(index, value)}
-                                placeholder="请输入竞争对手名称"
-                                className={rowError ? "company-validation-input--error" : ""}
-                                suspendValidation={Boolean(rowError)}
-                                inputProps={{
-                                  "data-competitor-input": index,
-                                  "aria-invalid": rowError ? "true" : undefined,
-                                  "aria-describedby": rowError ? errorId : undefined
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeCompetitorAt(index)}
-                                disabled={!name.trim() && competitorRows.length <= DEFAULT_COMPETITOR_ROWS}
-                                aria-label={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
-                                title={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
-                              >
-                                ×
-                              </button>
-                              {rowError && <p className="competitor-row-error" id={errorId}>{rowError}</p>}
-                            </div>
-                          );
-                        })}
-                      </div>
+                    <div className="match-mode-content match-mode-content--exact home-mode-panel competitor-summary-panel" key="exact">
+                      <div className="field-title">竞争对手</div>
+                      <button
+                        type="button"
+                        className="competitor-summary-card"
+                        onClick={() => setCompetitorDrawerOpen(true)}
+                        aria-haspopup="dialog"
+                      >
+                        <span className="competitor-summary-main">
+                          <strong>{competitorNames.length > 0 ? `${competitorNames.length} 家已配置` : "尚未配置对手"}</strong>
+                          <small>{competitorNames.length > 0 ? competitorNames.join("、") : "打开侧栏录入 1-5 家企业"}</small>
+                        </span>
+                        <span className="competitor-summary-action">配置</span>
+                      </button>
+                      <p className="home-mode-note">精确匹配适合已有明确对手名单的场景，主页仅保留配置摘要。</p>
                     </div>
                   )}
                 </div>
@@ -1841,6 +1909,87 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
           </div>
         </section>
 
+        {competitorDrawerOpen ? (
+          <div className="competitor-drawer-layer" role="presentation">
+            <button
+              type="button"
+              className="competitor-drawer-backdrop"
+              aria-label="关闭竞争对手配置"
+              onClick={() => setCompetitorDrawerOpen(false)}
+            />
+            <aside className="competitor-drawer" role="dialog" aria-modal="true" aria-labelledby="competitor-drawer-title">
+              <div className="competitor-drawer-head">
+                <div>
+                  <h2 id="competitor-drawer-title">配置竞争对手</h2>
+                  <p>最多录入 5 家企业，校验通过后即可开始分析。</p>
+                </div>
+                <button type="button" className="competitor-drawer-close" onClick={() => setCompetitorDrawerOpen(false)} aria-label="关闭">
+                  ×
+                </button>
+              </div>
+
+              <div className="competitor-drawer-body">
+                <div className="manual-list-head">
+                  <span className="field-title">竞争对手名称</span>
+                  <button
+                    type="button"
+                    className="mini-add"
+                    onClick={addCompetitor}
+                    disabled={competitorRows.length >= MAX_COMPETITOR_COUNT}
+                    aria-label="新增竞争对手输入行"
+                  >
+                    + 添加
+                  </button>
+                </div>
+                <div className="competitor-input-list">
+                  {competitorRows.map((name, index) => {
+                    const isSameAsTarget = sameAsTargetCompetitorIndexes.has(index);
+                    const isDuplicateCompetitor = duplicateCompetitorIndexes.has(index);
+                    const rowError = isSameAsTarget
+                      ? SAME_COMPANY_NAME_ERROR
+                      : isDuplicateCompetitor
+                        ? DUPLICATE_COMPETITOR_NAME_ERROR
+                        : "";
+                    const errorId = `competitor-name-error-${index}`;
+                    return (
+                      <div className={`competitor-input-row ${rowError ? "competitor-input-row--error" : ""}`.trim()} key={`competitor-row-${index}`}>
+                        <CompanyValidationInput
+                          value={name}
+                          onChange={(value) => updateCompetitorAt(index, value)}
+                          placeholder="请输入竞争对手名称"
+                          className={rowError ? "company-validation-input--error" : ""}
+                          suspendValidation={Boolean(rowError)}
+                          inputProps={{
+                            "data-competitor-input": index,
+                            "aria-invalid": rowError ? "true" : undefined,
+                            "aria-describedby": rowError ? errorId : undefined
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeCompetitorAt(index)}
+                          disabled={!name.trim() && competitorRows.length <= DEFAULT_COMPETITOR_ROWS}
+                          aria-label={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
+                          title={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
+                        >
+                          ×
+                        </button>
+                        {rowError && <p className="competitor-row-error" id={errorId}>{rowError}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="competitor-drawer-footer">
+                {(modeError || hasBlockingCompetitorError) ? <p className="drawer-error">{modeError || "请先处理竞争对手名称错误。"}</p> : null}
+                <button type="button" className="secondary-action" onClick={() => setCompetitorDrawerOpen(false)}>
+                  完成配置
+                </button>
+              </div>
+            </aside>
+          </div>
+        ) : null}
       </div>
     </main>
   );
@@ -1869,6 +2018,7 @@ function ResultsPage({
   finalizing,
   analysisMessage
 }) {
+  const [detailDrawerOpen, setDetailDrawerOpen] = useState(activeTab !== DEFAULT_RESULT_TAB);
   const scoreItems = Array.isArray(scoreResult?.竞争对手分析与打分) ? scoreResult.竞争对手分析与打分 : [];
   const scoreByName = useMemo(() => {
     return buildScoreItemNameMap(scoreItems);
@@ -1884,20 +2034,31 @@ function ResultsPage({
     });
   }, [competitors, competitorDetails, scoreByName]);
 
-  const selectedCompetitor = displayCompetitors.find((item) => item.id === selectedCompetitorId) || null;
+  const selectedCompetitor = displayCompetitors.find((item) => item.id === selectedCompetitorId) || displayCompetitors[0] || null;
   const selectedDetailEntry = selectedCompetitor ? competitorDetails[selectedCompetitor.id] || {} : {};
   const selectedDetail = selectedDetailEntry?.data || null;
   const selectedReport = selectedCompetitor ? compareReports[selectedCompetitor.id] : null;
   const selectedScoreItem = selectedCompetitor
     ? getScoreItemByCompanyName(scoreByName, selectedCompetitor.name)
     : null;
+  const openDetailDrawer = useCallback((tab = "公司近况") => {
+    const nextTab = tab === "对比分析报告" ? "对比分析报告" : "公司近况";
+    setActiveTab(nextTab);
+    setDetailDrawerOpen(true);
+  }, [setActiveTab]);
+  const closeDetailDrawer = useCallback(() => {
+    setDetailDrawerOpen(false);
+    setActiveTab(DEFAULT_RESULT_TAB);
+  }, [setActiveTab]);
+
+  useEffect(() => {
+    if (activeTab !== DEFAULT_RESULT_TAB && selectedCompetitor) {
+      setDetailDrawerOpen(true);
+    }
+  }, [activeTab, selectedCompetitor]);
 
   return (
     <main className="main-canvas main-canvas--results">
-      <div className="result-topbar">
-        <button type="button" className="export-btn" onClick={onExport}><Icon name="download" />导出对手分析报告</button>
-      </div>
-
       <CompanyOverview
         targetName={form.targetCompanyName}
         targetCompanyInfo={targetCompanyInfo}
@@ -1940,7 +2101,7 @@ function ResultsPage({
                 scoreStatus={scoreStatus}
                 detailError={competitorDetails[item.id]?.error || ""}
                 reportError={compareReports[item.id]?.error || ""}
-                isActive={selectedCompetitorId === item.id}
+                isActive={selectedCompetitor?.id === item.id}
                 onClick={() => onSelectCompetitor(item.id)}
               />
             );
@@ -1949,9 +2110,14 @@ function ResultsPage({
       </section>
 
       <DetailPanel
+        selectedCompetitor={selectedCompetitor}
+        selectedScoreItem={selectedScoreItem}
+        onOpenDrawer={openDetailDrawer}
+      />
+
+      <ResultDetailDrawer
+        open={detailDrawerOpen}
         targetName={form.targetCompanyName}
-        targetCompanyInfo={targetCompanyInfo}
-        targetDetail={targetDetail}
         selectedCompetitor={selectedCompetitor}
         selectedDetail={selectedDetail}
         selectedDetailStatus={selectedDetailEntry?.status || "idle"}
@@ -1959,8 +2125,9 @@ function ResultsPage({
         selectedReport={selectedReport}
         selectedScoreItem={selectedScoreItem}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        singleMode={singleMode}
+        onTabChange={setActiveTab}
+        onClose={closeDetailDrawer}
+        onExport={onExport}
       />
     </main>
   );

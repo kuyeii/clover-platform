@@ -312,6 +312,95 @@ def _check_root_env(repo_root: Path, env_values: dict[str, Any]) -> list[CheckRe
     return results
 
 
+def _check_pipt_db_key(env_values: dict[str, Any]) -> CheckResult:
+    env_name = str(env_values.get("PIPT_ENV") or "").strip().lower()
+    key_value = str(env_values.get("PIPT_DB_KEY") or "").strip()
+    has_key = bool(key_value)
+    if env_name in {"prod", "production"} and not has_key:
+        return CheckResult(
+            "bid-generator PIPT_DB_KEY",
+            "error",
+            "PIPT_ENV=production requires PIPT_DB_KEY for original_text_enc encryption",
+            "Set PIPT_DB_KEY to a Fernet key in the runtime environment.",
+        )
+    if has_key:
+        key_error = _fernet_key_error(key_value)
+        if key_error:
+            return CheckResult(
+                "bid-generator PIPT_DB_KEY",
+                "error",
+                f"PIPT_DB_KEY is not a valid Fernet key: {key_error}",
+                "Generate a valid key: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+            )
+        return CheckResult("bid-generator PIPT_DB_KEY", "ok", "PIPT_DB_KEY is configured")
+    return CheckResult(
+        "bid-generator PIPT_DB_KEY",
+        "warn",
+        "PIPT_DB_KEY is not configured; pipt-lite stores original_text_enc as plaintext in development",
+        "Generate a Fernet key before production: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+    )
+
+
+def _check_pipt_gateway_vault_key(env_values: dict[str, Any]) -> CheckResult:
+    env_name = str(env_values.get("PIPT_ENV") or "").strip().lower()
+    gateway_key = str(env_values.get("PIPT_GATEWAY_VAULT_KEY") or "").strip()
+    fallback_key = str(env_values.get("PIPT_DB_KEY") or "").strip()
+    has_gateway_key = bool(gateway_key)
+    has_fallback_key = bool(fallback_key)
+    if env_name in {"prod", "production"} and not (has_gateway_key or has_fallback_key):
+        return CheckResult(
+            "platform-api PIPT_GATEWAY_VAULT_KEY",
+            "error",
+            "PIPT_ENV=production requires PIPT_GATEWAY_VAULT_KEY or PIPT_DB_KEY for core mapping vault encryption",
+            "Set PIPT_GATEWAY_VAULT_KEY to a Fernet key; PIPT_DB_KEY is accepted as a fallback.",
+        )
+    if has_gateway_key:
+        key_error = _fernet_key_error(gateway_key)
+        if key_error:
+            return CheckResult(
+                "platform-api PIPT_GATEWAY_VAULT_KEY",
+                "error",
+                f"PIPT_GATEWAY_VAULT_KEY is not a valid Fernet key: {key_error}",
+                "Generate a valid key: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+            )
+        return CheckResult("platform-api PIPT_GATEWAY_VAULT_KEY", "ok", "PIPT_GATEWAY_VAULT_KEY is configured")
+    if has_fallback_key:
+        key_error = _fernet_key_error(fallback_key)
+        if key_error:
+            return CheckResult(
+                "platform-api PIPT_GATEWAY_VAULT_KEY",
+                "error",
+                f"PIPT_DB_KEY fallback is not a valid Fernet key: {key_error}",
+                "Generate a valid key: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+            )
+        return CheckResult(
+            "platform-api PIPT_GATEWAY_VAULT_KEY",
+            "ok",
+            "PIPT_DB_KEY is configured and will be used as the core mapping vault fallback key",
+        )
+    return CheckResult(
+        "platform-api PIPT_GATEWAY_VAULT_KEY",
+        "warn",
+        "PIPT_GATEWAY_VAULT_KEY is not configured; core mapping vault stores reversible mappings in plaintext in development",
+        "Generate a Fernet key before production and set PIPT_GATEWAY_VAULT_KEY.",
+    )
+
+
+def _fernet_key_error(raw_key: str) -> str | None:
+    key = str(raw_key or "").strip()
+    if not key:
+        return "empty key"
+    try:
+        from cryptography.fernet import Fernet
+
+        Fernet(key.encode("ascii"))
+    except UnicodeEncodeError:
+        return "key must be ASCII URL-safe base64"
+    except Exception as exc:
+        return str(exc) or exc.__class__.__name__
+    return None
+
+
 def _check_database(
     repo_root: Path,
     env_values: dict[str, Any],
@@ -823,28 +912,10 @@ def _check_legacy_module(app: dict[str, Any], repo_root: Path, env_values: dict[
                     "Restore legacy/bid-generator/gateway-out/fonts/SimSun.ttf if document export requires SimSun.",
                 )
             )
-        env_name = str(env_values.get("PIPT_ENV") or "").strip().lower()
-        has_key = bool(env_values.get("PIPT_DB_KEY"))
-        if env_name in {"prod", "production"} and not has_key:
-            results.append(
-                CheckResult(
-                    "bid-generator PIPT_DB_KEY",
-                    "error",
-                    "PIPT_ENV=production requires PIPT_DB_KEY for original_text_enc encryption",
-                    "Set PIPT_DB_KEY to a Fernet key in the runtime environment.",
-                )
-            )
-        elif has_key:
-            results.append(CheckResult("bid-generator PIPT_DB_KEY", "ok", "PIPT_DB_KEY is configured"))
-        else:
-            results.append(
-                CheckResult(
-                    "bid-generator PIPT_DB_KEY",
-                    "warn",
-                    "PIPT_DB_KEY is not configured; pipt-lite stores original_text_enc as plaintext in development",
-                    "Generate a Fernet key before production: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
-                )
-            )
+        results.append(_check_pipt_db_key(env_values))
+
+    if code == "platform-api":
+        results.append(_check_pipt_gateway_vault_key(env_values))
 
     hint = CONFIG_HINTS.get(code)
     if hint:
@@ -943,28 +1014,7 @@ def _check_legacy_backend_module(app: dict[str, Any], repo_root: Path, env_value
                     "Restore legacy/bid-generator/gateway-out/fonts/SimSun.ttf if document export requires SimSun.",
                 )
             )
-        env_name = str(env_values.get("PIPT_ENV") or "").strip().lower()
-        has_key = bool(env_values.get("PIPT_DB_KEY"))
-        if env_name in {"prod", "production"} and not has_key:
-            results.append(
-                CheckResult(
-                    "bid-generator PIPT_DB_KEY",
-                    "error",
-                    "PIPT_ENV=production requires PIPT_DB_KEY for original_text_enc encryption",
-                    "Set PIPT_DB_KEY to a Fernet key in the runtime environment.",
-                )
-            )
-        elif has_key:
-            results.append(CheckResult("bid-generator PIPT_DB_KEY", "ok", "PIPT_DB_KEY is configured"))
-        else:
-            results.append(
-                CheckResult(
-                    "bid-generator PIPT_DB_KEY",
-                    "warn",
-                    "PIPT_DB_KEY is not configured; pipt-lite stores original_text_enc as plaintext in development",
-                    "Generate a Fernet key before production: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
-                )
-            )
+        results.append(_check_pipt_db_key(env_values))
 
     hint = CONFIG_HINTS.get(code)
     if hint:

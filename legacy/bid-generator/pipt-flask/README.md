@@ -91,7 +91,8 @@ Content-Type: application/json
 | `content_group_writer` | H2 分组批量生成 | `DIFY_WORKFLOW_CONTENT_GROUP_WRITER` |
 | `content_rewrite` | 单章节改写 | `DIFY_WORKFLOW_CONTENT_REWRITE` |
 | `response_content_writer` | 响应类正文生成 | `DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER` |
-| `diagram_generator` | 图表生成 | `DIFY_WORKFLOW_DIAGRAM_GENERATOR` |
+| `diagram_generator` | 图表生成（SVG） | `DIFY_WORKFLOW_DIAGRAM_GENERATOR` |
+| `diagram_generator_mermaid` | 图表生成（Mermaid） | `DIFY_WORKFLOW_DIAGRAM_GENERATOR_MERMAID` |
 | `doc_analysis` | 文档分析 | `DIFY_WORKFLOW_DOC_ANALYSIS` |
 
 历史兼容链路仍可能读取以下变量，但不属于当前清理后的 DSL 规范入口：
@@ -103,6 +104,7 @@ Content-Type: application/json
 - `DIFY_WORKFLOW_SCORING_ASSISTANT`
 
 密钥通过 `python-dotenv` 从项目根目录 `.env` 自动加载，后端通过 `_get_workflow_key(name)` 读取。
+图表工作流由 `DIAGRAM_GENERATOR_MODE=svg|mermaid` 切换；导出阶段统一转为 PNG 后写入 DOCX。
 
 ## 快速启动
 

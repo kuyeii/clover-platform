@@ -47,3 +47,7 @@ legacy/**/output/
 legacy/**/pdf_cache/
 legacy/**/raw_doc_cache/
 legacy/**/extracted_images/
+superadmin
+.conda-py310
+.venv-py39
+tender_documents

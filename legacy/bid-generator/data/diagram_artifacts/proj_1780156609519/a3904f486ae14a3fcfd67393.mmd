@@ -1,0 +1,31 @@
+flowchart TD
+    subgraph G1["接入层"]
+        N_IN["跨境数据接入网关<br/>多协议适配/流量清洗"]
+    end
+
+    subgraph G2["管控与隔离层"]
+        N_COMP["合规审查智能体<br/>规则引擎+多法域知识图谱"]
+        N_TEE["TEE数据隔离引擎<br/>国密算法+安全飞地计算"]
+    end
+
+    subgraph G3["交易与交付层"]
+        N_CONTRACT["智能合约模板库<br/>参数化配置/版本审计"]
+        N_DELIVERY["可信送达验证模块<br/>双向认证+时间戳回执"]
+    end
+
+    subgraph G4["存证层"]
+        N_STORE["链上存证与审计服务<br/>哈希上链/不可篡改"]
+    end
+
+    N_IN -->|"原始数据流"| N_COMP
+    N_COMP -->|"合规白名单校验"| N_TEE
+    N_TEE -->|"脱敏数据载荷"| N_CONTRACT
+    N_TEE -->|"加密传输通道"| N_DELIVERY
+    N_CONTRACT -->|"合约执行触发"| N_DELIVERY
+    N_DELIVERY -->|"送达回执哈希"| N_STORE
+    N_COMP -->|"审查决策日志"| N_STORE
+
+    style N_COMP fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px
+    style N_TEE fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px
+    style N_CONTRACT fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px
+    style N_DELIVERY fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px

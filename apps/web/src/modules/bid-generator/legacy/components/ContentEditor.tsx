@@ -136,9 +136,10 @@ const TYPE_LABELS: Record<string, string> = {
     process: '流程图', logic: '逻辑关系图', 'data-flow': '数据流图',
 };
 
-function DiagramRenderer({ node }: NodeViewProps) {
+function DiagramRenderer({ node, extension }: NodeViewProps) {
     const attrs = node.attrs as { type: string; title: string; svgContent: string; diagramId: string };
     const { type, title, svgContent, diagramId } = attrs;
+    const projectId = String((extension.options as { projectId?: string })?.projectId || '');
     const [fullscreen, setFullscreen] = useState(false);
     const [copied, setCopied] = useState(false);
     const [remoteSvg, setRemoteSvg] = useState('');
@@ -146,11 +147,11 @@ function DiagramRenderer({ node }: NodeViewProps) {
     useEffect(() => {
         if (!diagramId || svgContent) return;
         let cancelled = false;
-        diagramService.getDiagramSvg(diagramId)
+        diagramService.getDiagramSvg(diagramId, projectId)
             .then(svg => { if (!cancelled) setRemoteSvg(svg); })
             .catch(() => { if (!cancelled) setRemoteSvg(''); });
         return () => { cancelled = true; };
-    }, [diagramId, svgContent]);
+    }, [diagramId, svgContent, projectId]);
 
     const effectiveSvg = svgContent || remoteSvg;
     const responsiveSvg = effectiveSvg ? makeResponsiveSvg(sanitizeSvg(effectiveSvg)) : '';
@@ -236,7 +237,7 @@ function renderDiagramPreviewCards(html: string): string {
     });
 }
 
-export function ContentPreview({ content, className }: { content: string; className?: string }) {
+export function ContentPreview({ content, className, projectId }: { content: string; className?: string; projectId?: string }) {
     const [html, setHtml] = useState(() => renderDiagramPreviewCards(renderContentToHtml(content)));
 
     useEffect(() => {
@@ -249,7 +250,7 @@ export function ContentPreview({ content, className }: { content: string; classN
                 const diagramId = match[2] || '';
                 const svgM = attrs.match(/data-diagram-svg="([^"]*)"/);
                 if (!diagramId || svgM?.[1]) continue;
-                const svg = await diagramService.getDiagramSvg(diagramId);
+                const svg = await diagramService.getDiagramSvg(diagramId, projectId);
                 if (!svg) continue;
                 const hydrated = match[0].replace(
                     'data-diagram-svg=""',
@@ -261,7 +262,7 @@ export function ContentPreview({ content, className }: { content: string; classN
         };
         void hydrate();
         return () => { cancelled = true; };
-    }, [content]);
+    }, [content, projectId]);
 
     return (
         <div
@@ -277,6 +278,12 @@ const DiagramNode = TiptapNode.create({
     name: 'diagramNode',
     group: 'block',
     atom: true,
+
+    addOptions() {
+        return {
+            projectId: '',
+        };
+    },
 
     addAttributes() {
         return {
@@ -390,6 +397,7 @@ export interface ContentEditorProps {
     readOnly?: boolean;
     className?: string;
     saveStatus?: React.ReactNode;
+    projectId?: string;
 }
 
 // ── ToolbarButton（带延迟 tooltip）──────────────────────────────────────
@@ -460,7 +468,7 @@ function ImageDialog({ onConfirm, onClose }: { onConfirm: (url: string, alt: str
 
 // ── 主编辑器组件 ──────────────────────────────────────────────────────────
 
-export function ContentEditor({ content, onChange, readOnly = false, className, saveStatus }: ContentEditorProps) {
+export function ContentEditor({ content, onChange, readOnly = false, className, saveStatus, projectId = '' }: ContentEditorProps) {
     const [showImageDialog, setShowImageDialog] = useState(false);
     const isProgrammaticRef = useRef(false);
     const lastEmittedMdRef = useRef<string>('');
@@ -477,7 +485,7 @@ export function ContentEditor({ content, onChange, readOnly = false, className, 
             Table.configure({ resizable: true }),
             TableRow, TableCell, TableHeader,
             Image.configure({ allowBase64: true, HTMLAttributes: { class: 'max-w-full rounded-lg my-2' } }),
-            DiagramNode,
+            DiagramNode.configure({ projectId }),
         ],
         content: renderContentToHtml(content) || '',
         editable: !readOnly,

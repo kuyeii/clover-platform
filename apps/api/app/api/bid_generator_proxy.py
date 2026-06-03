@@ -16,6 +16,7 @@ from app.services.bid_generator_service import (
     get_analysis_framework_payload,
     get_health_payload,
     get_legacy_api_routers,
+    list_pipt_audit_logs_payload,
     get_project_mappings_payload,
     get_project_payload,
     get_supported_entities_payload,
@@ -103,6 +104,31 @@ async def get_bid_generator_project_mappings(
         return legacy_json(get_project_mappings_payload(project_id))
     except BidProjectNotFound:
         return legacy_json({"detail": "项目不存在"}, status_code=404)
+
+
+@router.get("/api/pipt-audit-logs")
+async def list_bid_generator_pipt_audit_logs(
+    project_id: str | None = None,
+    task_id: str | None = None,
+    session_id: str | None = None,
+    operation: str | None = None,
+    status: str | None = None,
+    placeholder: str | None = None,
+    limit: int = 100,
+    user: dict[str, Any] = Depends(require_bid_generator_user),
+) -> JSONResponse:
+    _ = user
+    return legacy_json(
+        list_pipt_audit_logs_payload(
+            project_id=project_id,
+            task_id=task_id,
+            session_id=session_id,
+            operation=operation,
+            status=status,
+            placeholder=placeholder,
+            limit=limit,
+        )
+    )
 
 
 for _legacy_router in get_legacy_api_routers():

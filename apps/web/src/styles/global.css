@@ -79,6 +79,8 @@
   --green: var(--color-success-text);
   --shadow: none;
   --shadow-float: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --portal-topbar-height: 56px;
+  --portal-content-height: calc(100vh - var(--portal-topbar-height));
 }
 
 * {
@@ -2458,6 +2460,19 @@ body {
   flex: 1 1 auto;
 }
 
+.bid-generator-legacy-viewport,
+.contract-review-legacy-viewport,
+.competitor-analysis-legacy-viewport,
+.rag-legacy-viewport {
+  height: 100%;
+  min-height: 0;
+  background: var(--color-page-bg);
+}
+
+.competitor-analysis-legacy-viewport {
+  --competitor-module-height: 100%;
+}
+
 .legacy-portal-ui input:where(:not([class*="border"])):focus,
 .legacy-portal-ui textarea:where(:not([class*="border"])):focus,
 .legacy-portal-ui select:where(:not([class*="border"])):focus {
@@ -2599,7 +2614,7 @@ body {
 
 .portal-main {
   min-width: 0;
-  min-height: calc(100vh - 57px);
+  min-height: var(--portal-content-height);
   flex: 1 1 auto;
   padding: 0;
 }
@@ -2613,7 +2628,7 @@ body {
 .workspace-launcher {
   position: relative;
   display: flex;
-  min-height: calc(100vh - 57px);
+  min-height: var(--portal-content-height);
   flex-direction: column;
   overflow: hidden;
   background: var(--color-page-bg);
@@ -2852,7 +2867,7 @@ body {
 .rag-page,
 .contract-review-page,
 .bid-page {
-  min-height: calc(100vh - 57px);
+  min-height: var(--portal-content-height);
   background: var(--color-page-bg);
   padding: 0;
 }
@@ -2864,14 +2879,14 @@ body {
 
 .rag-layout {
   display: grid;
-  min-height: calc(100vh - 57px);
+  min-height: var(--portal-content-height);
   grid-template-columns: 288px minmax(0, 1fr) 320px;
   gap: 0;
   align-items: stretch;
 }
 
 .rag-sidebar {
-  height: calc(100vh - 57px);
+  height: var(--portal-content-height);
   border: 0;
   border-right: 1px solid var(--color-border);
   border-radius: 0;
@@ -2881,7 +2896,7 @@ body {
 }
 
 .rag-knowledge {
-  height: calc(100vh - 57px);
+  height: var(--portal-content-height);
   overflow-y: auto;
   border: 0;
   border-left: 1px solid var(--color-border);
@@ -2892,7 +2907,7 @@ body {
 }
 
 .rag-chat-panel {
-  min-height: calc(100vh - 57px);
+  min-height: var(--portal-content-height);
   border: 0;
   border-radius: 0;
   background: var(--color-surface);
@@ -2955,9 +2970,56 @@ body {
   box-shadow: none;
 }
 
+.rag-home-aligned .rag-legacy-scope {
+  overflow: hidden;
+}
+
+.rag-home-aligned .rag-legacy-scope > .flex.min-h-screen {
+  height: 100%;
+  min-height: 0;
+  background: var(--color-page-bg);
+}
+
+.rag-home-aligned .rag-legacy-scope :is(.min-h-screen) {
+  min-height: 0;
+}
+
+.rag-home-aligned .sidebar-shell {
+  height: var(--portal-content-height);
+  max-height: var(--portal-content-height);
+}
+
+.rag-home-aligned .rag-legacy-scope main {
+  min-height: 0;
+  background: var(--color-page-bg);
+}
+
+.rag-home-aligned .rag-legacy-scope main > .flex.flex-1.flex-col.items-center {
+  justify-content: flex-start;
+  padding: 48px clamp(24px, 5.6vw, 88px) 28px;
+}
+
+.rag-home-aligned .rag-legacy-scope main > .flex.flex-1.flex-col.items-center > .inline-flex {
+  display: none;
+}
+
+.rag-home-aligned .rag-legacy-scope main > .flex.flex-1.flex-col.items-center h1 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 26px;
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.rag-home-aligned .rag-legacy-scope main > .flex.flex-1.flex-col.items-center > .mt-7 {
+  width: min(100%, 760px);
+  margin-top: 28px;
+}
+
 .contract-review-layout,
 .bid-layout {
-  min-height: calc(100vh - 57px);
+  min-height: var(--portal-content-height);
   gap: 0;
   align-items: stretch;
 }
@@ -2973,8 +3035,8 @@ body {
 .contract-left-rail,
 .bid-sidebar {
   position: sticky;
-  top: 57px;
-  height: calc(100vh - 57px);
+  top: var(--portal-topbar-height);
+  height: var(--portal-content-height);
   align-self: start;
   overflow-y: auto;
   border-right: 1px solid var(--color-border);
@@ -2985,7 +3047,7 @@ body {
 
 .contract-main-panel,
 .bid-main {
-  min-height: calc(100vh - 57px);
+  min-height: var(--portal-content-height);
   overflow-y: auto;
   background: var(--color-page-bg);
   padding: 22px;

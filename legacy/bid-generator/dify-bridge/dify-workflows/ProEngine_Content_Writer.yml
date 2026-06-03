@@ -334,7 +334,7 @@ workflow:
           role: system
           text: "你是一名专业的招投标技术文件撰写专家。\n你的任务是为标书的\"{{#1772165989096.section_title#}}\"\
             章节撰写详细的正文内容。\n\n项目背景与投标策略：\n{{#1772165989096.project_summary#}}\n\n写作要求：\n\
-            1. 目标字数约 {{#1772165989096.expected_words#}} 字，允许 ±5% 浮动，且绝对不得超过目标字数的 110%\n2. 写作引导：{{#1772165989096.writing_hint#}}\n\
+            1. 目标字数约 {{#1772165989096.expected_words#}} 字，建议控制在目标字数的 90%-110%，不得明显短于用户在大纲阶段设置的字数，且绝对不得超过目标字数的 110%\n2. 写作引导：{{#1772165989096.writing_hint#}}\n\
             3. 语言风格：正式、专业，多用数据和具体技术细节支撑\n4. 默认直接进入本章实质内容；仅当 writing_hint 明确包含“[章节概述]”时，允许输出本章概述性导语。非概述场景禁止新增概述类开场或自造小标题\n\
             \n全局大纲：\n{{#1772165989096.global_outline#}}\n\n⚠️ 强烈警告：你当前正在撰写的仅仅是该大纲中的第【{{#1772165989096.section_title#}}】章节。当前章节通常是固定 H2 下的一个 H3 正文单元。绝对禁止在正文中自行捏造或重复任何 H1/H2 层级标题，尤其禁止输出与全局大纲重复的顶层章号标题。\
             \ 你的职责是仅在你的章节内部进行段落叙述，若需划分子列，只能使用无级别数字（如 1）、（1）或“首先、其次”等段落级符号体系，决不可侵占或破坏最外层的全局大纲序号排版！\n\
@@ -343,9 +343,9 @@ workflow:
             ⚠️ 强烈警告：对于网络检索材料，你必须遵守以下红线原则，如有违背将被严厉惩罚：\n核心为主、外壳为辅： 本次标书撰写的绝对核心是《项目要求\
             \ / 需求大纲》以及《项目定位概要》。网络检索结果仅作为“行业技术细节”、“专业名词解析”或“政策背景佐证”的补充资料。\n斩断无关信息： 检索结果中如果出现“其他不相关公司的宣传”、“老旧的历史数据（超过近\
             \ 3 年）”、“八卦新闻”、“与本项目无关的招聘信息、广告”等，一旦发现无关内容彻底无视，绝对不准写入正文！\n禁止臆测： 如果检索结果无法支撑我们要写的标题方向，宁愿不引用，也不得强行拼凑、不得自行编造、不得对产品参数进行夸大其词的幻觉编织。不明确的数据一律使用模糊安全的描述化语言（如“先进水平”、“符合国家合规要求”）。\n\
-            \n【占位符引用铁律】\n- 文中的 {{__PIPT_*__}} 格式占位符来自脱敏处理，必须原样保留，绝不修改。\n- 如果上下文传入了投标人信息占位符（placeholder_hint），使用规则如下：\n\
+            \n【占位符引用铁律】\n- 文中的 @@PIPT:v1:e000001:kxxxxxxxx@@ 或 {{__PIPT_*__}} 格式占位符来自本地脱敏处理，必须逐字原样保留，绝不修改。\n- 如果上下文传入了投标人信息占位符（placeholder_hint），使用规则如下：\n\
             \  1. 仅在正文自然出现\"投标单位\"、\"法定代表人\"、\"项目负责人\"等主体时，才在对应位置引用占位符。\n  2. 禁止在段落结尾、文章总结或过渡段中主动插入这些占位符。\n\
-            \  3. 格式严格为双下划线包裹：{{__BIDDER_ORG__}}，绝对禁止写成 {{BIDDER_ORG}}。\n\
+            \  3. 投标人信息占位符当前也使用 PIPT strong token 格式，必须以 placeholder_hint 中列出的 @@PIPT:v1:e000001:kxxxxxxxx@@ token 为准；不要输出 {{__BIDDER_*__}} 或 {{BIDDER_*}} 旧格式。\n\
             【Markdown 正文格式铁律】\n- 禁止输出任何以 # 开头的行（禁止使用 #、##、###；章节标题由排版系统统一注入）。\n- 当 writing_hint 含 [章节概述] 时可写 1 段概述；否则禁止输出“概述/本章概述/章节概述/引言”类小标题或同义标题。\n- 小节仅用 **单独一行的加粗短句** 作小标题，或（1）（2）、1. 2.、「首先、其次」等段落级序号。\n- 段落之间用空行分隔；重要术语使用 **加粗**；列举可用无序或有序列表。\n- 严禁通过重复改写同一语义来凑字数；与子章节主题高度重合的内容最多一句过渡，不得大段展开。\n\
             \n【原始文档图片引用规则】\nimage_map_hint 传入了从招标文件中提取的配图清单（格式：{{IMG_xxx}}: 图片说明）。\n当你判断正文某段自然适合插入截图或示意图时（如系统界面、流程示意），可使用 ![图注]({{IMG_xxx}}) 格式引用一张。\n引用原则：宁缺毋滥，仅在确实能提升内容可读性时引用；image_map_hint 为空时，不要生成任何图片引用。\n\
             \n【图表规格生成指令（严格收敛）】\n正文完成后，仅在“存在 >=3 个步骤/节点且上下游关系明确”时才生成图表规格；否则必须输出空数组。\n在输出中追加 <DIAGRAM_SPECS> 标签包裹的 JSON 数组（后端将提取此段，不会显示给读者）：\n<DIAGRAM_SPECS>[{\"type\":\"flowchart\",\"title\":\"图表标题(12字以内)\",\"source_excerpt\":\"触发此图表的原文(50字以内)\",\"elements\":[{\"id\":\"A\",\"label\":\"节点名\",\"level\":1,\"sub\":\"可选副标题\"},{\"id\":\"B\",\"label\":\"节点\",\"level\":2,\"sub\":\"\"}],\"flows\":[{\"from\":\"A\",\"to\":\"B\",\"label\":\"关系\"}],\"emphasis\":[\"A\"]}]</DIAGRAM_SPECS>\ntype: architecture/flowchart/org-chart/data-flow/logic\n若不满足触发条件，输出 <DIAGRAM_SPECS>[]</DIAGRAM_SPECS>；每章节最多 1 张图表，且禁止纯概念性“装饰图”。"
@@ -405,6 +405,11 @@ workflow:
           variable: placeholder_issues
         - value_selector:
           - placeholder_scan
+          - allowed_placeholders_json
+          value_type: string
+          variable: allowed_placeholders_json
+        - value_selector:
+          - placeholder_scan
           - placeholder_validation_failed
           value_type: boolean
           variable: placeholder_validation_failed
@@ -434,23 +439,41 @@ workflow:
           import json
           import re
 
-          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
-          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+          LEGAL_RE = re.compile(r"(?:\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}|@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@)")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})|@@[^@\s]*(?:PIPT|BIDDER)[^@\s]*@@?", re.IGNORECASE)
 
-          def _find_issues(text):
+          def _find_allowed(placeholder_hint):
+              allowed = []
+              hint = str(placeholder_hint or "")
+              marker = "PIPT_ALLOWED_PLACEHOLDERS_JSON:"
+              if marker in hint:
+                  raw_json = hint.split(marker, 1)[1].split("\n", 1)[0].strip()
+                  try:
+                      for token in json.loads(raw_json):
+                          if isinstance(token, str) and LEGAL_RE.fullmatch(token) and token not in allowed:
+                              allowed.append(token)
+                  except Exception:
+                      allowed = []
+              if allowed:
+                  return allowed
+              for token in LEGAL_RE.findall(hint):
+                  if token not in allowed:
+                      allowed.append(token)
+              return allowed
+
+          def _find_issues(text, allowed):
               issues = []
+              allowed_set = set(allowed)
               for match in SUSPECT_RE.finditer(str(text or "")):
                   token = match.group(0)
-                  if not LEGAL_RE.fullmatch(token) and token not in issues:
+                  is_legal = bool(LEGAL_RE.fullmatch(token))
+                  if (not is_legal or (allowed_set and token not in allowed_set)) and token not in issues:
                       issues.append(token)
               return issues
 
           def main(text: str, diagram_specs: str, placeholder_hint: str) -> dict:
-              issues = _find_issues(text)
-              allowed = []
-              for token in LEGAL_RE.findall(str(placeholder_hint or "")):
-                  if token not in allowed:
-                      allowed.append(token)
+              allowed = _find_allowed(placeholder_hint)
+              issues = _find_issues(text, allowed)
 
               return {
                   "text": str(text or "").strip(),
@@ -565,14 +588,14 @@ workflow:
 
             任务：根据问题清单，为每个畸形占位符给出最小替换方案。
             允许格式只有：
+            - @@PIPT:v1:e000001:kxxxxxxxx@@
             - {{__PIPT_类型_序号__}}
-            - {{__BIDDER_KEY__}}
 
             规则：
             - 只处理问题清单中的 token。
             - 只能修复占位符格式，不得改写任何正文。
             - 能确定的修复为合法占位符；不能确定时不要给 replacement。
-            - {{BIDDER_ORG}} 应修复为 {{__BIDDER_ORG__}}。
+            - {{BIDDER_ORG}} 属于旧投标人占位符样式，当前无法可靠修复为 strong token，必须跳过。
             - {{PIPT_name_1}} 应修复为 {{__PIPT_name_1__}}。
             - {{PIPT_1}} 缺少类型，无法可靠修复，必须跳过。
 
@@ -615,8 +638,8 @@ workflow:
           import json
           import re
 
-          LEGAL_RE = re.compile(r"\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}")
-          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})", re.IGNORECASE)
+          LEGAL_RE = re.compile(r"(?:\{\{__(?:PIPT_[a-z_]+_\d+|BIDDER_[A-Z_]+)__\}\}|@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@)")
+          SUSPECT_RE = re.compile(r"\{\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}\}|(?<!\{)\{[^{}]*(?:PIPT|BIDDER)[^{}]*\}(?!\})|@@[^@\s]*(?:PIPT|BIDDER)[^@\s]*@@?", re.IGNORECASE)
 
           def _load_json(raw, fallback):
               text = str(raw or "").strip()
@@ -633,16 +656,20 @@ workflow:
                           return fallback
               return fallback
 
-          def _find_issues(text):
+          def _find_issues(text, allowed):
               issues = []
+              allowed_set = set(allowed)
               for match in SUSPECT_RE.finditer(str(text or "")):
                   token = match.group(0)
-                  if not LEGAL_RE.fullmatch(token):
+                  is_legal = bool(LEGAL_RE.fullmatch(token))
+                  if not is_legal or (allowed_set and token not in allowed_set):
                       issues.append(token)
               return issues
 
-          def main(text: str, diagram_specs: str, repair_text: str, placeholder_issues: str) -> dict:
+          def main(text: str, diagram_specs: str, repair_text: str, placeholder_issues: str, allowed_placeholders_json: str) -> dict:
               issue_tokens = set(_load_json(placeholder_issues, []))
+              allowed = [token for token in _load_json(allowed_placeholders_json, []) if isinstance(token, str) and LEGAL_RE.fullmatch(token)]
+              allowed_set = set(allowed)
               repair_payload = _load_json(repair_text, {})
               replacements = repair_payload.get("replacements") if isinstance(repair_payload, dict) else []
               rewritten = str(text or "")
@@ -653,13 +680,13 @@ workflow:
                       continue
                   src = str(repl.get("from") or "")
                   dst = str(repl.get("to") or "")
-                  if not src or src not in issue_tokens or not LEGAL_RE.fullmatch(dst):
+                  if not src or src not in issue_tokens or not LEGAL_RE.fullmatch(dst) or (allowed_set and dst not in allowed_set):
                       continue
                   if src in rewritten:
                       rewritten = rewritten.replace(src, dst)
                       applied.append({"from": src, "to": dst, "reason": str(repl.get("reason") or "")})
 
-              remaining = _find_issues(rewritten)
+              remaining = _find_issues(rewritten, allowed)
               return {
                   "text": rewritten.strip(),
                   "diagram_specs": str(diagram_specs or "[]").strip() or "[]",
@@ -708,6 +735,11 @@ workflow:
           - placeholder_issues
           value_type: string
           variable: placeholder_issues
+        - value_selector:
+          - placeholder_scan
+          - allowed_placeholders_json
+          value_type: string
+          variable: allowed_placeholders_json
       height: 52
       id: apply_placeholder_repair
       position:
@@ -1013,14 +1045,14 @@ workflow:
           role: system
           text: "你是一名专业的招投标技术文件撰写专家。\n你的任务是为标书的\"{{#1772165989096.section_title#}}\"\
             章节撰写详细的正文内容。\n\n项目背景与投标策略：\n{{#1772165989096.project_summary#}}\n\n写作要求：\n\
-            1. 目标字数约 {{#1772165989096.expected_words#}} 字，允许 ±5% 浮动，且绝对不得超过目标字数的 110%\n2. 写作引导：{{#1772165989096.writing_hint#}}\n\
+            1. 目标字数约 {{#1772165989096.expected_words#}} 字，建议控制在目标字数的 90%-110%，不得明显短于用户在大纲阶段设置的字数，且绝对不得超过目标字数的 110%\n2. 写作引导：{{#1772165989096.writing_hint#}}\n\
             3. 语言风格：正式、专业，多用数据和具体技术细节支撑\n4. 默认直接进入本章实质内容；仅当 writing_hint 明确包含“[章节概述]”时，允许输出本章概述性导语。非概述场景禁止新增概述类开场或自造小标题\n\
             \n全局大纲：\n{{#1772165989096.global_outline#}}\n\n⚠️ 强烈警告：你当前正在撰写的仅仅是该大纲中的第【{{#1772165989096.section_title#}}】章节。当前章节通常是固定 H2 下的一个 H3 正文单元。绝对禁止在正文中自行捏造或重复任何 H1/H2 层级标题，尤其禁止输出与全局大纲重复的顶层章号标题。\
             \ 你的职责是仅在你的章节内部进行段落叙述，若需划分子列，只能使用无级别数字（如 1）、（1）或“首先、其次”等段落级符号体系，决不可侵占或破坏最外层的全局大纲序号排版！\n\
             \n【重要越界防范】：你在编写本技术正文章节时，绝对不要自行捏造或生成任何诸如“法定代表人授权书”、“无违规记录承诺函”、“报价单”之类的独立格式化商务附件或表单。即便上游大纲或者参考资料有提及，你也仅凭文字客观描述即可。所有的标准化商务附件都将由专门的商务流单独生成并在最后汇总时拼接，你只负责纯粹的技术方案、架构描述与实施规划的正文扩写。\n\
-            \n【占位符引用铁律】\n- 文中的 {{__PIPT_*__}} 格式占位符来自脱敏处理，必须原样保留，绝不修改。\n- 如果上下文传入了投标人信息占位符（placeholder_hint），使用规则如下：\n\
+            \n【占位符引用铁律】\n- 文中的 @@PIPT:v1:e000001:kxxxxxxxx@@ 或 {{__PIPT_*__}} 格式占位符来自本地脱敏处理，必须逐字原样保留，绝不修改。\n- 如果上下文传入了投标人信息占位符（placeholder_hint），使用规则如下：\n\
             \  1. 仅在正文自然出现\"投标单位\"、\"法定代表人\"、\"项目负责人\"等主体时，才在对应位置引用占位符。\n  2. 禁止在段落结尾、文章总结或过渡段中主动插入这些占位符。\n\
-            \  3. 格式严格为双下划线包裹：{{__BIDDER_ORG__}}，绝对禁止写成 {{BIDDER_ORG}}。\n\n\n{{#1772165989096.placeholder_hint#}}\n\
+            \  3. 投标人信息占位符当前也使用 PIPT strong token 格式，必须以 placeholder_hint 中列出的 @@PIPT:v1:e000001:kxxxxxxxx@@ token 为准；不要输出 {{__BIDDER_*__}} 或 {{BIDDER_*}} 旧格式。\n\n\n{{#1772165989096.placeholder_hint#}}\n\
             \n禁止臆测： 如果知识库检索结果无法支撑我们要写的标题方向，宁愿不引用，也不得强行拼凑、不得自行编造、不得对产品参数进行夸大其词的幻觉编织。不明确的数据一律使用模糊安全的描述化语言（如“先进水平”、“符合国家合规要求”）。\n\
             \n【Markdown 正文格式铁律】\n- 禁止输出任何以 # 开头的行（禁止使用 #、##、###；章节标题由排版系统统一注入）。\n- 当 writing_hint 含 [章节概述] 时可写 1 段概述；否则禁止输出“概述/本章概述/章节概述/引言”类小标题或同义标题。\n- 小节仅用 **单独一行的加粗短句** 作小标题，或（1）（2）、1. 2.、「首先、其次」等段落级序号。\n- 段落之间用空行分隔；重要术语使用 **加粗**；列举可用无序或有序列表。\n- 严禁通过重复改写同一语义来凑字数；与子章节主题高度重合的内容最多一句过渡，不得大段展开。\n\
             \n【原始文档图片引用规则】\nimage_map_hint 传入了从招标文件中提取的配图清单（格式：{{IMG_xxx}}: 图片说明）。\n当你判断正文某段自然适合插入截图或示意图时（如系统界面、流程示意），可使用 ![图注]({{IMG_xxx}}) 格式引用一张。\n引用原则：宁缺毋滥，仅在确实能提升内容可读性时引用；image_map_hint 为空时，不要生成任何图片引用。\n\

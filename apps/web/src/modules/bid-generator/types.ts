@@ -82,6 +82,10 @@ export interface BidProjectData {
   outline?: BidOutlineSection[];
   mappingTable?: Record<string, string>;
   mapping_table?: Record<string, string>;
+  placeholderManifest?: Record<string, Record<string, string>>;
+  placeholder_manifest?: Record<string, Record<string, string>>;
+  placeholderPolicy?: Record<string, unknown>;
+  placeholder_policy?: Record<string, unknown>;
   imageMap?: Record<string, string | BidImageAsset>;
   image_map?: Record<string, string | BidImageAsset>;
   entityCount?: number;
@@ -133,6 +137,8 @@ export interface BidExtractResponse {
   analysis_report?: BidAnalysisNode[];
   analysis_v2?: Record<string, unknown>;
   mapping_table?: Record<string, string>;
+  placeholder_manifest?: Record<string, Record<string, string>>;
+  placeholder_policy?: Record<string, unknown>;
   entity_count?: number;
   image_map?: Record<string, string | BidImageAsset>;
   required_attachments?: Array<Record<string, unknown>>;

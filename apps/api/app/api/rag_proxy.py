@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.datastructures import UploadFile
 
@@ -17,12 +18,13 @@ from app.services.business_proxy import proxy_business_request
 from app.services.rag_dify_service import RagDifyError, get_default_user_id, stream_workflow_answer
 from app.services.rag_knowledge_service import (
     RagKnowledgeError,
-    create_file_document_and_wait,
-    create_text_document_and_wait,
+    create_local_file_document,
+    create_local_text_document,
     delete_knowledge_document,
     download_knowledge_document,
     get_knowledge_document_detail,
     list_knowledge_documents,
+    sync_knowledge_document_to_dify,
 )
 from app.services.rag_service import (
     coerce_session_uuid,
@@ -33,6 +35,7 @@ from app.services.rag_service import (
 )
 
 APP_CODE = "rag-web-search"
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/rag")
 
@@ -61,6 +64,15 @@ def knowledge_response(payload: Any, *, status_code: int = 200) -> JSONResponse:
 
 def knowledge_error(exc: RagKnowledgeError) -> JSONResponse:
     return legacy_error(exc.detail, status_code=exc.status_code)
+
+
+async def _sync_rag_knowledge_document_background(document_id: str) -> None:
+    try:
+        await sync_knowledge_document_to_dify(document_id)
+    except Exception:
+        # 同步错误会在 service 内写回本地状态；这里兜底避免后台任务异常污染请求日志。
+        logger.exception("RAG knowledge background sync failed: %s", document_id)
+        return
 
 
 def parse_legacy_bool(value: Any) -> bool:
@@ -193,6 +205,7 @@ async def get_rag_knowledge_documents(
 @router.post("/api/v1/knowledge/documents/create-by-text")
 async def create_rag_knowledge_text_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(require_rag_user),
 ) -> JSONResponse:
     _ = user
@@ -207,7 +220,9 @@ async def create_rag_knowledge_text_document(
     if not text:
         return legacy_error("text 不能为空", status_code=422)
     try:
-        return knowledge_response(await create_text_document_and_wait(name, text))
+        result = await create_local_text_document(name, text)
+        background_tasks.add_task(_sync_rag_knowledge_document_background, result["document_id"])
+        return knowledge_response(result)
     except RagKnowledgeError as exc:
         return knowledge_error(exc)
 
@@ -215,6 +230,7 @@ async def create_rag_knowledge_text_document(
 @router.post("/api/v1/knowledge/documents/create-by-file")
 async def create_rag_knowledge_file_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(require_rag_user),
 ) -> JSONResponse:
     _ = user
@@ -223,7 +239,21 @@ async def create_rag_knowledge_file_document(
     if not isinstance(file, UploadFile):
         return legacy_error("file 字段不能为空", status_code=422)
     try:
-        return knowledge_response(await create_file_document_and_wait(file))
+        result = await create_local_file_document(file)
+        background_tasks.add_task(_sync_rag_knowledge_document_background, result["document_id"])
+        return knowledge_response(result)
+    except RagKnowledgeError as exc:
+        return knowledge_error(exc)
+
+
+@router.post("/api/v1/knowledge/documents/{document_id}/desensitized-sync")
+async def sync_rag_knowledge_document_desensitized(
+    document_id: str,
+    user: dict[str, Any] = Depends(require_rag_user),
+) -> JSONResponse:
+    _ = user
+    try:
+        return knowledge_response(await sync_knowledge_document_to_dify(document_id))
     except RagKnowledgeError as exc:
         return knowledge_error(exc)
 
