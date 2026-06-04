@@ -22,6 +22,13 @@ model_policy:
     diagram-generator: diagram-chat
     diagram-generator-mermaid: diagram-chat
     doc-analysis: doc-analysis-chat
+  node_overrides:
+    structure-generator:
+      LLM大纲润色: bid-fast-json-chat
+    diagram-generator:
+      LLM 规划布局: bid-fast-json-chat
+    diagram-generator-mermaid:
+      LLM 规划布局: bid-fast-json-chat
   rewrite:
     enabled: true
     target: workflows.generated

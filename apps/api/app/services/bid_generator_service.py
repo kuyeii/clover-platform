@@ -7381,7 +7381,11 @@ def _parse_group_content_results(
         if not str(raw_content or "").strip():
             failed_by_id[section_id] = "批量正文结果正文为空"
             continue
-        payload = _finalize_single_content_result(child["section_title"], {"text": raw_content}, request_mapping_flat)
+        try:
+            payload = _finalize_single_content_result(child["section_title"], {"text": raw_content}, request_mapping_flat)
+        except RuntimeError as exc:
+            failed_by_id[section_id] = _format_dify_runtime_error(exc)
+            continue
         placeholder_issues = payload.get("placeholder_issues") or []
         if placeholder_issues:
             failed_by_id[section_id] = "占位符格式异常且无法可靠还原: " + "、".join(str(part) for part in placeholder_issues[:5])

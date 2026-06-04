@@ -13,6 +13,7 @@ from app.services.pipt_gateway_service import (
     batch_preprocess_payload,
     build_gateway_payload,
     cleanup_gateway_mappings_payload,
+    cleanup_unrestorable_gateway_mappings_payload,
     get_gateway_admin_summary_payload,
     get_gateway_status_payload,
     list_gateway_mappings_payload,
@@ -175,10 +176,18 @@ def cleanup_pipt_gateway_expired_mappings(
     return ok(request, cleanup_gateway_mappings_payload(older_than_seconds=older_than_seconds))
 
 
+@router.delete("/pipt-gateway/mappings/unrestorable", name="cleanup_pipt_gateway_unrestorable_mappings")
+def cleanup_pipt_gateway_unrestorable_mappings(
+    request: Request,
+    user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
+):
+    _ = user
+    return ok(request, cleanup_unrestorable_gateway_mappings_payload())
+
+
 async def _read_json_body(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
     except Exception:
         return {}
     return body if isinstance(body, dict) else {}
-

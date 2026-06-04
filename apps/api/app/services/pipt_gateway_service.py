@@ -408,6 +408,60 @@ def cleanup_gateway_mappings_payload(*, older_than_seconds: int | None = None) -
     }
 
 
+def cleanup_unrestorable_gateway_mappings_payload() -> dict[str, Any]:
+    """清理当前 vault 密钥无法解密的 PIPT mapping；保留审计事件。"""
+    try:
+        with get_engine().begin() as conn:
+            exists = conn.execute(text("SELECT to_regclass('core.pipt_gateway_mappings') IS NOT NULL")).scalar_one()
+            if not exists:
+                raise PlatformError(
+                    code="DATABASE_ERROR",
+                    message="PIPT 网关映射 vault 表不存在，请先执行数据库迁移。",
+                    status_code=500,
+                    details={"table": "core.pipt_gateway_mappings"},
+                )
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, original_text_enc, encryption_status
+                    FROM core.pipt_gateway_mappings
+                    WHERE encryption_status = 'encrypted'
+                    """
+                )
+            ).mappings().all()
+            failed_ids = [
+                str(row["id"])
+                for row in rows
+                if _decrypt_mapping_original(
+                    str(row.get("original_text_enc") or ""),
+                    str(row.get("encryption_status") or "plaintext"),
+                )[1]
+                == "failed"
+            ]
+            if failed_ids:
+                result = conn.execute(
+                    text(
+                        """
+                        DELETE FROM core.pipt_gateway_mappings
+                        WHERE id::text = ANY(:ids)
+                        """
+                    ),
+                    {"ids": failed_ids},
+                )
+                deleted_count = int(getattr(result, "rowcount", 0) or 0)
+            else:
+                deleted_count = 0
+    except PlatformError:
+        raise
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise _database_error(exc) from exc
+    return {
+        "deleted_count": deleted_count,
+        "checked_count": len(rows),
+        "event_logs_preserved": True,
+    }
+
+
 def get_gateway_admin_summary_payload() -> dict[str, Any]:
     """返回 superadmin 可消费的安全汇总；不包含原文、token 或可逆映射。"""
     try:

@@ -2328,6 +2328,37 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             ],
         )
 
+    def test_parse_group_content_results_keeps_success_when_one_child_placeholder_fails(self) -> None:
+        children = [
+            {"section_id": "sec-1", "section_title": "第一节"},
+            {"section_id": "sec-2", "section_title": "第二节"},
+        ]
+        outputs = {
+            "sections": [
+                {"section_id": "sec-1", "content": "第一节正文"},
+                {"section_id": "sec-2", "content": "第二节正文"},
+            ]
+        }
+
+        def finalize_side_effect(section_title: str, _outputs: dict, _mapping: dict) -> dict:
+            if section_title == "第一节":
+                raise RuntimeError("占位符缺少映射，无法可靠还原")
+            return {
+                "content": "第二节正文",
+                "word_count": 4,
+                "replace_report": [],
+                "placeholder_issues": [],
+            }
+
+        with patch.object(service, "_finalize_single_content_result", side_effect=finalize_side_effect):
+            parsed = service._parse_group_content_results(outputs, children, {})
+
+        self.assertEqual([row["section_id"] for row in parsed["sections"]], ["sec-2"])
+        self.assertEqual(parsed["failed_sections"], [
+            {"section_id": "sec-1", "section_title": "第一节", "error": "占位符缺少映射，无法可靠还原"}
+        ])
+        self.assertEqual(parsed["parse_error"], "批量正文结果存在缺失子章节")
+
     def test_rebuild_locator_payload_rebuilds_docx_snapshot_natively(self) -> None:
         blocks = [
             {"block_id": "B000000", "locator": "P0000", "body_idx": 0, "type": "paragraph", "text": "第一段"},
