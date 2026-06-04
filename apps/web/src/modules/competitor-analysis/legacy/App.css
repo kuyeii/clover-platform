@@ -3036,3 +3036,47 @@
   height: var(--competitor-module-height);
   min-height: 0;
 }
+
+.competitor-analysis-legacy-viewport:has(.app-shell--results) {
+  height: var(--competitor-module-height);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.competitor-analysis-legacy-viewport .app-shell--results {
+  height: auto;
+  min-height: var(--competitor-module-height);
+  align-items: stretch;
+  overflow: visible;
+}
+
+.competitor-analysis-legacy-viewport .app-shell--results .main-canvas--results,
+.competitor-analysis-legacy-viewport .app-shell--results .details-panel {
+  height: auto;
+  overflow: visible;
+}
+
+.competitor-analysis-legacy-viewport .app-shell--results .main-canvas--results {
+  min-height: var(--competitor-module-height);
+}
+
+.competitor-analysis-legacy-viewport .app-shell--results .details-panel {
+  min-height: 360px;
+}
+
+.competitor-analysis-legacy-viewport .app-shell--results .detail-info-grid,
+.competitor-analysis-legacy-viewport .app-shell--results .detail-summary-grid,
+.competitor-analysis-legacy-viewport .app-shell--results .detail-text-block,
+.competitor-analysis-legacy-viewport .app-shell--results .detail-overview,
+.competitor-analysis-legacy-viewport .app-shell--results .detail-overview-copy,
+.competitor-analysis-legacy-viewport .app-shell--results .detail-overview-copy div {
+  min-height: 0;
+  overflow: visible;
+}
+
+.competitor-analysis-legacy-viewport .app-shell--results .detail-overview-copy p {
+  max-height: none;
+  overflow: visible;
+  display: block;
+}

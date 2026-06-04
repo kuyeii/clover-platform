@@ -461,8 +461,8 @@ workflow:
                 content_type:
                   auto: 0
                   value:
-                    type: mixed
-                    value: null
+                    type: constant
+                    value: summary
                 history:
                   auto: 0
                   value:
@@ -475,13 +475,13 @@ workflow:
                   auto: 0
                   value:
                     type: constant
-                    value: null
+                    value: true
                 top_k:
                   auto: 0
                   value:
                     type: constant
-                    value: null
-              provider_name: 828b4624-adec-4f2d-b885-fb03ecb464b8
+                    value: 10
+              provider_name: d2b614af-62c9-492f-8595-c0e86ca33704
               provider_show_name: 阿里云联网搜索
               settings: {}
               tool_description: '使用阿里云开放平台联网检索。返回中包含 result.search_result 列表， 每条含
@@ -874,8 +874,8 @@ workflow:
                 content_type:
                   auto: 0
                   value:
-                    type: mixed
-                    value: null
+                    type: constant
+                    value: summary
                 history:
                   auto: 0
                   value:
@@ -888,13 +888,13 @@ workflow:
                   auto: 0
                   value:
                     type: constant
-                    value: null
+                    value: true
                 top_k:
                   auto: 0
                   value:
                     type: constant
-                    value: null
-              provider_name: 828b4624-adec-4f2d-b885-fb03ecb464b8
+                    value: 10
+              provider_name: d2b614af-62c9-492f-8595-c0e86ca33704
               provider_show_name: 阿里云联网搜索
               settings: {}
               tool_description: '使用阿里云开放平台联网检索。返回中包含 result.search_result 列表， 每条含
@@ -943,7 +943,8 @@ workflow:
 
               一、搜索策略（不限制时间）
 
-              使用多角度关键词进行搜索，覆盖以下方向。调用联网搜索工具时，每次只传一个单行短 query，禁止 multi-query、换行、JSON、数组、编号列表、斜杠分隔词或解释性说明。推荐 query 模板：
+              使用多角度关键词进行搜索，覆盖以下方向。调用联网搜索工具时，每次只传一个单行短 query，禁止 multi-query、换行、JSON、数组、编号列表、斜杠分隔词或解释性说明。推荐
+              query 模板：
 
               企业名称 最新 产品 发布 2026
 
@@ -1243,8 +1244,8 @@ workflow:
                 content_type:
                   auto: 0
                   value:
-                    type: mixed
-                    value: null
+                    type: constant
+                    value: summary
                 history:
                   auto: 0
                   value:
@@ -1257,13 +1258,13 @@ workflow:
                   auto: 0
                   value:
                     type: constant
-                    value: false
+                    value: true
                 top_k:
                   auto: 0
                   value:
                     type: constant
-                    value: null
-              provider_name: 828b4624-adec-4f2d-b885-fb03ecb464b8
+                    value: 10
+              provider_name: d2b614af-62c9-492f-8595-c0e86ca33704
               provider_show_name: 阿里云联网搜索
               settings: {}
               tool_description: '使用阿里云开放平台联网检索。返回中包含 result.search_result 列表， 每条含

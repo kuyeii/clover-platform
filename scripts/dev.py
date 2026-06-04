@@ -306,6 +306,7 @@ def main() -> int:
     args = parse_args()
     os.chdir(REPO_ROOT)
     load_dotenv(REPO_ROOT / ".env")
+    load_dotenv(REPO_ROOT / ".env.local")
 
     try:
         apps_config = load_apps_config(REPO_ROOT)

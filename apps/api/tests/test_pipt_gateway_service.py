@@ -83,6 +83,7 @@ class PiptGatewayServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(result["text"], f"{old_token} 联系人 {new_token}")
+        self.assertEqual(result["desensitized_text"], result["text"])
         self.assertEqual(result["mapping_table_count"], 2)
         self.assertEqual(result["audit"]["details"]["historical_reuse_count"], 1)
         self.assertIn(old_token, result["placeholder_manifest"])
@@ -118,7 +119,22 @@ class PiptGatewayServiceTests(unittest.TestCase):
 
         self.assertNotIn("张三", result["text"])
         self.assertEqual(result["text"], f"第一段 {token} 未替换。第二段 {token} 已替换。")
+        self.assertEqual(result["desensitized_text"], result["text"])
         self.assertEqual(result["audit"]["details"]["current_document_global_replace_count"], 1)
+
+    def test_compatibility_preprocess_returns_desensitized_text_alias(self) -> None:
+        result = service.preprocess_payload(
+            {
+                "text": "原文",
+                "module_code": "bid-generator",
+                "purpose": "llm_external_call",
+                "mode": "compatibility",
+                "enabled": False,
+            }
+        )
+
+        self.assertEqual(result["text"], "原文")
+        self.assertEqual(result["desensitized_text"], "原文")
 
     def test_recognition_adapter_forwards_to_provider_boundary(self) -> None:
         fake_provider = Mock()

@@ -91,6 +91,21 @@ class CompetitorAnalysisServiceTests(unittest.TestCase):
 
         self.assertEqual(result, {"summary": "暂无近期动态", "items": []})
 
+    def test_filter_successful_competitors_drops_detail_errors(self) -> None:
+        warnings: list[str] = []
+
+        result = service.filter_successful_competitors(
+            [{"id": "a", "name": "正常企业"}, {"id": "b", "name": "失败企业"}],
+            {
+                "a": {"status": "success", "data": {"product": "正常"}},
+                "b": {"status": "error", "error": "PluginInvokeError"},
+            },
+            warnings,
+        )
+
+        self.assertEqual([item["id"] for item in result], ["a"])
+        self.assertEqual(warnings, [])
+
     def test_demo_history_record_is_filtered_from_rows(self) -> None:
         row = {"record_json": '{"id":"history-demo","mode":"demo"}'}
 

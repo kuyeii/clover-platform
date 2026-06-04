@@ -2379,6 +2379,29 @@ body {
 .app-shell--results {
   --results-sidebar-width: 288px;
   --competitor-card-gap: 14px;
+  min-height: 100vh;
+  height: auto;
+  align-items: stretch;
+  overflow: visible;
+}
+
+.app-shell--results .main-canvas--results {
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
+}
+
+.app-shell--results .details-panel {
+  min-height: 360px;
+  height: auto;
+  overflow: visible;
+}
+
+.app-shell--results .detail-info-grid,
+.app-shell--results .detail-summary-grid,
+.app-shell--results .detail-text-block {
+  min-height: 0;
+  overflow: visible;
 }
 
 .competitor-grid {

@@ -1,0 +1,207 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: 竞争对手打打分
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/tongyi:0.1.43@c56cb5159e37b2719559550518312773bb08e11baaf5b791cccf472d272b5438
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1775094797585-source-1775094855676-target
+      source: '1775094797585'
+      sourceHandle: source
+      target: '1775094855676'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1775094855676-source-1775097015999-target
+      source: '1775094855676'
+      sourceHandle: source
+      target: '1775097015999'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: report
+          max_length: 102400
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: report
+        - default: ''
+          hint: ''
+          label: target_company
+          max_length: 40
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: target_company
+      height: 135
+      id: '1775094797585'
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: kimi-k2.5
+          provider: langgenius/tongyi/tongyi
+        prompt_template:
+        - id: 9c65428f-f05d-49c8-b814-64eb2614f93c
+          role: system
+          text: "## 目标\n根据接收到的目标企业与各个竞争对手企业的对比分析报告，将各个分析报告分别精炼为一段话，并且构建统一的评分标准，为各个竞争对手企业的威胁度进行打分。\n\
+            \n## 评分体系构建要求\n1. **维度细分**：请根据接收到的材料中涉及的企业/行业特点，将100分总分拆解为若干个具体的评分维度（如市场份额、技术壁垒、资金实力等），各维度权重之和必须严格等于100。\n\
+            2. **依据限制**：在进行打分和分析时，**严格仅依据接收到的材料内容**。严禁引入模型自身的知识库或外部信息作为打分依据。若材料中未提及某维度信息，该维度不得分或视为无数据，不可臆造。\n\
+            3. **企业名称一致性**：输出中的“竞争对手企业”名称必须与接收到的对比分析报告中的名称保持**完全一致**。如果同一份报告中对同一个企业使用了多种名称（如简称、全称、曾用名等），则必须统一使用报告开头“XX\
+            \ vs XX”格式中出现在“vs”之后的那个完整名称。例如，若报告标题为“索辰科技 vs 北京云道智造科技有限公司（现名：北京云道智能科技股份有限公司）”，且文中混用了“云道智造”等简称，输出中该企业名称必须严格写为“北京云道智造科技有限公司（现名：北京云道智能科技股份有限公司）”，禁止任何形式的缩写或修改，以便后续程序精确提取。\n\
+            \n## 输出格式要求\n请严格按照以下顺序和结构输出，**禁止包含任何类似“接下来我将...”、“以下是...”的引导性话语**，直接开始输出内容。\n\
+            \n**整体输出必须为一个合法的JSON对象，格式如下：**\n\n```json\n{\n  \"评分维度介绍\": {\n    \"\
+            维度1\": \"权重说明\",\n    \"维度2\": \"权重说明\",\n    \"...\": \"...\"\n  },\n\
+            \  \"竞争对手分析与打分\": [\n    {\n      \"竞争对手企业\": \"（严格遵守上述命名规则的企业名）\",\n\
+            \      \"威胁分数\": 0-100,\n      \"各维度得分详情\": {\n        \"维度1\": \"得分/该维度满分\"\
+            ,\n        \"维度2\": \"得分/该维度满分\",\n        \"...\": \"...\"\n      },\n\
+            \      \"竞争分析小结\": \"（基于分析报告进行总结凝练）\"\n    }\n  ],\n  \"整体结论\": {\n  \
+            \  \"威胁度排名\": [\"按分数从高到低列出所有竞争对手\"],\n    \"整体小结\": \"基于所有分析给出的综合结论\"\n\
+            \  }\n}\n```\n\n*注：威胁分数应为上述各维度得分之和。*"
+        - id: fe965653-fc8e-4a93-9b29-c8bd04d7a75e
+          role: user
+          text: '目标企业：{{#1775094797585.target_company#}}
+
+            分析报告：{{#1775094797585.report#}}'
+        selected: false
+        title: LLM
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: '1775094855676'
+      position:
+        x: 379.93267466196005
+        y: 303
+      positionAbsolute:
+        x: 379.93267466196005
+        y: 303
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1775094855676'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 输出
+        type: end
+      height: 88
+      id: '1775097015999'
+      position:
+        x: 683
+        y: 303
+      positionAbsolute:
+        x: 683
+        y: 303
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -41.65337529531496
+      y: 88.86029406713973
+      zoom: 1.30551298861785
+  rag_pipeline_variables: []

@@ -211,6 +211,7 @@ export interface PiptGatewayPreprocessResult {
   input_text_hash?: string;
   output_text_hash?: string;
   text?: string;
+  desensitized_text?: string;
   mapping_table_count?: number;
   placeholder_manifest?: Record<string, Record<string, string>>;
   placeholder_policy?: Record<string, unknown>;
