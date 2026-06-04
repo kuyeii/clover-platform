@@ -17,8 +17,10 @@ const lookupCompanyNameValidationCache = runCompanyNameValidationWorkflow;
 
 const DEFAULT_COMPETITOR_ROWS = 1;
 const MAX_COMPETITOR_COUNT = 5;
+const COMPETITOR_PLACEHOLDER_COUNT = 5;
 const COMPANY_VALIDATION_LOCAL_DEBOUNCE_MS = 300;
 const COMPANY_VALIDATION_WEB_DELAY_MS = 1200;
+const COMPANY_VALIDATION_LOCAL_MIN_KEYWORD_LENGTH = 1;
 const COMPANY_VALIDATION_MIN_KEYWORD_LENGTH = 2;
 const DEFAULT_PROVINCE = "全国";
 const SAME_COMPANY_NAME_ERROR = "竞争对手名称不能与我方企业名称相同。";
@@ -1001,6 +1003,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
   const requestSeqRef = useRef(0);
   const localTimerRef = useRef(null);
   const webTimerRef = useRef(null);
+  const localSearchAbortRef = useRef(null);
   const webSearchingKeywordRef = useRef("");
   const keyword = String(value || "").trim();
   const isValidated = validationState === "validated";
@@ -1017,6 +1020,24 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     }
   };
 
+  const cancelLocalSearch = () => {
+    localSearchAbortRef.current?.abort();
+    localSearchAbortRef.current = null;
+  };
+
+  const createLocalSearchController = () => {
+    cancelLocalSearch();
+    const controller = new AbortController();
+    localSearchAbortRef.current = controller;
+    return controller;
+  };
+
+  const clearLocalSearchController = (controller) => {
+    if (localSearchAbortRef.current === controller) {
+      localSearchAbortRef.current = null;
+    }
+  };
+
   const confirmCompany = (company, fallbackName = "") => {
     const normalizedCompany = {
       name: company?.name || fallbackName,
@@ -1025,6 +1046,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     };
     const confirmedName = normalizedCompany.name || fallbackName;
     clearSearchTimers();
+    cancelLocalSearch();
     selectingValueRef.current = "";
     confirmedValueRef.current = confirmedName;
     onChange(confirmedName, true, normalizedCompany);
@@ -1043,17 +1065,6 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       stale: false
     });
     const hasAnyCompanyInfo = Boolean(result.company?.name || result.company?.intro || result.company?.business);
-    const isExactCompanyCache = Boolean(
-      result.cacheHit &&
-      hasCompanyDetails(result.company) &&
-      isSameCompanyName(result.company?.name, currentKeyword)
-    );
-
-    if (isExactCompanyCache) {
-      confirmCompany(result.company, currentKeyword);
-      return true;
-    }
-
     if (fromCacheOnly && result.cacheMiss) {
       return false;
     }
@@ -1094,7 +1105,8 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
 
   const runImmediateLookup = async ({ skipLocal = false } = {}) => {
     const currentKeyword = String(value || "").trim();
-    if (suspendValidation || currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) return;
+    const minKeywordLength = skipLocal ? COMPANY_VALIDATION_MIN_KEYWORD_LENGTH : COMPANY_VALIDATION_LOCAL_MIN_KEYWORD_LENGTH;
+    if (suspendValidation || currentKeyword.length < minKeywordLength) return;
 
     clearSearchTimers();
     requestSeqRef.current += 1;
@@ -1110,7 +1122,12 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
 
     try {
       if (!skipLocal) {
-        const cachedPayload = await lookupCompanyNameValidationCache({ companyName: currentKeyword, cacheOnly: true });
+        const localSearchController = createLocalSearchController();
+        const cachedPayload = await lookupCompanyNameValidationCache(
+          { companyName: currentKeyword, cacheOnly: true },
+          { signal: localSearchController.signal }
+        );
+        clearLocalSearchController(localSearchController);
         if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
         const handledFromCache = applyImmediateLookupPayload(cachedPayload, {
           currentKeyword,
@@ -1119,6 +1136,14 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
           fromCacheOnly: true
         });
         if (handledFromCache) return;
+      }
+
+      if (currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) {
+        setSuggestions([]);
+        setValidationMeta({ searchResult: "本地未找到，继续输入后可联网查找。", note: "", error: "" });
+        setValidationState("localEmpty");
+        setShowDropdown(true);
+        return;
       }
 
       setSuggestions([]);
@@ -1137,6 +1162,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
         setShowDropdown(true);
       }
     } catch (error) {
+      if (error?.name === "AbortError") return;
       if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
       setSuggestions([]);
       setValidationMeta({
@@ -1174,6 +1200,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       confirmedValueRef.current = "";
       selectingValueRef.current = "";
       webSearchingKeywordRef.current = "";
+      cancelLocalSearch();
       setValidationState("idle");
       setSuggestions([]);
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1185,6 +1212,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       requestSeqRef.current += 1;
       selectingValueRef.current = "";
       webSearchingKeywordRef.current = "";
+      cancelLocalSearch();
       setValidationState("idle");
       setSuggestions([]);
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1195,6 +1223,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     if (confirmedValueRef.current === currentKeyword) {
       selectingValueRef.current = "";
       webSearchingKeywordRef.current = "";
+      cancelLocalSearch();
       setValidationState("validated");
       setSuggestions([]);
       setValidationMeta({ searchResult: "已确认企业", note: "", error: "" });
@@ -1225,17 +1254,6 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
         stale: false
       });
       const hasAnyCompanyInfo = Boolean(result.company?.name || result.company?.intro || result.company?.business);
-      const isExactCompanyCache = Boolean(
-        result.cacheHit &&
-        hasCompanyDetails(result.company) &&
-        isSameCompanyName(result.company?.name, currentKeyword)
-      );
-
-      if (isExactCompanyCache) {
-        confirmCompany(result.company, currentKeyword);
-        return true;
-      }
-
       if (fromCacheOnly && result.cacheMiss) {
         return false;
       }
@@ -1282,6 +1300,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
 
     const runWebLookup = async () => {
       if (!isLatestSearch()) return;
+      if (currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) return;
       if (webSearchingKeywordRef.current === currentKeyword) return;
       webSearchingKeywordRef.current = currentKeyword;
       setValidationState("webSearching");
@@ -1315,7 +1334,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       }
     };
 
-    if (currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) {
+    if (currentKeyword.length < COMPANY_VALIDATION_LOCAL_MIN_KEYWORD_LENGTH) {
       setValidationState("idle");
       setSuggestions([]);
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1337,18 +1356,31 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       setShowDropdown(true);
 
       try {
-        const cachedPayload = await lookupCompanyNameValidationCache({ companyName: currentKeyword, cacheOnly: true });
+        const localSearchController = createLocalSearchController();
+        const cachedPayload = await lookupCompanyNameValidationCache(
+          { companyName: currentKeyword, cacheOnly: true },
+          { signal: localSearchController.signal }
+        );
+        clearLocalSearchController(localSearchController);
         if (!isLatestSearch()) return;
         const handledFromCache = applyValidationPayload(cachedPayload, { source: "local", fromCacheOnly: true });
         if (handledFromCache || !isLatestSearch()) return;
 
         setSuggestions([]);
-        setValidationMeta({ searchResult: "本地未找到，准备联网查找...", note: "", error: "" });
+        const canSearchWeb = currentKeyword.length >= COMPANY_VALIDATION_MIN_KEYWORD_LENGTH;
+        setValidationMeta({
+          searchResult: canSearchWeb ? "本地未找到，准备联网查找..." : "本地未找到，继续输入后可联网查找。",
+          note: "",
+          error: ""
+        });
         setValidationState("localEmpty");
         setShowDropdown(true);
 
-        webTimerRef.current = window.setTimeout(runWebLookup, COMPANY_VALIDATION_WEB_DELAY_MS);
+        if (canSearchWeb) {
+          webTimerRef.current = window.setTimeout(runWebLookup, COMPANY_VALIDATION_WEB_DELAY_MS);
+        }
       } catch (error) {
+        if (error?.name === "AbortError") return;
         if (!isLatestSearch()) return;
         setSuggestions([]);
         setValidationMeta({
@@ -1364,6 +1396,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     return () => {
       cancelled = true;
       clearSearchTimers();
+      cancelLocalSearch();
     };
   }, [requireCompanyDetails, suspendValidation, value]);
 
@@ -1374,6 +1407,7 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     selectingValueRef.current = "";
     webSearchingKeywordRef.current = "";
     clearSearchTimers();
+    cancelLocalSearch();
     requestSeqRef.current += 1;
 
     if (nextValue.trim()) {
@@ -1400,7 +1434,11 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     if (!name) return;
     if (selectedCompany.disabled || selectedCompany.stale || (selectedCompany.keyword && selectedCompany.keyword !== keyword)) return;
     clearSearchTimers();
+    cancelLocalSearch();
     if (hasCompanyDetails(selectedCompany)) {
+      runCompanyNameValidationWorkflow({ companyName: name, sourceQuery: name, selectedCompany }).catch(() => {
+        // 确认操作不依赖缓存写入成功；失败时不阻塞用户继续分析。
+      });
       confirmCompany(selectedCompany, name);
       return;
     }
@@ -1607,6 +1645,16 @@ function CompetitorCard({ item, scoreItem, detailData, detailStatus = "idle", re
       )}
       <p>{isSummaryPending ? <ResultPendingText>{summaryText}</ResultPendingText> : summaryText}</p>
     </button>
+  );
+}
+
+function CompetitorPlaceholderCard() {
+  return (
+    <div className="competitor-card competitor-card--placeholder" role="status" aria-live="polite">
+      <div className="competitor-card-placeholder-glass">
+        <span className="competitor-card-placeholder-text">竞争对手信息获取中</span>
+      </div>
+    </div>
   );
 }
 
@@ -2310,6 +2358,8 @@ function ResultsPage({
     }
   }, [activeTab, selectedCompetitor]);
 
+  const showCompetitorPlaceholders = form.matchMode === "auto" && isLoading && competitors.length === 0;
+
   return (
     <main className="main-canvas main-canvas--results">
       <CompanyOverview
@@ -2335,7 +2385,7 @@ function ResultsPage({
         </div>
         {apiError && <p className="api-error api-error--inline">{apiError}</p>}
         {scoreStatus === "error" && scoreError && <p className="api-error api-error--inline">评分失败：{scoreError}</p>}
-        {competitors.length === 0 && isLoading && (
+        {competitors.length === 0 && isLoading && !showCompetitorPlaceholders && (
           <AnalysisLoadingCard
             title="竞争对手列表生成中"
             steps={[
@@ -2346,7 +2396,9 @@ function ResultsPage({
           />
         )}
         <div className="competitor-grid">
-          {displayCompetitors.map((item) => {
+          {showCompetitorPlaceholders ? Array.from({ length: COMPETITOR_PLACEHOLDER_COUNT }).map((_, index) => (
+            <CompetitorPlaceholderCard key={`competitor-placeholder-${index}`} />
+          )) : displayCompetitors.map((item) => {
             const scoreItem = getScoreItemByCompanyName(scoreByName, item.name);
             return (
               <CompetitorCard

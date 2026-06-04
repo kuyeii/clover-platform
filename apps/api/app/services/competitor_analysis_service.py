@@ -1450,7 +1450,6 @@ def build_company_profile_cache_response(company: Dict[str, str]) -> Dict[str, A
         ),
     }
 
-
 def _profile_for_storage(company: Any) -> tuple[Dict[str, str], str] | None:
     normalized_company = normalize_complete_company(company)
     if not normalized_company:
@@ -1571,11 +1570,17 @@ def run_company_name_validation_workflow(
     cacheOnly: bool = False,
     forceRefresh: bool = False,
     sourceQuery: str = "",
+    selectedCompany: Any = None,
     **_: Any,
 ) -> Dict[str, Any]:
     company_name = str(companyName or targetCompanyName or competitorCompanyName or "").strip()
     if not company_name:
         raise AppError("请先输入企业名称。", status_code=400, code="BAD_REQUEST")
+
+    selected_complete_company = normalize_complete_company(selectedCompany)
+    if selected_complete_company:
+        write_company_candidate_to_query_cache(sourceQuery or company_name, selected_complete_company)
+        return build_company_profile_cache_response(selected_complete_company)
 
     if not forceRefresh:
         cached_response = read_company_validation_query_cache(company_name)

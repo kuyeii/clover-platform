@@ -47,11 +47,11 @@ export interface StreamEvent {
   data: unknown;
 }
 
-function requestLegacyJson<T>(path: string, body?: unknown) {
+function requestLegacyJson<T>(path: string, body?: unknown, options: { signal?: AbortSignal } = {}) {
   if (body === undefined) {
-    return apiClient.get<T>(`${API_PREFIX}${path}`, { unwrapEnvelope: false });
+    return apiClient.get<T>(`${API_PREFIX}${path}`, { unwrapEnvelope: false, signal: options.signal });
   }
-  return apiClient.post<T>(`${API_PREFIX}${path}`, body, { unwrapEnvelope: false });
+  return apiClient.post<T>(`${API_PREFIX}${path}`, body, { unwrapEnvelope: false, signal: options.signal });
 }
 
 export async function healthCheck() {
@@ -78,8 +78,8 @@ export function runInputValidationWorkflow(input: Record<string, unknown>) {
   return requestLegacyJson<Record<string, unknown>>("/workflows/validate", input);
 }
 
-export function runCompanyNameValidationWorkflow(input: Record<string, unknown>) {
-  return requestLegacyJson<Record<string, unknown>>("/workflows/company-name-validate", input);
+export function runCompanyNameValidationWorkflow(input: Record<string, unknown>, options: { signal?: AbortSignal } = {}) {
+  return requestLegacyJson<Record<string, unknown>>("/workflows/company-name-validate", input, options);
 }
 
 export function runCompanyDetailWorkflow(input: Record<string, unknown>) {

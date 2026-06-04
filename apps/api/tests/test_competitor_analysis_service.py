@@ -143,6 +143,33 @@ class CompetitorAnalysisServiceTests(unittest.TestCase):
             service.post_dify_workflow = original_post_workflow
             service.write_company_validation_cache = original_write_cache
 
+    def test_selected_company_can_be_cached_under_full_company_name(self) -> None:
+        calls: list[tuple[str, str]] = []
+        workflow_calls: list[str] = []
+        original_read_validation_response = service.repository.read_validation_response
+        original_write_validation_cache = service.repository.write_company_validation_cache
+        original_post_workflow = service.post_dify_workflow
+        try:
+            service.repository.read_validation_response = lambda _name: {}
+            service.repository.write_company_validation_cache = (
+                lambda **kwargs: calls.append((kwargs["normalized_query"], kwargs["query"]))
+            )
+            service.post_dify_workflow = lambda **_kwargs: workflow_calls.append("workflow")
+
+            result = service.run_company_name_validation_workflow(
+                companyName="美国耐克公司",
+                sourceQuery="美国耐克公司",
+                selectedCompany={"name": "美国耐克公司", "intro": "耐克介绍", "business": "运动鞋服与体育用品研发销售"},
+            )
+
+            self.assertEqual(result["company"]["name"], "美国耐克公司")
+            self.assertEqual(calls, [("美国耐克公司", "美国耐克公司")])
+            self.assertEqual(workflow_calls, [])
+        finally:
+            service.repository.read_validation_response = original_read_validation_response
+            service.repository.write_company_validation_cache = original_write_validation_cache
+            service.post_dify_workflow = original_post_workflow
+
 
 if __name__ == "__main__":
     unittest.main()

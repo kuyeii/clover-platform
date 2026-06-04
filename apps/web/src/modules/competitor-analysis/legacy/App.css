@@ -716,6 +716,43 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.competitor-analysis-legacy-viewport .competitor-card--placeholder {
+  cursor: default;
+  pointer-events: none;
+}
+.competitor-analysis-legacy-viewport .competitor-card-placeholder-glass {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: rgba(238, 247, 252, 0.64);
+  border: 1px solid rgba(199, 230, 244, 0.7);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+.competitor-analysis-legacy-viewport .competitor-card-placeholder-text {
+  display: inline-block;
+  color: var(--color-info-text);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.4;
+  background: linear-gradient(
+    100deg,
+    var(--color-info-text) 0%,
+    var(--color-info-text) 34%,
+    #ffffff 48%,
+    var(--color-brand) 58%,
+    var(--color-info-text) 72%,
+    var(--color-info-text) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: competitorPlaceholderTextShimmer 2.8s linear infinite;
+}
 .competitor-analysis-legacy-viewport .score-ring {
   --score-percent: 0%;
   flex: 0 0 auto;
@@ -993,9 +1030,18 @@
     transform: translateY(-2px) scale(1);
   }
 }
+@keyframes competitorPlaceholderTextShimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 @media (prefers-reduced-motion: reduce) {
   .competitor-analysis-legacy-viewport .result-loading-dots span {
     animation: none;
+  }
+  .competitor-analysis-legacy-viewport .competitor-card-placeholder-text {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
   }
   .competitor-analysis-legacy-viewport.result-detail-drawer-layer .competitor-drawer-backdrop,
   .competitor-analysis-legacy-viewport.result-detail-drawer-layer .result-detail-drawer {
