@@ -1152,7 +1152,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(
                 service,
                 "_finalize_legacy_content_output",
-                return_value=("最终正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}]),
+                return_value=("最终正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}], None),
             ),
             patch.object(service, "_normalize_referenced_images", return_value=("最终正文", [{"placeholder": "__PRO_IMG_1__"}])),
             patch.object(
@@ -1257,7 +1257,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(
                 service,
                 "_finalize_legacy_content_output",
-                return_value=("重写后的正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}]),
+                return_value=("重写后的正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}], None),
             ),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_persist_content_result_to_project", return_value=None),
@@ -2309,7 +2309,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             exists_result.scalar_one.return_value = False
             conn.execute.return_value = exists_result
             placeholder_engine.return_value.begin.return_value.__enter__.return_value = conn
-            content, report = service._finalize_legacy_content_output(
+            content, report, warning = service._finalize_legacy_content_output(
                 "我方人员 {{PIPT_1}} 与 {{BIDDER_ORG}} 完全响应。",
                 "响应情况",
                 request_mapping_flat={
@@ -2320,6 +2320,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
         legacy_import.assert_not_called()
         self.assertEqual(content, "我方人员 张三 与 测试公司 完全响应。")
+        self.assertIsNone(warning)
         self.assertEqual(
             report,
             [
@@ -2328,7 +2329,57 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             ],
         )
 
-    def test_parse_group_content_results_keeps_success_when_one_child_placeholder_fails(self) -> None:
+    def test_finalize_content_output_warns_without_blocking_for_placeholder_issues(self) -> None:
+        with patch.object(service, "_normalize_generated_markdown", side_effect=lambda content, _title: content):
+            content, report, warning = service._finalize_legacy_content_output(
+                "联系人 {{ PIPT-name-1 }}，备用 @@PIPT:v1:e000001:k11111111@@。",
+                "响应情况",
+                request_mapping_flat={},
+            )
+
+        self.assertEqual(content, "联系人 {{ PIPT-name-1 }}，备用 @@PIPT:v1:e000001:k11111111@@。")
+        self.assertEqual(
+            report,
+            [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "", "status": "miss"}],
+        )
+        self.assertEqual(warning["code"], "placeholder_restore_warning")
+        self.assertTrue(warning["has_illegal_placeholder"])
+        self.assertTrue(warning["has_unresolved_placeholder"])
+
+    def test_finalize_content_output_resolves_from_core_vault_fallback(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        entity_conn = Mock()
+        bid_exists = Mock()
+        bid_exists.scalar_one.return_value = False
+        entity_conn.execute.return_value = bid_exists
+
+        vault_conn = Mock()
+        core_exists = Mock()
+        core_exists.scalar_one.return_value = True
+        core_rows = Mock()
+        core_rows.mappings.return_value.all.return_value = [
+            {"placeholder": token, "original_text_enc": "张三"}
+        ]
+        vault_conn.execute.side_effect = [core_exists, core_rows]
+        engine = MagicMock()
+        engine.connect.return_value.__enter__.side_effect = [entity_conn, vault_conn]
+
+        with (
+            patch.object(service, "_normalize_generated_markdown", side_effect=lambda content, _title: content),
+            patch("app.services.bid_content_placeholder_service._decrypt_vault_original_text", return_value="张三"),
+            patch("app.services.bid_content_placeholder_service.get_engine", return_value=engine),
+        ):
+            content, report, warning = service._finalize_legacy_content_output(
+                f"联系人 {token}。",
+                "响应情况",
+                request_mapping_flat={},
+            )
+
+        self.assertEqual(content, "联系人 张三。")
+        self.assertIsNone(warning)
+        self.assertEqual(report, [{"placeholder": token, "original": "张三", "status": "success"}])
+
+    def test_parse_group_content_results_keeps_placeholder_warning_sections(self) -> None:
         children = [
             {"section_id": "sec-1", "section_title": "第一节"},
             {"section_id": "sec-2", "section_title": "第二节"},
@@ -2342,7 +2393,13 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
         def finalize_side_effect(section_title: str, _outputs: dict, _mapping: dict) -> dict:
             if section_title == "第一节":
-                raise RuntimeError("占位符缺少映射，无法可靠还原")
+                return {
+                    "content": "第一节正文 {{ PIPT-name-1 }}",
+                    "word_count": 20,
+                    "replace_report": [],
+                    "placeholder_warning": {"code": "placeholder_restore_warning", "message": "模型生成发生错误，请手动修改异常文本或重新生成。"},
+                    "placeholder_issues": [],
+                }
             return {
                 "content": "第二节正文",
                 "word_count": 4,
@@ -2353,11 +2410,10 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         with patch.object(service, "_finalize_single_content_result", side_effect=finalize_side_effect):
             parsed = service._parse_group_content_results(outputs, children, {})
 
-        self.assertEqual([row["section_id"] for row in parsed["sections"]], ["sec-2"])
-        self.assertEqual(parsed["failed_sections"], [
-            {"section_id": "sec-1", "section_title": "第一节", "error": "占位符缺少映射，无法可靠还原"}
-        ])
-        self.assertEqual(parsed["parse_error"], "批量正文结果存在缺失子章节")
+        self.assertEqual([row["section_id"] for row in parsed["sections"]], ["sec-1", "sec-2"])
+        self.assertEqual(parsed["sections"][0]["placeholder_warning"]["code"], "placeholder_restore_warning")
+        self.assertEqual(parsed["failed_sections"], [])
+        self.assertEqual(parsed["parse_error"], "")
 
     def test_rebuild_locator_payload_rebuilds_docx_snapshot_natively(self) -> None:
         blocks = [
@@ -2784,7 +2840,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(
                 service,
                 "_finalize_legacy_content_output",
-                return_value=("最终正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}]),
+                return_value=("最终正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}], None),
             ),
             patch.object(
                 service,
@@ -2844,7 +2900,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             patch.object(
                 service,
                 "_finalize_legacy_content_output",
-                return_value=("完整正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}]),
+                return_value=("完整正文", [{"placeholder": "@@PIPT:v1:e000001:k11111111@@", "original": "张三"}], None),
             ),
             patch.object(
                 service,

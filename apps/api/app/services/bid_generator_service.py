@@ -1565,7 +1565,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                 raise RuntimeError("内容工作流异常中断（未收到 finished 事件）")
 
             task_manager.update_stage(task_id, "📝 解析生成结果")
-            content, replace_report = _finalize_legacy_content_output(
+            content, replace_report, placeholder_warning = _finalize_legacy_content_output(
                 outputs.get("text") or outputs.get("result") or outputs.get("structured_output") or "",
                 section_title,
                 feedback=str(outputs.get("feedback") or ""),
@@ -1613,6 +1613,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                 "quality_score": quality_score,
                 "feedback": outputs.get("feedback") or None,
                 "replace_report": replace_report,
+                "placeholder_warning": placeholder_warning,
                 "referenced_images": referenced_images,
                 "diagrams_count": diagrams_generated,
             }
@@ -1630,6 +1631,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                 "quality_score": quality_score,
                 "feedback": outputs.get("feedback") or None,
                 "replace_report": replace_report,
+                "placeholder_warning": placeholder_warning,
                 "referenced_images": referenced_images,
                 "diagrams_count": diagrams_generated,
             }
@@ -1653,6 +1655,7 @@ async def start_content_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                         "quality_score": quality_score,
                         "feedback": outputs.get("feedback") or None,
                         "replace_report": replace_report,
+                        "placeholder_warning": placeholder_warning,
                     }
                     if diagram_specs:
                         done_payload["diagram_specs"] = diagram_specs
@@ -1757,7 +1760,7 @@ async def start_content_rewrite_task_payload(body: Mapping[str, Any]) -> dict[st
             if not got_finished:
                 raise RuntimeError("内容工作流异常中断（未收到 finished 事件）")
 
-            rewritten, replace_report = _finalize_legacy_content_output(
+            rewritten, replace_report, placeholder_warning = _finalize_legacy_content_output(
                 outputs.get("text") or outputs.get("result") or outputs.get("structured_output") or "",
                 section_title or section_id,
                 feedback=str(outputs.get("feedback") or ""),
@@ -1775,6 +1778,7 @@ async def start_content_rewrite_task_payload(body: Mapping[str, Any]) -> dict[st
                 "quality_score": None,
                 "feedback": outputs.get("feedback") or None,
                 "replace_report": replace_report,
+                "placeholder_warning": placeholder_warning,
             }
             raw_score = outputs.get("quality_score")
             if raw_score is not None:
@@ -6280,6 +6284,25 @@ def _resolve_body_placeholders(
     return str(resolved or ""), replace_report if isinstance(replace_report, list) else []
 
 
+def _build_placeholder_warning(
+    *,
+    illegal_placeholders: list[str] | None = None,
+    unresolved_placeholders: list[str] | None = None,
+) -> dict[str, Any] | None:
+    illegal = sorted({str(item) for item in (illegal_placeholders or []) if str(item).strip()})
+    unresolved = sorted({str(item) for item in (unresolved_placeholders or []) if str(item).strip()})
+    if not illegal and not unresolved:
+        return None
+    return {
+        "code": "placeholder_restore_warning",
+        "message": "模型生成发生错误，请手动修改异常文本或重新生成。",
+        "illegal_count": len(illegal),
+        "unresolved_count": len(unresolved),
+        "has_illegal_placeholder": bool(illegal),
+        "has_unresolved_placeholder": bool(unresolved),
+    }
+
+
 def _find_illegal_pipt_bidder_placeholders(content: str) -> list[str]:
     return find_illegal_pipt_bidder_placeholders_native(content)
 
@@ -6656,7 +6679,7 @@ def _finalize_legacy_content_output(
     request_mapping_flat: dict[str, str] | None = None,
     strip_structural_numbering: bool = False,
     audit_source: str = "apps_api.content_result",
-) -> tuple[str, list[dict[str, Any]]]:
+) -> tuple[str, list[dict[str, Any]], dict[str, Any] | None]:
     if isinstance(raw_content, list):
         raw_content = "\n\n".join(str(item) for item in raw_content)
     content = re.sub(r"<think>.*?</think>", "", str(raw_content or ""), flags=re.DOTALL).strip()
@@ -6680,16 +6703,16 @@ def _finalize_legacy_content_output(
         audit_source=audit_source,
     )
     placeholder_issues = _find_illegal_pipt_bidder_placeholders(content)
-    if placeholder_issues:
-        raise RuntimeError("占位符格式异常且无法可靠还原")
     unresolved_placeholders = [
         str(item.get("placeholder") or "")
         for item in replace_report
         if isinstance(item, Mapping) and item.get("status") == "miss" and item.get("placeholder")
     ]
-    if unresolved_placeholders:
-        raise RuntimeError("占位符缺少映射，无法可靠还原")
-    return content, replace_report
+    placeholder_warning = _build_placeholder_warning(
+        illegal_placeholders=placeholder_issues,
+        unresolved_placeholders=unresolved_placeholders,
+    )
+    return content, replace_report, placeholder_warning
 
 
 async def _run_inline_content_diagram(
@@ -7310,7 +7333,7 @@ def _finalize_single_content_result(
     *,
     strip_structural_numbering: bool = False,
 ) -> dict[str, Any]:
-    content, replace_report = _finalize_legacy_content_output(
+    content, replace_report, placeholder_warning = _finalize_legacy_content_output(
         outputs.get("text") or outputs.get("result") or outputs.get("structured_output") or "",
         section_title,
         feedback=str(outputs.get("feedback") or ""),
@@ -7326,22 +7349,15 @@ def _finalize_single_content_result(
             quality_score = int(float(raw_score))
         except (TypeError, ValueError):
             quality_score = None
-    placeholder_issues = _find_illegal_pipt_bidder_placeholders(content)
-    unresolved_placeholders = [
-        str(item.get("placeholder") or "")
-        for item in replace_report
-        if isinstance(item, Mapping) and item.get("status") == "miss" and item.get("placeholder")
-    ]
-    if unresolved_placeholders:
-        placeholder_issues.extend(unresolved_placeholders)
     return {
         "content": content,
         "word_count": _count_visible_chars(content),
         "quality_score": quality_score,
         "feedback": outputs.get("feedback") or None,
         "replace_report": replace_report,
+        "placeholder_warning": placeholder_warning,
         "referenced_images": referenced_images,
-        "placeholder_issues": sorted({str(item) for item in placeholder_issues if str(item).strip()}),
+        "placeholder_issues": [],
     }
 
 
@@ -7385,10 +7401,6 @@ def _parse_group_content_results(
             payload = _finalize_single_content_result(child["section_title"], {"text": raw_content}, request_mapping_flat)
         except RuntimeError as exc:
             failed_by_id[section_id] = _format_dify_runtime_error(exc)
-            continue
-        placeholder_issues = payload.get("placeholder_issues") or []
-        if placeholder_issues:
-            failed_by_id[section_id] = "占位符格式异常且无法可靠还原: " + "、".join(str(part) for part in placeholder_issues[:5])
             continue
         payload.update({"section_id": section_id, "section_title": child["section_title"]})
         raw_score = item.get("quality_score")
@@ -7490,10 +7502,6 @@ async def _repair_group_failed_sections(
                 request_mapping_flat,
                 strip_structural_numbering=workflow_name == "response_content_writer",
             )
-            placeholder_issues = payload.get("placeholder_issues") or []
-            if placeholder_issues:
-                still_failed.append({**failed, "error": "补生成结果占位符格式异常且无法可靠还原: " + "、".join(str(item) for item in placeholder_issues[:5])})
-                continue
             diagram_specs = outputs.get("diagram_specs") or outputs.get("diagram_spec") or outputs.get("diagram")
             if diagram_specs:
                 payload["diagram_specs"] = diagram_specs
@@ -7592,6 +7600,8 @@ def _persist_content_result_to_project(
             "qualityScore": payload.get("quality_score"),
             "feedback": payload.get("feedback"),
             "diagramError": payload.get("diagram_error"),
+            "placeholderWarning": payload.get("placeholder_warning"),
+            "replaceReport": payload.get("replace_report", []) or [],
             "previousContent": None,
             "previousWordCount": None,
         }
@@ -7646,6 +7656,8 @@ def _persist_group_content_result_to_project(
             "qualityScore": row.get("quality_score"),
             "feedback": row.get("feedback"),
             "diagramError": row.get("diagram_error"),
+            "placeholderWarning": row.get("placeholder_warning"),
+            "replaceReport": row.get("replace_report", []) or [],
             "previousContent": None,
             "previousWordCount": None,
         }
@@ -8475,7 +8487,7 @@ async def generate_content_payload(body: Mapping[str, Any]) -> dict[str, Any]:
         raise PlatformError(code="CONTENT_GENERATE_FAILED", message=_format_dify_runtime_error(exc), status_code=500) from exc
 
     outputs = dify_res.get("data", {}).get("outputs", {}) if isinstance(dify_res, dict) else {}
-    content, replace_report = _finalize_legacy_content_output(
+    content, replace_report, placeholder_warning = _finalize_legacy_content_output(
         outputs.get("text") or outputs.get("result") or outputs.get("structured_output") or outputs.get("content") or "",
         section_title,
         feedback=str(outputs.get("feedback") or ""),
@@ -8506,6 +8518,7 @@ async def generate_content_payload(body: Mapping[str, Any]) -> dict[str, Any]:
         "quality_score": quality_score,
         "feedback": outputs.get("feedback") if isinstance(outputs, dict) else None,
         "replace_report": replace_report,
+        "placeholder_warning": placeholder_warning,
         "diagrams_count": diagrams_count,
     }
     if diagram_error:
@@ -8600,7 +8613,7 @@ async def generate_content_stream_response(body: Mapping[str, Any]) -> Any:
                             or outputs.get("content")
                             or full_content
                         )
-                        final_content, replace_report = _finalize_legacy_content_output(
+                        final_content, replace_report, placeholder_warning = _finalize_legacy_content_output(
                             final_raw_content,
                             section_title,
                             feedback=str(outputs.get("feedback") or ""),
@@ -8625,6 +8638,7 @@ async def generate_content_stream_response(body: Mapping[str, Any]) -> Any:
                             "quality_score": quality_score,
                             "feedback": outputs.get("feedback"),
                             "replace_report": replace_report,
+                            "placeholder_warning": placeholder_warning,
                             "diagrams_count": diagrams_count,
                         }
                         if diagram_error:

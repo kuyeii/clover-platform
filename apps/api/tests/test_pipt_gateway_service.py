@@ -18,9 +18,12 @@ from app.services.pipt_redaction_service import apply_current_document_global_re
 
 
 class PiptGatewayServiceTests(unittest.TestCase):
-    def test_knowledge_sync_mappings_are_permanent_by_default(self) -> None:
+    def test_bid_document_preprocess_mappings_are_permanent_by_default(self) -> None:
         self.assertIsNone(
             service._vault_ttl_seconds(module_code="rag-web-search", purpose="knowledge_sync")
+        )
+        self.assertIsNone(
+            service._vault_ttl_seconds(module_code="bid-generator", purpose="document_preprocess")
         )
         self.assertEqual(
             service._vault_ttl_seconds(module_code="rag-web-search", purpose="llm_external_call"),

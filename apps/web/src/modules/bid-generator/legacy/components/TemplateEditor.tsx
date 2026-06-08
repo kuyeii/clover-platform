@@ -8,7 +8,7 @@ import {
 } from '@dnd-kit/sortable';
 import { SortableBlock } from './SortableBlock';
 import {
-    AlertCircle, CheckCircle2, Download,
+    AlertCircle, AlertTriangle, CheckCircle2, Download,
     FileDown, FileText, FolderTree, Loader2,
     Plus, RefreshCw, RotateCcw, Sparkles, Trash2, UploadIcon, UserRound, XCircle,
 } from 'lucide-react';
@@ -26,6 +26,7 @@ import { ContentEditor } from './ContentEditor';
 import { TaskLoadingState } from './TaskLoadingState';
 import { BidderInfoDialog } from './BidderInfoDialog';
 import type { BidderInfo } from '../services/projectService';
+import type { PlaceholderWarning } from '../services/projectService';
 import { ResizablePdfPreviewPane } from './ResizablePdfPreviewPane';
 
 interface Props {
@@ -51,6 +52,7 @@ interface BlockContentState {
     previousWordCount?: number;
     /** 占位符替换报告：模型输出后还原的实体列表 */
     replaceReport?: { placeholder: string; original: string }[];
+    placeholderWarning?: PlaceholderWarning;
     versions?: Array<{
         id: string;
         label: string;
@@ -254,6 +256,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
         qualityScore?: number;
         feedback?: string;
         replaceReport?: { placeholder: string; original: string }[];
+        placeholderWarning?: PlaceholderWarning;
         diagramError?: string;
     }) => {
         setContentStates(prev => {
@@ -284,6 +287,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                 feedback: result.feedback,
                 diagramError: result.diagramError,
                 replaceReport: result.replaceReport,
+                placeholderWarning: result.placeholderWarning,
                 stage: undefined,
                 previousContent: undefined,
                 previousWordCount: undefined,
@@ -480,6 +484,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         feedback: result.feedback,
                         diagramError: result.diagramError,
                         replaceReport: result.replaceReport,
+                        placeholderWarning: result.placeholderWarning,
                     });
                 },
                 onError: (err) => {
@@ -522,6 +527,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         feedback: result.feedback,
                         diagramError: result.diagramError,
                         replaceReport: result.replaceReport,
+                        placeholderWarning: result.placeholderWarning,
                     });
                     if (result.diagramRequest) {
                         patchContentState(block.id, { stage: '🎨 图表生成中' });
@@ -537,6 +543,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                     feedback: diagramResult.feedback,
                                     diagramError: diagramResult.diagramError,
                                     replaceReport: diagramResult.replaceReport,
+                                    placeholderWarning: diagramResult.placeholderWarning,
                                 });
                             },
                         }).finally(() => {
@@ -1120,6 +1127,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                 feedback: r.feedback,
                                                 diagramError: typeof r.diagram_error === 'object' ? String(r.diagram_error?.message || '') : (r.diagram_error || undefined),
                                                 replaceReport: r.replace_report,
+                                                placeholderWarning: r.placeholder_warning,
                                                 stage: undefined,
                                             }});
                                             localStorage.removeItem(buildContentTaskStorageKey(projectId, blockId));
@@ -1149,6 +1157,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                     feedback: result.feedback,
                                                     diagramError: result.diagramError,
                                                     replaceReport: result.replaceReport,
+                                                    placeholderWarning: result.placeholderWarning,
                                                     stage: undefined,
                                                 }});
                                             },
@@ -1178,6 +1187,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                     feedback: result.feedback,
                                                     diagramError: result.diagramError,
                                                     replaceReport: result.replaceReport,
+                                                    placeholderWarning: result.placeholderWarning,
                                                     stage: undefined,
                                                 }});
                                             },
@@ -1406,6 +1416,8 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     const displayContent = activeContent?.content
         ? (showOriginal ? applyMappings(activeContent.content) : activeContent.content)
         : '';
+    const placeholderWarningMessage = activeContent?.placeholderWarning?.message
+        || '模型生成发生错误，请手动修改异常文本或重新生成。';
 
     // 用户手动编辑内容回调
     const handleContentEdit = useCallback((html: string) => {
@@ -1890,10 +1902,20 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                         className="px-2.5 py-1.5 rounded-lg text-sm font-medium text-gray-500 bg-gray-100 border border-gray-200 hover:bg-gray-200 transition-colors"
                                                     >取消生成</button>
                                                 </div>
-                                            ) : (
-                                                <div className="flex items-center gap-1.5">
-                                                    <button
-                                                        onClick={() => {
+	                                            ) : (
+	                                                <div className="flex items-center gap-1.5">
+                                                        {activeContent?.placeholderWarning && (
+                                                            <button
+                                                                type="button"
+                                                                title={placeholderWarningMessage}
+                                                                aria-label={placeholderWarningMessage}
+                                                                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-warning hover:bg-[var(--color-warning-bg)] focus:outline-none focus:ring-2 focus:ring-[var(--color-warning-border)]"
+                                                            >
+                                                                <AlertTriangle className="h-4 w-4" />
+                                                            </button>
+                                                        )}
+	                                                    <button
+	                                                        onClick={() => {
                                                             if (isLocked || isContentGenerationBusy) return;
                                                             const hasDraft = Boolean(activeContent?.content?.trim());
                                                             if (hasDraft) {

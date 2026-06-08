@@ -818,9 +818,19 @@ type ContentGenerationResult = {
     qualityScore?: number;
     feedback?: string;
     replaceReport?: { placeholder: string; original: string }[];
+    placeholderWarning?: PlaceholderWarning;
     diagramError?: string;
     diagramUpdate?: boolean;
     diagramRequest?: DiagramRequest;
+};
+
+export type PlaceholderWarning = {
+    code?: string;
+    message?: string;
+    illegal_count?: number;
+    unresolved_count?: number;
+    has_illegal_placeholder?: boolean;
+    has_unresolved_placeholder?: boolean;
 };
 
 type BatchGenerationUnit =
@@ -874,8 +884,25 @@ function normalizeDiagramSectionResult(row: DiagramSectionResult): ContentGenera
         qualityScore: row.quality_score,
         feedback: row.feedback,
         replaceReport: row.replace_report || [],
+        placeholderWarning: normalizePlaceholderWarning((row as any).placeholder_warning ?? (row as any).placeholderWarning),
         diagramError: extractDiagramErrorMessage(row.diagram_error),
         diagramUpdate: true,
+    };
+}
+
+function normalizePlaceholderWarning(value: unknown): PlaceholderWarning | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const raw = value as Record<string, unknown>;
+    const message = String(raw.message || '').trim() || '模型生成发生错误，请手动修改异常文本或重新生成。';
+    const illegalCount = Number(raw.illegal_count ?? raw.illegalCount ?? 0);
+    const unresolvedCount = Number(raw.unresolved_count ?? raw.unresolvedCount ?? 0);
+    return {
+        code: String(raw.code || 'placeholder_restore_warning'),
+        message,
+        illegal_count: Number.isFinite(illegalCount) ? illegalCount : 0,
+        unresolved_count: Number.isFinite(unresolvedCount) ? unresolvedCount : 0,
+        has_illegal_placeholder: Boolean(raw.has_illegal_placeholder ?? raw.hasIllegalPlaceholder),
+        has_unresolved_placeholder: Boolean(raw.has_unresolved_placeholder ?? raw.hasUnresolvedPlaceholder),
     };
 }
 
@@ -956,6 +983,7 @@ async function runDiagramBatchQueue(
                 qualityScore: req.quality_score,
                 feedback: req.feedback,
                 replaceReport: req.replace_report || [],
+                placeholderWarning: normalizePlaceholderWarning((req as any).placeholder_warning ?? (req as any).placeholderWarning),
                 diagramError: message,
                 diagramUpdate: true,
             });
@@ -1241,6 +1269,7 @@ export interface Project {
         qualityScore?: number;
         feedback?: string;
         diagramError?: string;
+        placeholderWarning?: PlaceholderWarning;
         error?: string;
         stage?: string;         // 当前工作流阶段，重连时恢复展示
         previousContent?: string;
@@ -3543,6 +3572,7 @@ export const projectService = {
                                 quality_score?: number;
                                 feedback?: string;
                                 replace_report?: { placeholder: string; original: string }[];
+                                placeholder_warning?: PlaceholderWarning;
                                 diagram_deferred?: boolean;
                                 diagram_request?: DiagramRequest;
                                 diagram_error?: unknown;
@@ -3603,6 +3633,7 @@ export const projectService = {
                                 qualityScore: r.quality_score,
                                 feedback: r.feedback,
                                 replaceReport: r.replace_report || [],
+                                placeholderWarning: normalizePlaceholderWarning(r.placeholder_warning),
                                 diagramError,
                                 diagramRequest,
                             });
@@ -3708,6 +3739,7 @@ export const projectService = {
             qualityScore?: number;
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
+            placeholderWarning?: PlaceholderWarning;
             diagramError?: string;
             diagramUpdate?: boolean;
         }) => void;
@@ -3805,6 +3837,7 @@ export const projectService = {
                                 qualityScore: result.quality_score,
                                 feedback: result.feedback,
                                 replaceReport: result.replace_report || [],
+                                placeholderWarning: normalizePlaceholderWarning(result.placeholder_warning),
                             });
                             localStorage.removeItem(taskStorageKey);
                             localStorage.removeItem(`content_task_${params.sectionId}`);
@@ -3889,6 +3922,7 @@ export const projectService = {
             qualityScore?: number;
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
+            placeholderWarning?: PlaceholderWarning;
             diagramError?: string;
             diagramUpdate?: boolean;
             diagramRequest?: DiagramRequest;
@@ -3902,6 +3936,7 @@ export const projectService = {
                 qualityScore?: number;
                 feedback?: string;
                 replaceReport?: { placeholder: string; original: string }[];
+                placeholderWarning?: PlaceholderWarning;
                 diagramError?: string;
                 diagramRequest?: DiagramRequest;
                 diagramUpdate?: boolean;
@@ -4029,6 +4064,7 @@ export const projectService = {
                     qualityScore: row.quality_score ?? row.qualityScore,
                     feedback: row.feedback,
                     replaceReport: row.replace_report || row.replaceReport || [],
+                    placeholderWarning: normalizePlaceholderWarning(row.placeholder_warning ?? row.placeholderWarning),
                     diagramError: extractDiagramErrorMessage(row.diagram_error ?? row.diagramError)
                         || extractDiagramSkipMessage(row.diagram_skip ?? row.diagramSkip),
                     diagramRequest: row.diagram_request ?? row.diagramRequest,
@@ -4297,6 +4333,7 @@ export const projectService = {
             qualityScore?: number;
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
+            placeholderWarning?: PlaceholderWarning;
             diagramError?: string;
         }) => void;
         onError: (err: string) => void;
@@ -4339,6 +4376,7 @@ export const projectService = {
                             qualityScore: r.quality_score,
                             feedback: r.feedback,
                             replaceReport: r.replace_report || [],
+                            placeholderWarning: normalizePlaceholderWarning(r.placeholder_warning),
                             diagramError,
                         });
                         localStorage.removeItem(taskStorageKey);
@@ -4486,6 +4524,7 @@ export const projectService = {
                                             qualityScore: section.qualityScore,
                                             feedback: section.feedback,
                                             replaceReport: section.replaceReport,
+                                            placeholderWarning: section.placeholderWarning,
                                             diagramUpdate: section.diagramUpdate,
                                             diagramRequest: section.diagramRequest,
                                         });
@@ -4510,6 +4549,7 @@ export const projectService = {
                                                     qualityScore: section.qualityScore,
                                                     feedback: section.feedback,
                                                     replaceReport: section.replaceReport,
+                                                    placeholderWarning: section.placeholderWarning,
                                                     diagramRequest: section.diagramRequest,
                                                 });
                                                 return;
@@ -4573,6 +4613,7 @@ export const projectService = {
                                             qualityScore: res.qualityScore,
                                             feedback: res.feedback,
                                             replaceReport: res.replaceReport,
+                                            placeholderWarning: res.placeholderWarning,
                                             diagramUpdate: res.diagramUpdate,
                                             diagramRequest: res.diagramRequest,
                                         });

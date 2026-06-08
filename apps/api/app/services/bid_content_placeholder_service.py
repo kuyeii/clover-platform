@@ -120,6 +120,12 @@ def _enrich_replace_map(found: set[str], replace_map: dict[str, str], request_ma
     db_mapping = _load_entity_registry_mapping(pipt_missing)
     replace_map.update(db_mapping)
 
+    vault_missing = [placeholder for placeholder in pipt_missing if placeholder not in replace_map]
+    if not vault_missing:
+        return
+    vault_mapping = _load_core_vault_mapping(vault_missing)
+    replace_map.update(vault_mapping)
+
 
 def _load_entity_registry_mapping(placeholders: list[str]) -> dict[str, str]:
     legacy_placeholders = [item for item in placeholders if item.startswith("{{__PIPT_")]
@@ -160,6 +166,42 @@ def _load_entity_registry_mapping(placeholders: list[str]) -> dict[str, str]:
             mapping[placeholder] = original
         if strong_placeholder in placeholders:
             mapping[strong_placeholder] = original
+    return mapping
+
+
+def _load_core_vault_mapping(placeholders: list[str]) -> dict[str, str]:
+    tokens = sorted({str(item or "").strip() for item in placeholders if str(item or "").strip()})
+    if not tokens:
+        return {}
+    mapping: dict[str, str] = {}
+    try:
+        with get_engine().connect() as conn:
+            exists = conn.execute(text("SELECT to_regclass('core.pipt_gateway_mappings') IS NOT NULL")).scalar_one()
+            if not exists:
+                return {}
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT placeholder, original_text_enc
+                    FROM core.pipt_gateway_mappings
+                    WHERE placeholder IN :tokens
+                      AND (expires_at IS NULL OR expires_at > now())
+                    ORDER BY created_at DESC
+                    """
+                ).bindparams(bindparam("tokens", expanding=True)),
+                {"tokens": tokens},
+            ).mappings().all()
+    except (SQLAlchemyError, RuntimeError) as exc:
+        logger.warning("PIPT core vault 映射查询失败，保留未解析占位符并交由上层处理: %s", exc)
+        return {}
+
+    for row in rows:
+        placeholder = str(row.get("placeholder") or "")
+        if not placeholder or placeholder in mapping:
+            continue
+        original = _normalize_original_text(_decrypt_vault_original_text(str(row.get("original_text_enc") or "")))
+        if original:
+            mapping[placeholder] = original
     return mapping
 
 
@@ -328,6 +370,18 @@ def _decrypt_original_text(value: str) -> str:
         return Fernet(raw_key.encode() if isinstance(raw_key, str) else raw_key).decrypt(value.encode("ascii")).decode("utf-8")
     except Exception:
         return value
+
+
+def _decrypt_vault_original_text(value: str) -> str:
+    raw_key = os.environ.get("PIPT_GATEWAY_VAULT_KEY") or os.environ.get("PIPT_DB_KEY") or ""
+    if not raw_key:
+        return value
+    try:
+        from cryptography.fernet import Fernet
+
+        return Fernet(raw_key.encode() if isinstance(raw_key, str) else raw_key).decrypt(value.encode("ascii")).decode("utf-8")
+    except Exception:
+        return ""
 
 
 def _hash_audit_text(value: Any) -> str:
