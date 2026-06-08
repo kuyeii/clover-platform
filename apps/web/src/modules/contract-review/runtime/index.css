@@ -1,12 +1,10 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer base {
   html, body, #root { height: 100%; }
   body { overflow: hidden; }
-}
-
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer components {
@@ -34,7 +32,7 @@
     @apply h-14 flex items-center px-6;
   }
   .brandLogo {
-    @apply w-8 h-8 bg-[#00b365] text-white rounded-full flex items-center justify-center font-bold mr-3;
+    @apply w-8 h-8 bg-brand-500 text-white rounded-full flex items-center justify-center font-bold mr-3;
   }
   .navList {
     @apply flex-1 overflow-y-auto py-4 px-4 space-y-1;
@@ -54,7 +52,7 @@
 
   /* Upload Dashboard */
   .dashboardPage {
-    @apply flex-1 bg-white m-2 md:m-4 mt-0 rounded-xl md:rounded-2xl shadow-sm border border-gray-100 flex flex-col;
+    @apply flex-1 bg-white m-2 md:m-4 mt-0 rounded-xl md:rounded-2xl shadow-none border border-gray-100 flex flex-col;
     min-height: 0;
     overflow: hidden;
   }
@@ -107,7 +105,7 @@
     margin-bottom: clamp(6px, 1vh, 12px);
   }
   .uploadCardContainer {
-    @apply max-w-3xl mx-auto rounded-xl md:rounded-2xl overflow-hidden border-2 border-dashed border-[#a7f3d0] bg-white relative;
+    @apply max-w-3xl mx-auto rounded-xl md:rounded-2xl overflow-hidden border-2 border-dashed border-[var(--color-success-border)] bg-white relative;
     margin-top: clamp(8px, 1.3vh, 16px);
   }
   .uploadCardContainer--uploaded {
@@ -116,12 +114,12 @@
     border: 1px solid #dde2e8;
     border-style: solid;
     border-radius: 18px;
-    box-shadow: 0 2px 8px rgba(16, 24, 40, 0.03);
+    box-shadow: none;
     background: #fcfcfd;
     overflow: hidden;
   }
   .uploadCard {
-    @apply flex flex-col items-center justify-center cursor-pointer transition-colors hover:bg-green-50/30 relative;
+    @apply flex flex-col items-center justify-center cursor-pointer transition-colors hover:bg-[var(--color-success-bg)] relative;
     padding: clamp(18px, 3vh, 44px) clamp(16px, 4vw, 56px) clamp(78px, 10vh, 98px);
     min-height: clamp(180px, 24vh, 240px);
   }
@@ -134,7 +132,7 @@
     background: #fcfcfd;
   }
   .uploadCard--active {
-    @apply bg-green-50/50;
+    @apply bg-[var(--color-success-bg)];
   }
   .hiddenInput {
     @apply hidden;
@@ -149,7 +147,7 @@
     width: clamp(44px, 7vh, 64px);
     height: clamp(44px, 7vh, 64px);
     border-radius: 999px;
-    background: rgb(240 253 244);
+    background: var(--color-success-bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -159,12 +157,12 @@
   .selectedFilePill {
     margin-top: clamp(10px, 2vh, 16px);
     padding: 8px 14px;
-    background: rgb(240 253 244);
-    color: rgb(0 179 101);
+    background: var(--color-success-bg);
+    color: var(--color-success-text);
     border-radius: 999px;
     font-size: clamp(12px, 1.7vh, 14px);
     font-weight: 600;
-    border: 1px solid rgb(220 252 231);
+    border: 1px solid var(--color-success-border);
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -196,11 +194,11 @@
     width: 52px;
     height: 52px;
     border-radius: 14px;
-    background: #e9f7ef;
+    background: var(--color-success-bg);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #11a35c;
+    color: var(--color-success-icon);
     flex: 0 0 auto;
   }
   .postUploadFileMeta {
@@ -254,7 +252,7 @@
     width: 6px;
     height: 18px;
     border-radius: 999px;
-    background: #11a35c;
+    background: var(--color-success-icon);
     flex: 0 0 auto;
   }
   .postUploadSideGrid {
@@ -279,9 +277,9 @@
     border-color: #d0d5dd;
   }
   .postUploadSideCard--active {
-    border-color: #10a35b;
-    background: #f4faf6;
-    box-shadow: inset 0 0 0 1px rgba(16, 163, 91, 0.14);
+    border-color: var(--color-success-border);
+    background: var(--color-success-bg);
+    box-shadow: none;
   }
   .postUploadSideCardHeader {
     display: flex;
@@ -296,7 +294,7 @@
     color: #1f2937;
   }
   .postUploadSideCard--active .postUploadSideCardTitle {
-    color: #10a35b;
+    color: var(--color-success-text);
   }
   .postUploadSideCardDesc {
     max-width: 100%;
@@ -316,7 +314,7 @@
     flex: 0 0 auto;
   }
   .postUploadRadio--active {
-    border-color: #10a35b;
+    border-color: var(--color-success-icon);
   }
   .postUploadRadioDot {
     width: 12px;
@@ -325,7 +323,7 @@
     background: transparent;
   }
   .postUploadRadio--active .postUploadRadioDot {
-    background: #10a35b;
+    background: var(--color-success-icon);
   }
   .uploadScopeDock {
     position: absolute;
@@ -341,7 +339,7 @@
     border: 1px solid #d0d5dd;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 6px 16px rgba(16, 24, 40, 0.08);
+    box-shadow: var(--shadow-float);
     padding: 8px 12px;
     display: flex;
     align-items: center;
@@ -362,8 +360,8 @@
     width: 24px;
     height: 24px;
     border-radius: 999px;
-    background: #edfdf3;
-    color: #11a35c;
+    background: var(--color-success-bg);
+    color: var(--color-success-icon);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -395,7 +393,7 @@
     border-radius: 18px;
     border: 1px solid rgba(208, 213, 221, 0.95);
     background: rgba(255, 255, 255, 0.98);
-    box-shadow: 0 18px 36px rgba(16, 24, 40, 0.12);
+    box-shadow: var(--shadow-float);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     overflow: hidden;
@@ -436,8 +434,8 @@
     background: #fff;
   }
   .uploadScopeOptionCheck--active {
-    border-color: #10a35b;
-    background: #10a35b;
+    border-color: var(--color-success-icon);
+    background: var(--color-success-icon);
     color: #fff;
   }
   .uploadScopeOptionMeta {
@@ -538,10 +536,10 @@
     @apply absolute bottom-3 md:bottom-4 left-3 md:left-4;
   }
   .quickReviewBtn {
-    @apply flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 bg-white border border-gray-200 rounded-full text-xs md:text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 z-10 relative;
+    @apply flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 bg-white border border-gray-200 rounded-full text-xs md:text-sm font-medium text-gray-700 shadow-none hover:bg-gray-50 z-10 relative;
   }
   .uploadCardFooter {
-    @apply bg-[#d1fae5] py-1.5 md:py-2 px-3 md:px-4 text-[10px] md:text-xs text-[#047857] flex justify-between items-center;
+    @apply bg-[var(--color-success-bg)] py-1.5 md:py-2 px-3 md:px-4 text-[10px] md:text-xs text-[var(--color-success-text)] flex justify-between items-center;
   }
   .upgradeLink {
     @apply font-semibold underline;
@@ -560,11 +558,11 @@
     @apply bg-gray-200 text-gray-900;
   }
   .startReviewBtn {
-    @apply bg-[#6ee7b7] text-white rounded-xl font-medium hover:bg-[#34d399] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm;
+    @apply bg-brand-500 text-white rounded-xl font-medium hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-none;
     width: clamp(180px, 16vw, 202px);
     padding: 14px 28px;
     font-size: clamp(14px, 1vw, 16px);
-    box-shadow: 0 8px 18px rgba(52, 211, 153, 0.28);
+    box-shadow: none;
   }
 
   /* Core matrix section (must fit without scroll on common desktop heights like 768px) */
@@ -625,7 +623,7 @@
     background: #fff;
     border: 1px solid rgb(243 244 246);
     border-radius: 18px;
-    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+    box-shadow: none;
     padding: clamp(16px, 1.7vh, 22px);
     transition: box-shadow 160ms ease, transform 160ms ease;
     min-height: clamp(160px, 18vh, 220px);
@@ -636,7 +634,7 @@
     padding: clamp(12px, 1.2vh, 18px);
   }
   .matrixCard:hover {
-    box-shadow: 0 12px 26px rgba(16, 24, 40, 0.08);
+    box-shadow: none;
     transform: translateY(-1px);
   }
   .matrixIcon {
@@ -648,9 +646,9 @@
     justify-content: center;
     margin-bottom: clamp(10px, 1.6vh, 14px);
   }
-  .matrixIcon--blue { background: rgb(239 246 255); color: rgb(37 99 235); }
-  .matrixIcon--amber { background: rgb(255 251 235); color: rgb(245 158 11); }
-  .matrixIcon--purple { background: rgb(250 245 255); color: rgb(147 51 234); }
+  .matrixIcon--blue { background: var(--color-brand-soft); color: var(--color-brand); }
+  .matrixIcon--amber { background: var(--color-warning-bg); color: var(--color-warning-text); }
+  .matrixIcon--purple { background: var(--color-info-bg); color: var(--color-info-text); }
   .matrixCardTitle {
     font-weight: 800;
     color: rgb(17 24 39);
@@ -700,7 +698,7 @@
 
   /* History Page */
   .historyPage {
-    @apply flex-1 bg-white m-2 md:m-4 mt-0 rounded-xl md:rounded-2xl shadow-sm border border-gray-100 flex flex-col;
+    @apply flex-1 bg-white m-2 md:m-4 mt-0 rounded-xl md:rounded-2xl shadow-none border border-gray-100 flex flex-col;
   }
   .historyHeader {
     @apply w-full max-w-[1200px] mx-auto;
@@ -724,13 +722,13 @@
     @apply inline-block w-2 h-2 rounded-full;
   }
   .statusDot--completed {
-    @apply bg-green-500;
+    @apply bg-[var(--color-success-icon)];
   }
   .statusDot--running {
     @apply bg-yellow-500;
   }
   .statusDot--failed {
-    @apply bg-red-500;
+    @apply bg-[var(--color-danger-icon)];
   }
   .statusDot--queued {
     @apply bg-gray-400;
@@ -739,7 +737,7 @@
   /* Review Workspace */
   .reviewWorkspace {
     /* Workspace uses its own top bar; no global TopBar when active, so keep normal margins on all sides */
-    @apply flex-1 flex flex-col h-full overflow-hidden bg-white m-2 md:m-4 rounded-xl md:rounded-2xl shadow-sm border border-gray-100;
+    @apply flex-1 flex flex-col h-full overflow-hidden bg-white m-2 md:m-4 rounded-xl md:rounded-2xl shadow-none border border-gray-100;
   }
   .workspaceTopBar {
     @apply h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 md:px-6 shrink-0 z-10;
@@ -763,13 +761,16 @@
     @apply bg-gray-50 text-gray-600 border-gray-200;
   }
   .workspacePill--running {
-    @apply bg-amber-50 text-amber-700 border-amber-200;
+    @apply bg-[var(--color-warning-bg)] border-[var(--color-warning-border)];
+    color: var(--color-warning-text);
   }
   .workspacePill--completed {
-    @apply bg-emerald-50 text-emerald-700 border-emerald-200;
+    @apply bg-[var(--color-success-bg)] border-[var(--color-success-border)];
+    color: var(--color-success-text);
   }
   .workspacePill--failed {
-    @apply bg-rose-50 text-rose-700 border-rose-200;
+    @apply bg-[var(--color-danger-bg)] border-[var(--color-danger-border)];
+    color: var(--color-danger-text);
   }
   .workspaceStep {
     @apply text-xs text-gray-400 truncate max-w-[520px];
@@ -778,7 +779,7 @@
     @apply inline-flex items-center justify-center gap-2 h-9 px-4 rounded-lg text-sm font-medium border transition-colors;
   }
   .exportBtn--primary {
-    @apply bg-[#00b365] text-white border-[#00b365] hover:bg-[#00a35a];
+    @apply bg-brand-500 text-white border-brand-500 hover:bg-brand-600;
   }
   .exportBtn--disabled {
     @apply bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed;
@@ -805,7 +806,7 @@
     @apply px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent cursor-pointer transition-colors whitespace-nowrap;
   }
   .riskTab--active {
-    @apply text-[#00b365] border-[#00b365];
+    @apply text-brand-600 border-brand-500;
   }
   .riskList {
     @apply flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 min-h-0;
@@ -820,7 +821,7 @@
     @apply text-xs leading-6 text-gray-500 max-w-[280px];
   }
   .riskCard {
-    @apply bg-white border border-gray-200 rounded-lg p-4 shadow-sm;
+    @apply bg-white border border-gray-200 rounded-lg p-4 shadow-none;
   }
   .riskCardTitle {
     @apply font-medium text-gray-900 mb-3 flex items-center gap-2;
@@ -841,12 +842,13 @@
     @apply px-3 py-1.5 text-xs font-medium rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer;
   }
   .btnSmall--primary {
-    @apply bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100;
+    @apply bg-[var(--color-success-bg)] border-[var(--color-success-border)] hover:bg-[var(--color-success-bg)];
+    color: var(--color-success-text);
   }
 
   /* AI rewrite (新版 AI 改写交互) */
   .aiRewriteBox {
-    @apply mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3;
+    @apply mt-2 rounded-lg border border-[var(--color-success-border)] bg-[var(--color-success-bg)] p-3;
   }
   .aiRewriteRow {
     @apply flex gap-3 py-1;
@@ -858,16 +860,19 @@
     @apply flex-1 text-sm text-gray-800 whitespace-pre-wrap break-words;
   }
   .diffDel {
-    @apply bg-red-100 text-red-700 line-through decoration-red-400 decoration-2 rounded px-1;
+    @apply bg-[var(--color-danger-bg)] line-through decoration-[var(--color-danger-icon)] decoration-2 rounded px-1;
+    color: var(--color-danger-text);
   }
   .diffIns {
-    @apply bg-emerald-100 text-emerald-700 rounded px-1;
+    @apply bg-[var(--color-success-bg)] rounded px-1;
+    color: var(--color-success-text);
   }
   .aiRewriteDetails {
     @apply mt-2;
   }
   .aiRewriteDetails summary {
-    @apply cursor-pointer text-xs text-emerald-700;
+    @apply cursor-pointer text-xs;
+    color: var(--color-success-text);
   }
   .aiRewriteFull {
     @apply mt-2 rounded-md bg-white border border-gray-100 p-2;
@@ -877,7 +882,7 @@
     @apply fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4;
   }
   .editorSheet {
-    @apply w-full max-w-2xl rounded-2xl bg-white shadow-xl border border-gray-100 overflow-hidden;
+    @apply w-full max-w-2xl rounded-2xl bg-white shadow-panel border border-gray-100 overflow-hidden;
   }
   .alertDialogSheet {
     @apply max-w-[520px];
@@ -904,13 +909,13 @@
     @apply px-6 pt-3 pb-0;
   }
   .alertDialogMessage {
-    @apply rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm leading-6 text-gray-700 whitespace-pre-wrap;
+    @apply rounded-xl border border-[var(--color-success-border)] bg-[var(--color-success-bg)] px-4 py-3 text-sm leading-6 text-gray-700 whitespace-pre-wrap;
   }
   .alertDialogFooter {
     @apply px-6 py-5 flex justify-end border-t border-gray-100 mt-5;
   }
   .alertDialogPrimary {
-    @apply inline-flex items-center justify-center min-w-28 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors;
+    @apply inline-flex items-center justify-center min-w-28 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors;
   }
   .editorField {
     @apply space-y-2;
@@ -922,7 +927,11 @@
     @apply rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 whitespace-pre-wrap;
   }
   .editorTextarea {
-    @apply w-full min-h-40 rounded-lg border border-gray-200 p-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300;
+    @apply w-full min-h-40 rounded-lg border border-gray-200 p-3 text-sm outline-none;
+  }
+  .editorTextarea:focus {
+    border-color: var(--color-success-border);
+    box-shadow: 0 0 0 2px var(--color-focus-ring);
   }
   .editorHelper {
     @apply text-xs text-gray-500;
@@ -935,7 +944,7 @@
     @apply px-3 py-1.5 text-xs font-medium rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors;
   }
   .btnPrimarySolid {
-    @apply px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors;
+    @apply px-3 py-1.5 text-xs font-medium rounded bg-brand-500 text-white hover:bg-brand-600 transition-colors;
   }
 
   /* Document Editor */
@@ -989,16 +998,16 @@
     @apply absolute mix-blend-multiply rounded-sm;
   }
   .changeHighlight--insert {
-    @apply bg-green-200/50 border-b-2 border-green-400;
+    @apply bg-[var(--color-success-bg)] border-b-2 border-[var(--color-success-border)];
   }
   .changeHighlight--delete {
-    @apply bg-red-200/50 line-through decoration-red-500 decoration-2;
+    @apply bg-[var(--color-danger-bg)] line-through decoration-[var(--color-danger-icon)] decoration-2;
   }
   .changeHighlight--replace {
-    @apply bg-blue-200/50 border-b-2 border-blue-400;
+    @apply bg-brand-50 border-b-2 border-brand-200;
   }
   .changeDeleteMarker {
-    @apply absolute w-1 h-full -left-2 bg-red-400;
+    @apply absolute w-1 h-full -left-2 bg-[var(--color-danger-icon)];
   }
   .commentLines {
     @apply absolute inset-0 w-full h-full pointer-events-none z-0;
@@ -1022,7 +1031,7 @@
     pointer-events: none;
   }
   .commentBalloon {
-    @apply absolute w-full bg-white border border-gray-200 rounded-lg shadow-sm p-3 text-sm z-10;
+    @apply absolute w-full bg-white border border-gray-200 rounded-lg shadow-none p-3 text-sm z-10;
     pointer-events: auto;
   }
   .commentBalloon--insert {
@@ -1047,9 +1056,10 @@
     @apply text-sm mt-1;
   }
   .commentDel {
-    @apply text-red-600 line-through;
+    @apply line-through;
+    color: var(--color-danger-text);
   }
   .commentIns {
-    @apply text-green-600;
+    color: var(--color-success-text);
   }
 }

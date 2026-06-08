@@ -1,4 +1,4 @@
-/* Contract review runtime page styles scoped to the migrated runtime */
+/* Contract review runtime styles copied from the pre-migration reviewed UI */
 .contractReviewRuntime {
 --bg: #f4f5f7;
   --panel: rgba(255, 255, 255, 0.78);
@@ -7,14 +7,13 @@
   --line-strong: rgba(15, 23, 42, 0.12);
   --text: #111827;
   --muted: #667085;
-  /* Align accents with MARKUP (Figma) green */
-  --accent: #00b365;
-  --accent-soft: rgba(0, 179, 101, 0.14);
-  --danger: #ef4444;
-  --warn: #f59e0b;
-  --info: #3b82f6;
-  --shadow-lg: 0 30px 60px rgba(15, 23, 42, 0.10);
-  --shadow-md: 0 14px 30px rgba(15, 23, 42, 0.08);
+  --accent: var(--color-brand);
+  --accent-soft: var(--color-brand-soft);
+  --danger: var(--color-danger-text);
+  --warn: var(--color-warning-text);
+  --info: var(--color-info-text);
+  --shadow-lg: none;
+  --shadow-md: none;
   --radius-xl: 28px;
   --radius-lg: 22px;
   --radius-md: 16px;
@@ -123,7 +122,7 @@ width: 42px;
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, #101828, #1d2939);
+  background: var(--color-brand);
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -184,8 +183,8 @@ justify-content: center;
 background: rgba(255,255,255,0.62);
 }
 .contractReviewRuntime .navItem--active {
-background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(250,250,252,0.84));
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), 0 10px 24px rgba(15,23,42,0.08);
+background: var(--color-brand-soft);
+  box-shadow: inset 0 0 0 1px var(--color-brand-border);
 }
 .contractReviewRuntime .navIconWrap {
 width: 40px;
@@ -198,8 +197,8 @@ width: 40px;
   flex: 0 0 auto;
 }
 .contractReviewRuntime .navItem--active .navIconWrap {
-background: linear-gradient(180deg, rgba(37,99,235,0.16), rgba(37,99,235,0.08));
-  color: #1d4ed8;
+background: var(--color-brand-soft);
+  color: var(--color-brand);
 }
 .contractReviewRuntime .navTextWrap {
 min-width: 0;
@@ -332,9 +331,9 @@ margin-top: 22px;
 min-height: 360px;
   border-radius: 30px;
   padding: 34px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(249,250,252,0.82));
-  border: 1px dashed rgba(37,99,235,0.22);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.72), 0 18px 40px rgba(15,23,42,0.06);
+  background: var(--color-surface);
+  border: 1px dashed var(--color-brand-border);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -345,8 +344,8 @@ min-height: 360px;
 }
 .contractReviewRuntime .uploadDropzone:hover, .contractReviewRuntime .uploadDropzone--active {
 transform: translateY(-1px);
-  border-color: rgba(37,99,235,0.42);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), 0 22px 46px rgba(37,99,235,0.10);
+  border-color: var(--color-brand-border);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), 0 22px 46px var(--color-focus-ring);
 }
 .contractReviewRuntime .dropzoneIcon {
 width: 72px;
@@ -354,8 +353,8 @@ width: 72px;
   border-radius: 24px;
   display: grid;
   place-items: center;
-  color: #1d4ed8;
-  background: linear-gradient(180deg, rgba(37,99,235,0.16), rgba(37,99,235,0.08));
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
 }
 .contractReviewRuntime .dropzoneTitle {
 margin-top: 22px;
@@ -462,7 +461,7 @@ display: flex;
 }
 .contractReviewRuntime .checkMark {
 font-weight: 700;
-  color: #1d4ed8;
+  color: var(--color-brand);
 }
 .contractReviewRuntime .recentRunList {
 margin-top: 16px;
@@ -570,14 +569,14 @@ transform: translateY(-1px);
 opacity: 0.55; cursor: not-allowed; transform: none;
 }
 .contractReviewRuntime .btnPrimary {
-  background: linear-gradient(180deg, rgba(0,179,101,0.98), rgba(0,163,90,0.98));
+  background: var(--color-brand);
   color: #ffffff;
-  box-shadow: 0 10px 22px rgba(0, 179, 101, 0.18);
+  box-shadow: none;
 }
 .contractReviewRuntime .btnDark {
-background: linear-gradient(180deg, #111827, #1f2937);
+background: var(--color-text-primary);
   color: #fff;
-  box-shadow: 0 10px 20px rgba(17,24,39,0.18);
+  box-shadow: none;
 }
 .contractReviewRuntime .btnSoft {
 background: rgba(255,255,255,0.94);
@@ -596,18 +595,18 @@ display: inline-flex;
   font-weight: 600;
 }
 .contractReviewRuntime .statusPill--completed {
-background: rgba(34, 197, 94, 0.14); color: #166534;
+background: var(--color-success-bg); color: var(--color-success-text);
 }
 .contractReviewRuntime .statusPill--running {
-  background: rgba(245, 158, 11, 0.14);
-  color: #92400e;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
 }
 .contractReviewRuntime .statusPill--queued {
   background: rgba(148, 163, 184, 0.18);
   color: #475569;
 }
 .contractReviewRuntime .statusPill--failed {
-background: rgba(239, 68, 68, 0.14); color: #b42318;
+background: var(--color-danger-bg); color: var(--color-danger-text);
 }
 .contractReviewRuntime .topBar {
   margin: 0;
@@ -655,8 +654,8 @@ display: flex;
 width: 12px;
   height: 12px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #6ee7b7, #00b365);
-  box-shadow: 0 0 0 6px rgba(0,179,101,0.10);
+  background: var(--color-brand);
+  box-shadow: none;
   flex: 0 0 auto;
 }
 .contractReviewRuntime .brandText {
@@ -760,8 +759,8 @@ padding: 10px 14px;
 }
 .contractReviewRuntime .mainGridDivider:hover .mainGridDividerHandle,
 .contractReviewRuntime .mainGridDivider--dragging .mainGridDividerHandle {
-  background: rgba(37,99,235,0.92);
-  box-shadow: 0 0 0 5px rgba(37,99,235,0.12);
+  background: var(--color-brand);
+  box-shadow: none;
   transform: scaleY(1.05);
 }
 
@@ -800,19 +799,19 @@ font-weight: 700; font-size: 15px;
   align-items: center;
 }
 .contractReviewRuntime .riskHeaderStat--high {
-  border-color: rgba(239,68,68,0.22);
-  background: rgba(239,68,68,0.08);
-  color: #b42318;
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
 }
 .contractReviewRuntime .riskHeaderStat--medium {
-  border-color: rgba(245,158,11,0.22);
-  background: rgba(245,158,11,0.10);
-  color: #b54708;
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
 }
 .contractReviewRuntime .riskHeaderStat--low {
-  border-color: rgba(59,130,246,0.22);
-  background: rgba(59,130,246,0.08);
-  color: #175cd3;
+  border-color: var(--color-info-border);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
 }
 .contractReviewRuntime .paneHint {
 display: none;
@@ -972,7 +971,7 @@ width: auto;
   border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, 0.16);
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--shadow-float);
   padding: 18px 24px 16px;
   color: #111827;
 }
@@ -1002,7 +1001,7 @@ display: inline-block;
   min-width: 0.62ch;
   text-align: center;
   opacity: 0.22;
-  animation: contractReviewDocInteractionMaskEllipsisRoll 0.84s ease-in-out infinite;
+  animation: legacyDocInteractionMaskEllipsisRoll 0.84s ease-in-out infinite;
 }
 .contractReviewRuntime .docInteractionMaskProgress {
 display: inline-flex;
@@ -1026,7 +1025,7 @@ width: 10px;
 border-color: #111827;
   background: #111827;
 }
-@keyframes contractReviewDocInteractionMaskEllipsisRoll {
+@keyframes legacyDocInteractionMaskEllipsisRoll {
   0%, 100% {
     opacity: 0.22;
     transform: translateY(0);
@@ -1084,26 +1083,26 @@ position: absolute;
   box-shadow: inset 0 -1px 0 rgba(255,255,255,0.65);
 }
 .contractReviewRuntime .changeHighlight--insert {
-background: rgba(34, 197, 94, 0.24);
-  outline: 1px solid rgba(34, 197, 94, 0.45);
+background: var(--color-success-bg);
+  outline: 1px solid var(--color-success-border);
 }
 .contractReviewRuntime .changeHighlight--replace {
-background: rgba(59, 130, 246, 0.20);
-  outline: 1px solid rgba(59, 130, 246, 0.40);
+background: var(--color-brand-soft);
+  outline: 1px solid var(--color-brand-border);
 }
 .contractReviewRuntime .changeHighlight--delete {
-background: rgba(239, 68, 68, 0.14);
-  outline: 1px solid rgba(239, 68, 68, 0.28);
+background: var(--color-danger-bg);
+  outline: 1px solid var(--color-danger-border);
 }
 .contractReviewRuntime .changeDeleteMarker {
 position: absolute;
   width: 2px;
   border-radius: 999px;
-  background: rgba(239, 68, 68, 0.95);
+  background: var(--color-danger-icon);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.7);
 }
 .contractReviewRuntime .changeDeleteMarker--replace {
-background: rgba(245, 158, 11, 0.95);
+background: var(--color-warning-text);
 }
 .contractReviewRuntime .docx-wrapper {
 background: transparent !important;
@@ -1115,7 +1114,7 @@ background: transparent !important;
 .contractReviewRuntime .docx > section {
   /* Render a single "paper" surface (no double-white background). */
   background: #fff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10);
+  box-shadow: var(--shadow-float);
   outline: 1px solid #eceff3;
 }
 .contractReviewRuntime .editableBlock {
@@ -1134,19 +1133,19 @@ content: '';
   bottom: 4px;
   width: 3px;
   border-radius: 999px;
-  background: rgba(59,130,246,0.85);
+  background: var(--color-brand);
 }
 .contractReviewRuntime .riskBlock {
 background: rgba(250, 204, 21, 0.24);
   border-radius: 3px;
 }
 .contractReviewRuntime .focusPulse {
-animation: contractReviewPulse 1.6s ease-in-out 3;
+animation: legacyPulse 1.6s ease-in-out 3;
 }
-@keyframes contractReviewPulse {
-  0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.00); background: rgba(59,130,246,0.00); }
-  25% { box-shadow: 0 0 0 9px rgba(59,130,246,0.16); background: rgba(59,130,246,0.10); }
-  100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.00); background: rgba(59,130,246,0.00); }
+@keyframes legacyPulse {
+  0% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+  25% { box-shadow: 0 0 0 9px var(--color-focus-ring); background: var(--color-brand-soft); }
+  100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
 }
 .contractReviewRuntime .commentLines {
 position: absolute;
@@ -1205,10 +1204,10 @@ width: var(--commentW);
   position: absolute;
   left: 0;
   right: auto;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--shadow-float);
 }
 .contractReviewRuntime .commentBalloon:hover {
-box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
+	box-shadow: var(--shadow-float);
 }
 .contractReviewRuntime .commentBalloonHead {
 display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
@@ -1218,8 +1217,8 @@ font-size: 12px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(239,68,68,0.22);
-  background: rgba(239,68,68,0.06);
+  border: 1px solid var(--color-danger-border);
+  background: var(--color-danger-bg);
   color: var(--danger);
 }
 .contractReviewRuntime .commentTime {
@@ -1232,16 +1231,16 @@ margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--text);
 text-decoration: line-through; color: rgba(31,35,40,0.80);
 }
 .contractReviewRuntime .commentIns {
-color: #16a34a;
+color: var(--color-success-text);
 }
 .contractReviewRuntime .commentBalloon--delete .commentTag {
-border-color: rgba(239,68,68,0.24); background: rgba(239,68,68,0.08); color: var(--danger);
+	border-color: var(--color-danger-border); background: var(--color-danger-bg); color: var(--danger);
 }
 .contractReviewRuntime .commentBalloon--insert .commentTag {
-border-color: rgba(34,197,94,0.24); background: rgba(34,197,94,0.08); color: #15803d;
+	border-color: var(--color-success-border); background: var(--color-success-bg); color: var(--color-success-text);
 }
 .contractReviewRuntime .commentBalloon--replace .commentTag {
-border-color: rgba(245,158,11,0.24); background: rgba(245,158,11,0.08); color: #d97706;
+	border-color: var(--color-warning-border); background: var(--color-warning-bg); color: var(--color-warning-text);
 }
 .contractReviewRuntime .emptyState {
 padding: 16px;
@@ -1366,13 +1365,13 @@ font-size: 12px;
   background: #fafafa;
 }
 .contractReviewRuntime .riskBadge--high {
-border-color: rgba(239,68,68,0.22); background: rgba(239,68,68,0.08); color: var(--danger);
+border-color: var(--color-danger-border); background: var(--color-danger-bg); color: var(--danger);
 }
 .contractReviewRuntime .riskBadge--medium {
-border-color: rgba(245,158,11,0.22); background: rgba(245,158,11,0.08); color: #d97706;
+border-color: var(--color-warning-border); background: var(--color-warning-bg); color: var(--color-warning-text);
 }
 .contractReviewRuntime .riskBadge--low {
-border-color: rgba(59,130,246,0.22); background: rgba(59,130,246,0.08); color: #2563eb;
+border-color: var(--color-info-border); background: var(--color-info-bg); color: var(--color-info-text);
 }
 .contractReviewRuntime .riskLabel {
 font-size: 13px; font-weight: 700; line-height: 1.35;
@@ -1391,8 +1390,8 @@ height: 30px;
 background: #f8fafc;
 }
 .contractReviewRuntime .btnSmall--primary {
-  border-color: rgba(0,179,101,0.28);
-  background: rgba(0,179,101,0.10);
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg);
   color: #065f46;
   font-weight: 600;
 }
@@ -1446,7 +1445,7 @@ display: flex; flex-direction: column;
 width: 44px; height: 44px;
 }
 .contractReviewRuntime .sideNav--collapsed .navItem--active {
-box-shadow: inset 0 0 0 1px rgba(37,99,235,0.16), 0 10px 24px rgba(15,23,42,0.08);
+box-shadow: none;
 }
 .contractReviewRuntime .statusTextPill:empty {
 display: none;
@@ -1501,8 +1500,8 @@ display: none;
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  border: 1px solid rgba(0,179,101,0.20);
-  background: rgba(0,179,101,0.10);
+  border: 1px solid var(--color-success-border);
+  background: var(--color-success-bg);
   color: #065f46;
   font-size: 11px;
   font-weight: 600;
@@ -1596,85 +1595,4 @@ display: none;
 @keyframes reviewProgressSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-.contractReviewRuntime .editorOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.contractReviewRuntime .editorSheet {
-  width: 100%;
-  max-width: 672px;
-  overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 16px;
-  background: var(--panel-strong);
-  box-shadow: var(--shadow-lg);
-}
-
-.contractReviewRuntime .alertDialogSheet {
-  max-width: 520px;
-}
-
-.contractReviewRuntime .alertDialogHeader {
-  padding: 24px 24px 0;
-}
-
-.contractReviewRuntime .alertDialogTitle {
-  color: var(--text);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 28px;
-}
-
-.contractReviewRuntime .alertDialogBody {
-  padding: 12px 24px 0;
-}
-
-.contractReviewRuntime .alertDialogMessage {
-  min-height: 48px;
-  padding: 12px 16px;
-  border: 1px solid rgba(0, 179, 101, 0.18);
-  border-radius: 12px;
-  background: rgba(0, 179, 101, 0.08);
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 24px;
-  white-space: pre-wrap;
-}
-
-.contractReviewRuntime .alertDialogFooter {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 20px;
-  padding: 20px 24px;
-  border-top: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.contractReviewRuntime .alertDialogPrimary {
-  display: inline-flex;
-  min-width: 112px;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 16px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--accent);
-  color: #ffffff;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  transition: background-color 160ms ease;
-}
-
-.contractReviewRuntime .alertDialogPrimary:hover {
-  background: #009f5a;
 }
