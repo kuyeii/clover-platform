@@ -1,5 +1,5 @@
-/* Legacy review page styles (scoped). Generated from original styles.css */
-.legacyReview {
+/* Contract review runtime page styles scoped to the migrated runtime */
+.contractReviewRuntime {
 --bg: #f4f5f7;
   --panel: rgba(255, 255, 255, 0.78);
   --panel-strong: rgba(255, 255, 255, 0.9);
@@ -7,13 +7,14 @@
   --line-strong: rgba(15, 23, 42, 0.12);
   --text: #111827;
   --muted: #667085;
-  --accent: var(--color-brand);
-  --accent-soft: var(--color-brand-soft);
-  --danger: var(--color-danger-text);
-  --warn: var(--color-warning-text);
-  --info: var(--color-info-text);
-  --shadow-lg: none;
-  --shadow-md: none;
+  /* Align accents with MARKUP (Figma) green */
+  --accent: #00b365;
+  --accent-soft: rgba(0, 179, 101, 0.14);
+  --danger: #ef4444;
+  --warn: #f59e0b;
+  --info: #3b82f6;
+  --shadow-lg: 0 30px 60px rgba(15, 23, 42, 0.10);
+  --shadow-md: 0 14px 30px rgba(15, 23, 42, 0.08);
   --radius-xl: 28px;
   --radius-lg: 22px;
   --radius-md: 16px;
@@ -29,23 +30,23 @@ font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe
   min-height: 100vh;
   overflow: hidden;
 }
-.legacyReview * { box-sizing: border-box; }
-.legacyReview button, .legacyReview input { font: inherit; }
-.legacyReview .hiddenInput {
+.contractReviewRuntime * { box-sizing: border-box; }
+.contractReviewRuntime button, .contractReviewRuntime input { font: inherit; }
+.contractReviewRuntime .hiddenInput {
 display: none;
 }
-.legacyReview .glassPane {
+.contractReviewRuntime .glassPane {
   background: #ffffff;
   border: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-.legacyReview .glassInset {
+.contractReviewRuntime .glassInset {
 background: rgba(255,255,255,0.72);
   border: 1px solid rgba(255,255,255,0.76);
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
 }
-.legacyReview .appShell {
+.contractReviewRuntime .appShell {
   height: 100vh;
   min-height: 100vh;
   display: grid;
@@ -55,16 +56,16 @@ background: rgba(255,255,255,0.72);
 }
 
 /* Review-only layout (no left sidebar) */
-.legacyReview .reviewOnlyShell {
+.contractReviewRuntime .reviewOnlyShell {
   height: 100vh;
   min-height: 100vh;
   padding: 0;
 }
-.legacyReview .reviewOnlyShell .contentShell {
+.contractReviewRuntime .reviewOnlyShell .contentShell {
   height: 100vh;
   overflow: hidden;
 }
-.legacyReview .reviewOnlyShell .reviewWorkspace {
+.contractReviewRuntime .reviewOnlyShell .reviewWorkspace {
   /* Override modern .reviewWorkspace card styles to avoid nested rounded surfaces */
   height: 100%;
   min-height: 0;
@@ -76,13 +77,13 @@ background: rgba(255,255,255,0.72);
   display: flex;
   flex-direction: column;
 }
-.legacyReview .appShell--sidebarExpanded {
+.contractReviewRuntime .appShell--sidebarExpanded {
 grid-template-columns: 248px minmax(0, 1fr);
 }
-.legacyReview .appShell--sidebarCollapsed {
+.contractReviewRuntime .appShell--sidebarCollapsed {
 grid-template-columns: 88px minmax(0, 1fr);
 }
-.legacyReview .sideNav {
+.contractReviewRuntime .sideNav {
 min-height: 0;
   border-radius: 28px;
   padding: 18px 14px;
@@ -96,52 +97,52 @@ min-height: 0;
   gap: 18px;
   transition: padding 180ms ease;
 }
-.legacyReview .sideNav--collapsed {
+.contractReviewRuntime .sideNav--collapsed {
 align-items: center;
   padding-inline: 10px;
 }
-.legacyReview .sideNavTop {
+.contractReviewRuntime .sideNavTop {
 display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
-.legacyReview .sideNav--collapsed .sideNavTop {
+.contractReviewRuntime .sideNav--collapsed .sideNavTop {
 width: 100%;
   flex-direction: column;
 }
-.legacyReview .brandPanel {
+.contractReviewRuntime .brandPanel {
 display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
-.legacyReview .brandBadge {
+.contractReviewRuntime .brandBadge {
 width: 42px;
   height: 42px;
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: var(--color-brand);
+  background: linear-gradient(180deg, #101828, #1d2939);
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.03em;
   flex: 0 0 auto;
 }
-.legacyReview .brandMeta {
+.contractReviewRuntime .brandMeta {
 min-width: 0;
 }
-.legacyReview .brandTitle {
+.contractReviewRuntime .brandTitle {
 font-weight: 700;
   font-size: 15px;
   line-height: 1.2;
 }
-.legacyReview .brandSubtitle {
+.contractReviewRuntime .brandSubtitle {
 margin-top: 4px;
   font-size: 12px;
   color: var(--muted);
 }
-.legacyReview .sideToggleBtn {
+.contractReviewRuntime .sideToggleBtn {
 width: 36px;
   height: 36px;
   border-radius: 12px;
@@ -155,13 +156,13 @@ width: 36px;
   cursor: pointer;
   flex: 0 0 auto;
 }
-.legacyReview .navList {
+.contractReviewRuntime .navList {
 width: 100%;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.legacyReview .navItem {
+.contractReviewRuntime .navItem {
 display: flex;
   align-items: center;
   gap: 12px;
@@ -175,18 +176,18 @@ display: flex;
   color: var(--text);
   text-align: left;
 }
-.legacyReview .sideNav--collapsed .navItem {
+.contractReviewRuntime .sideNav--collapsed .navItem {
 justify-content: center;
   padding: 8px;
 }
-.legacyReview .navItem:hover {
+.contractReviewRuntime .navItem:hover {
 background: rgba(255,255,255,0.62);
 }
-.legacyReview .navItem--active {
-background: var(--color-brand-soft);
-  box-shadow: inset 0 0 0 1px var(--color-brand-border);
+.contractReviewRuntime .navItem--active {
+background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(250,250,252,0.84));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), 0 10px 24px rgba(15,23,42,0.08);
 }
-.legacyReview .navIconWrap {
+.contractReviewRuntime .navIconWrap {
 width: 40px;
   height: 40px;
   border-radius: 14px;
@@ -196,25 +197,25 @@ width: 40px;
   color: #111827;
   flex: 0 0 auto;
 }
-.legacyReview .navItem--active .navIconWrap {
-background: var(--color-brand-soft);
-  color: var(--color-brand);
+.contractReviewRuntime .navItem--active .navIconWrap {
+background: linear-gradient(180deg, rgba(37,99,235,0.16), rgba(37,99,235,0.08));
+  color: #1d4ed8;
 }
-.legacyReview .navTextWrap {
+.contractReviewRuntime .navTextWrap {
 min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.legacyReview .navLabel {
+.contractReviewRuntime .navLabel {
 font-weight: 650; font-size: 14px;
 }
-.legacyReview .navDesc {
+.contractReviewRuntime .navDesc {
 font-size: 12px;
   color: var(--muted);
   line-height: 1.35;
 }
-.legacyReview .sideNavFooter {
+.contractReviewRuntime .sideNavFooter {
 margin-top: auto;
   width: 100%;
   display: flex;
@@ -224,11 +225,11 @@ margin-top: auto;
   border-radius: 20px;
   background: rgba(255,255,255,0.62);
 }
-.legacyReview .sideNav--collapsed .sideNavFooter {
+.contractReviewRuntime .sideNav--collapsed .sideNavFooter {
 justify-content: center;
   padding: 8px;
 }
-.legacyReview .sideFooterBadge {
+.contractReviewRuntime .sideFooterBadge {
 min-width: 40px;
   height: 40px;
   padding: 0 10px;
@@ -242,24 +243,24 @@ min-width: 40px;
   font-size: 12px;
   font-weight: 700;
 }
-.legacyReview .sideFooterMeta {
+.contractReviewRuntime .sideFooterMeta {
 min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.legacyReview .sideFooterLabel {
+.contractReviewRuntime .sideFooterLabel {
 font-size: 12px;
   color: var(--muted);
 }
-.legacyReview .sideFooterValue {
+.contractReviewRuntime .sideFooterValue {
 font-size: 13px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.legacyReview .contentShell {
+.contractReviewRuntime .contentShell {
   min-width: 0;
   min-height: 0;
   border-radius: 0;
@@ -268,72 +269,72 @@ font-size: 13px;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
-.legacyReview .dashboardPage, .legacyReview .historyPage, .legacyReview .reviewWorkspace {
+.contractReviewRuntime .dashboardPage, .contractReviewRuntime .historyPage, .contractReviewRuntime .reviewWorkspace {
   height: 100vh;
   min-height: 100vh;
   min-height: 0;
 }
-.legacyReview .dashboardPage, .legacyReview .historyPage {
+.contractReviewRuntime .dashboardPage, .contractReviewRuntime .historyPage {
 overflow: auto;
   padding: 28px;
 }
-.legacyReview .eyebrow {
+.contractReviewRuntime .eyebrow {
 font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #98a2b3;
 }
-.legacyReview .sectionTitle {
+.contractReviewRuntime .sectionTitle {
 margin: 12px 0 0;
   font-size: 38px;
   line-height: 1.12;
   letter-spacing: -0.05em;
 }
-.legacyReview .sectionTitle--compact {
+.contractReviewRuntime .sectionTitle--compact {
 max-width: 760px;
 }
-.legacyReview .cardTitle {
+.contractReviewRuntime .cardTitle {
 font-size: 18px;
   font-weight: 650;
 }
-.legacyReview .cardHint, .legacyReview .latestMetaSub, .legacyReview .historyRun, .legacyReview .metricLabel, .legacyReview .historyMetaLabel {
+.contractReviewRuntime .cardHint, .contractReviewRuntime .latestMetaSub, .contractReviewRuntime .historyRun, .contractReviewRuntime .metricLabel, .contractReviewRuntime .historyMetaLabel {
 font-size: 12px;
   color: var(--muted);
 }
-.legacyReview .metricValue {
+.contractReviewRuntime .metricValue {
 margin-top: 8px;
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.04em;
 }
-.legacyReview .sectionTopBar {
+.contractReviewRuntime .sectionTopBar {
 display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
-.legacyReview .sectionTopBar--tight {
+.contractReviewRuntime .sectionTopBar--tight {
 align-items: center;
   margin-bottom: 18px;
 }
-.legacyReview .workspaceHero, .legacyReview .historyHero, .legacyReview .historyCollection {
+.contractReviewRuntime .workspaceHero, .contractReviewRuntime .historyHero, .contractReviewRuntime .historyCollection {
 border-radius: var(--radius-xl);
   padding: 28px;
 }
-.legacyReview .uploadLayout {
+.contractReviewRuntime .uploadLayout {
 margin-top: 22px;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
   gap: 18px;
 }
-.legacyReview .uploadDropzone {
+.contractReviewRuntime .uploadDropzone {
 min-height: 360px;
   border-radius: 30px;
   padding: 34px;
-  background: var(--color-surface);
-  border: 1px dashed var(--color-brand-border);
-  box-shadow: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(249,250,252,0.82));
+  border: 1px dashed rgba(37,99,235,0.22);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.72), 0 18px 40px rgba(15,23,42,0.06);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -342,34 +343,34 @@ min-height: 360px;
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
-.legacyReview .uploadDropzone:hover, .legacyReview .uploadDropzone--active {
+.contractReviewRuntime .uploadDropzone:hover, .contractReviewRuntime .uploadDropzone--active {
 transform: translateY(-1px);
-  border-color: var(--color-brand-border);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), 0 22px 46px var(--color-focus-ring);
+  border-color: rgba(37,99,235,0.42);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), 0 22px 46px rgba(37,99,235,0.10);
 }
-.legacyReview .dropzoneIcon {
+.contractReviewRuntime .dropzoneIcon {
 width: 72px;
   height: 72px;
   border-radius: 24px;
   display: grid;
   place-items: center;
-  color: var(--color-brand);
-  background: var(--color-brand-soft);
+  color: #1d4ed8;
+  background: linear-gradient(180deg, rgba(37,99,235,0.16), rgba(37,99,235,0.08));
 }
-.legacyReview .dropzoneTitle {
+.contractReviewRuntime .dropzoneTitle {
 margin-top: 22px;
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.04em;
 }
-.legacyReview .dropzoneHint {
+.contractReviewRuntime .dropzoneHint {
 margin-top: 10px;
   max-width: 520px;
   font-size: 14px;
   line-height: 1.7;
   color: var(--muted);
 }
-.legacyReview .dropzoneFilePill {
+.contractReviewRuntime .dropzoneFilePill {
 margin-top: 20px;
   max-width: 100%;
   padding: 12px 18px;
@@ -382,93 +383,93 @@ margin-top: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.legacyReview .dropzoneActions {
+.contractReviewRuntime .dropzoneActions {
 margin-top: 26px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
 }
-.legacyReview .workspaceAside {
+.contractReviewRuntime .workspaceAside {
 display: flex;
   flex-direction: column;
   gap: 18px;
 }
-.legacyReview .dashboardStatsGrid, .legacyReview .historySummaryGrid {
+.contractReviewRuntime .dashboardStatsGrid, .contractReviewRuntime .historySummaryGrid {
 display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
-.legacyReview .metricCard {
+.contractReviewRuntime .metricCard {
 padding: 18px 18px 20px;
   border-radius: 24px;
 }
-.legacyReview .latestReviewCard, .legacyReview .historyFeatured, .legacyReview .dashboardCard, .legacyReview .emptyHistory {
+.contractReviewRuntime .latestReviewCard, .contractReviewRuntime .historyFeatured, .contractReviewRuntime .dashboardCard, .contractReviewRuntime .emptyHistory {
 padding: 22px;
   border-radius: 26px;
 }
-.legacyReview .latestReviewHeader, .legacyReview .cardHeader {
+.contractReviewRuntime .latestReviewHeader, .contractReviewRuntime .cardHeader {
 display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
-.legacyReview .cardHeader--stack {
+.contractReviewRuntime .cardHeader--stack {
 align-items: flex-start;
 }
-.legacyReview .latestReviewName, .legacyReview .historyFeaturedName {
+.contractReviewRuntime .latestReviewName, .contractReviewRuntime .historyFeaturedName {
 margin-top: 16px;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.04em;
 }
-.legacyReview .latestReviewActions, .legacyReview .historyFeaturedActions {
+.contractReviewRuntime .latestReviewActions, .contractReviewRuntime .historyFeaturedActions {
 margin-top: 18px;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-.legacyReview .historyFeatured {
+.contractReviewRuntime .historyFeatured {
 margin-top: 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
 }
-.legacyReview .historyFeaturedLabel {
+.contractReviewRuntime .historyFeaturedLabel {
 font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
-.legacyReview .workspaceSecondaryGrid {
+.contractReviewRuntime .workspaceSecondaryGrid {
 margin-top: 18px;
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   gap: 18px;
 }
-.legacyReview .checkList {
+.contractReviewRuntime .checkList {
 margin-top: 18px;
   display: grid;
   gap: 14px;
 }
-.legacyReview .checkItem {
+.contractReviewRuntime .checkItem {
 display: flex;
   gap: 10px;
   line-height: 1.7;
   color: #475467;
 }
-.legacyReview .checkMark {
+.contractReviewRuntime .checkMark {
 font-weight: 700;
-  color: var(--color-brand);
+  color: #1d4ed8;
 }
-.legacyReview .recentRunList {
+.contractReviewRuntime .recentRunList {
 margin-top: 16px;
   display: grid;
   gap: 12px;
 }
-.legacyReview .recentRunItem {
+.contractReviewRuntime .recentRunItem {
 width: 100%;
   padding: 14px 16px;
   border: 0;
@@ -482,65 +483,65 @@ width: 100%;
   cursor: pointer;
   text-align: left;
 }
-.legacyReview .recentRunText {
+.contractReviewRuntime .recentRunText {
 min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.legacyReview .recentRunName {
+.contractReviewRuntime .recentRunName {
 font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.legacyReview .recentRunMeta {
+.contractReviewRuntime .recentRunMeta {
 font-size: 12px;
   color: var(--muted);
 }
-.legacyReview .historyCollection {
+.contractReviewRuntime .historyCollection {
 margin-top: 18px;
 }
-.legacyReview .historyRows {
+.contractReviewRuntime .historyRows {
 display: grid;
   gap: 14px;
 }
-.legacyReview .historyRow {
+.contractReviewRuntime .historyRow {
 display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 20px;
   align-items: center;
 }
-.legacyReview .historyRowTitle {
+.contractReviewRuntime .historyRowTitle {
 font-size: 20px;
   font-weight: 650;
   letter-spacing: -0.03em;
 }
-.legacyReview .historyRowSummary {
+.contractReviewRuntime .historyRowSummary {
 margin-top: 10px;
   color: #475467;
   line-height: 1.7;
 }
-.legacyReview .historyRowMeta {
+.contractReviewRuntime .historyRowMeta {
 display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.legacyReview .historyMetaBlock {
+.contractReviewRuntime .historyMetaBlock {
 min-width: 180px;
 }
-.legacyReview .historyMetaValue {
+.contractReviewRuntime .historyMetaValue {
 margin-top: 6px;
   line-height: 1.6;
 }
-.legacyReview .emptyCardState {
+.contractReviewRuntime .emptyCardState {
 margin-top: 16px;
   color: var(--muted);
   line-height: 1.7;
 }
-.legacyReview .btn {
+.contractReviewRuntime .btn {
 height: 40px;
   padding: 0 16px;
   white-space: nowrap;
@@ -557,31 +558,31 @@ height: 40px;
   gap: 6px;
   text-decoration: none;
 }
-.legacyReview .btnIcon {
+.contractReviewRuntime .btnIcon {
   width: 40px;
   padding: 0;
   justify-content: center;
 }
-.legacyReview .btn:hover {
+.contractReviewRuntime .btn:hover {
 transform: translateY(-1px);
 }
-.legacyReview .btn:disabled {
+.contractReviewRuntime .btn:disabled {
 opacity: 0.55; cursor: not-allowed; transform: none;
 }
-.legacyReview .btnPrimary {
-  background: var(--color-brand);
+.contractReviewRuntime .btnPrimary {
+  background: linear-gradient(180deg, rgba(0,179,101,0.98), rgba(0,163,90,0.98));
   color: #ffffff;
-  box-shadow: none;
+  box-shadow: 0 10px 22px rgba(0, 179, 101, 0.18);
 }
-.legacyReview .btnDark {
-background: var(--color-text-primary);
+.contractReviewRuntime .btnDark {
+background: linear-gradient(180deg, #111827, #1f2937);
   color: #fff;
-  box-shadow: none;
+  box-shadow: 0 10px 20px rgba(17,24,39,0.18);
 }
-.legacyReview .btnSoft {
+.contractReviewRuntime .btnSoft {
 background: rgba(255,255,255,0.94);
 }
-.legacyReview .statusChip, .legacyReview .statusPill, .legacyReview .summaryPill {
+.contractReviewRuntime .statusChip, .contractReviewRuntime .statusPill, .contractReviewRuntime .summaryPill {
 display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -594,21 +595,21 @@ display: inline-flex;
   font-size: 12px;
   font-weight: 600;
 }
-.legacyReview .statusPill--completed {
-background: var(--color-success-bg); color: var(--color-success-text);
+.contractReviewRuntime .statusPill--completed {
+background: rgba(34, 197, 94, 0.14); color: #166534;
 }
-.legacyReview .statusPill--running {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
+.contractReviewRuntime .statusPill--running {
+  background: rgba(245, 158, 11, 0.14);
+  color: #92400e;
 }
-.legacyReview .statusPill--queued {
+.contractReviewRuntime .statusPill--queued {
   background: rgba(148, 163, 184, 0.18);
   color: #475569;
 }
-.legacyReview .statusPill--failed {
-background: var(--color-danger-bg); color: var(--color-danger-text);
+.contractReviewRuntime .statusPill--failed {
+background: rgba(239, 68, 68, 0.14); color: #b42318;
 }
-.legacyReview .topBar {
+.contractReviewRuntime .topBar {
   margin: 0;
   min-height: 72px;
   border-radius: 0;
@@ -621,49 +622,49 @@ background: var(--color-danger-bg); color: var(--color-danger-text);
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
-.legacyReview .topBarLead, .legacyReview .topBarActions, .legacyReview .topBarMeta {
+.contractReviewRuntime .topBarLead, .contractReviewRuntime .topBarActions, .contractReviewRuntime .topBarMeta {
 display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
   flex-wrap: nowrap;
 }
-.legacyReview .topBarRight {
+.contractReviewRuntime .topBarRight {
   justify-self: end;
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
 }
-.legacyReview .topBarLead {
+.contractReviewRuntime .topBarLead {
 min-width: 0;
 }
-.legacyReview .topBarActions {
+.contractReviewRuntime .topBarActions {
   gap: 10px;
 }
-.legacyReview .topBarMeta {
+.contractReviewRuntime .topBarMeta {
   gap: 8px;
 }
-.legacyReview .brand {
+.contractReviewRuntime .brand {
 display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
 }
-.legacyReview .brandDot {
+.contractReviewRuntime .brandDot {
 width: 12px;
   height: 12px;
   border-radius: 999px;
-  background: var(--color-brand);
-  box-shadow: none;
+  background: linear-gradient(180deg, #6ee7b7, #00b365);
+  box-shadow: 0 0 0 6px rgba(0,179,101,0.10);
   flex: 0 0 auto;
 }
-.legacyReview .brandText {
+.contractReviewRuntime .brandText {
 font-weight: 700;
   font-size: 14px;
   white-space: nowrap;
 }
-.legacyReview .topBarSubtext {
+.contractReviewRuntime .topBarSubtext {
   margin-top: 2px;
   font-size: 11px;
   color: #667085;
@@ -672,7 +673,7 @@ font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.legacyReview .filePill {
+.contractReviewRuntime .filePill {
 min-width: 0;
   max-width: 360px;
   overflow: hidden;
@@ -685,12 +686,12 @@ min-width: 0;
   font-size: 12px;
   color: var(--muted);
 }
-.legacyReview .statusId, .legacyReview .statusText {
+.contractReviewRuntime .statusId, .contractReviewRuntime .statusText {
 font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
-.legacyReview .statusId {
+.contractReviewRuntime .statusId {
 max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -699,14 +700,14 @@ max-width: 280px;
   background: rgba(255,255,255,0.82);
   box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06);
 }
-.legacyReview .statusTextPill {
+.contractReviewRuntime .statusTextPill {
 padding: 10px 14px;
   border-radius: 999px;
   background: rgba(15,23,42,0.06);
   color: #344054;
   font-weight: 700;
 }
-.legacyReview .mainGrid {
+.contractReviewRuntime .mainGrid {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
@@ -716,26 +717,26 @@ padding: 10px 14px;
   align-items: stretch;
   border-top: 1px solid rgba(15,23,42,0.08);
 }
-.legacyReview .mainGrid--resizable {
+.contractReviewRuntime .mainGrid--resizable {
   grid-template-columns: minmax(0, 1fr) 14px var(--review-risk-pane-width, 440px);
 }
-.legacyReview .mainGrid--resizable > .docPane,
-.legacyReview .mainGrid--resizable > .riskPane {
+.contractReviewRuntime .mainGrid--resizable > .docPane,
+.contractReviewRuntime .mainGrid--resizable > .riskPane {
   width: 100%;
   min-width: 0;
   justify-self: stretch;
 }
-.legacyReview .docPane, .legacyReview .riskPane {
+.contractReviewRuntime .docPane, .contractReviewRuntime .riskPane {
   min-height: 0;
   display: flex;
   flex-direction: column;
   border-radius: 0;
   overflow: hidden;
 }
-.legacyReview .riskPane {
+.contractReviewRuntime .riskPane {
   border-left: 0;
 }
-.legacyReview .mainGridDivider {
+.contractReviewRuntime .mainGridDivider {
   width: 14px;
   min-height: 0;
   padding: 0;
@@ -749,7 +750,7 @@ padding: 10px 14px;
   cursor: col-resize;
   touch-action: none;
 }
-.legacyReview .mainGridDividerHandle {
+.contractReviewRuntime .mainGridDividerHandle {
   width: 4px;
   height: 72px;
   border-radius: 999px;
@@ -757,14 +758,14 @@ padding: 10px 14px;
   box-shadow: 0 0 0 4px rgba(15,23,42,0.04);
   transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
-.legacyReview .mainGridDivider:hover .mainGridDividerHandle,
-.legacyReview .mainGridDivider--dragging .mainGridDividerHandle {
-  background: var(--color-brand);
-  box-shadow: none;
+.contractReviewRuntime .mainGridDivider:hover .mainGridDividerHandle,
+.contractReviewRuntime .mainGridDivider--dragging .mainGridDividerHandle {
+  background: rgba(37,99,235,0.92);
+  box-shadow: 0 0 0 5px rgba(37,99,235,0.12);
   transform: scaleY(1.05);
 }
 
-.legacyReview .paneHeader {
+.contractReviewRuntime .paneHeader {
   min-height: 64px;
   padding: 16px 18px;
   display: flex;
@@ -772,21 +773,21 @@ padding: 10px 14px;
   border-bottom: 1px solid rgba(15,23,42,0.08);
   background: #fff;
 }
-.legacyReview .paneHeader--risk {
+.contractReviewRuntime .paneHeader--risk {
   padding: 16px 18px;
   justify-content: space-between;
   gap: 12px;
 }
-.legacyReview .paneTitle {
+.contractReviewRuntime .paneTitle {
 font-weight: 700; font-size: 15px;
 }
-.legacyReview .riskHeaderStats {
+.contractReviewRuntime .riskHeaderStats {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
-.legacyReview .riskHeaderStat {
+.contractReviewRuntime .riskHeaderStat {
   height: 24px;
   padding: 0 8px;
   border-radius: 999px;
@@ -798,22 +799,22 @@ font-weight: 700; font-size: 15px;
   display: inline-flex;
   align-items: center;
 }
-.legacyReview .riskHeaderStat--high {
-  border-color: var(--color-danger-border);
-  background: var(--color-danger-bg);
-  color: var(--color-danger-text);
+.contractReviewRuntime .riskHeaderStat--high {
+  border-color: rgba(239,68,68,0.22);
+  background: rgba(239,68,68,0.08);
+  color: #b42318;
 }
-.legacyReview .riskHeaderStat--medium {
-  border-color: var(--color-warning-border);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
+.contractReviewRuntime .riskHeaderStat--medium {
+  border-color: rgba(245,158,11,0.22);
+  background: rgba(245,158,11,0.10);
+  color: #b54708;
 }
-.legacyReview .riskHeaderStat--low {
-  border-color: var(--color-info-border);
-  background: var(--color-info-bg);
-  color: var(--color-info-text);
+.contractReviewRuntime .riskHeaderStat--low {
+  border-color: rgba(59,130,246,0.22);
+  background: rgba(59,130,246,0.08);
+  color: #175cd3;
 }
-.legacyReview .paneHint {
+.contractReviewRuntime .paneHint {
 display: none;
 }
 /*
@@ -823,57 +824,57 @@ display: none;
   which is why DocumentEditor + RiskPanel appeared in two ROWS.
 */
 @media (max-width: 980px) {
-  .legacyReview .appShell--sidebarExpanded {
+  .contractReviewRuntime .appShell--sidebarExpanded {
     grid-template-columns: 220px minmax(0, 1fr);
   }
-  .legacyReview .uploadLayout, .legacyReview .workspaceSecondaryGrid {
+  .contractReviewRuntime .uploadLayout, .contractReviewRuntime .workspaceSecondaryGrid {
     grid-template-columns: 1fr;
   }
-  .legacyReview .topBar {
+  .contractReviewRuntime .topBar {
     grid-template-columns: 1fr;
   }
-  .legacyReview .topBarActions, .legacyReview .topBarMeta {
+  .contractReviewRuntime .topBarActions, .contractReviewRuntime .topBarMeta {
     justify-self: start;
   }
-  .legacyReview .topBarRight {
+  .contractReviewRuntime .topBarRight {
     justify-self: start;
     flex-wrap: wrap;
   }
-  .legacyReview .appShell, .legacyReview .appShell--sidebarExpanded, .legacyReview .appShell--sidebarCollapsed {
+  .contractReviewRuntime .appShell, .contractReviewRuntime .appShell--sidebarExpanded, .contractReviewRuntime .appShell--sidebarCollapsed {
     display: block;
     height: auto;
     padding: 12px;
   }
-  .legacyReview .sideNav {
+  .contractReviewRuntime .sideNav {
     margin-bottom: 12px;
     flex-direction: row;
     align-items: center;
     overflow: auto;
   }
-  .legacyReview .sideNavTop, .legacyReview .sideNav--collapsed .sideNavTop {
+  .contractReviewRuntime .sideNavTop, .contractReviewRuntime .sideNav--collapsed .sideNavTop {
     flex-direction: row;
   }
-  .legacyReview .navList {
+  .contractReviewRuntime .navList {
     flex-direction: row;
   }
-  .legacyReview .contentShell, .legacyReview .reviewWorkspace, .legacyReview .dashboardPage, .legacyReview .historyPage {
+  .contractReviewRuntime .contentShell, .contractReviewRuntime .reviewWorkspace, .contractReviewRuntime .dashboardPage, .contractReviewRuntime .historyPage {
     min-height: auto;
   }
-  .legacyReview .dashboardStatsGrid, .legacyReview .historySummaryGrid, .legacyReview .historyRow, .legacyReview .mainGrid {
+  .contractReviewRuntime .dashboardStatsGrid, .contractReviewRuntime .historySummaryGrid, .contractReviewRuntime .historyRow, .contractReviewRuntime .mainGrid {
     grid-template-columns: 1fr;
   }
-  .legacyReview .mainGridDivider {
+  .contractReviewRuntime .mainGridDivider {
     display: none;
   }
-  .legacyReview .historyFeatured, .legacyReview .topBar, .legacyReview .topBarLead, .legacyReview .topBarActions, .legacyReview .topBarMeta, .legacyReview .topBarRight {
+  .contractReviewRuntime .historyFeatured, .contractReviewRuntime .topBar, .contractReviewRuntime .topBarLead, .contractReviewRuntime .topBarActions, .contractReviewRuntime .topBarMeta, .contractReviewRuntime .topBarRight {
     display: flex;
     flex-wrap: wrap;
   }
-  .legacyReview .mainGrid {
+  .contractReviewRuntime .mainGrid {
     border-top: 0;
   }
 }
-.legacyReview .docEditor {
+.contractReviewRuntime .docEditor {
 flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -881,7 +882,7 @@ flex: 1 1 auto;
   position: relative;
   background: #fff;
 }
-.legacyReview .docViewport {
+.contractReviewRuntime .docViewport {
 position: relative;
   flex: 1 1 auto;
   min-height: 0;
@@ -889,7 +890,7 @@ position: relative;
   isolation: isolate;
   background: #f6f7fb;
 }
-.legacyReview .docToolbar {
+.contractReviewRuntime .docToolbar {
 height: 44px;
   flex: 0 0 auto;
   display: flex;
@@ -900,16 +901,16 @@ height: 44px;
   gap: 10px;
   background: #fff;
 }
-.legacyReview .docToolbarLeft {
+.contractReviewRuntime .docToolbarLeft {
 display: flex; align-items: center; gap: 8px;
 }
-.legacyReview .docToolbarRight {
+.contractReviewRuntime .docToolbarRight {
 min-width: 0;
 }
-.legacyReview .toolbarLabel {
+.contractReviewRuntime .toolbarLabel {
 font-size: 12px; color: var(--muted);
 }
-.legacyReview .iconBtn {
+.contractReviewRuntime .iconBtn {
 width: 30px;
   height: 30px;
   border-radius: 8px;
@@ -917,16 +918,16 @@ width: 30px;
   background: #fff;
   cursor: pointer;
 }
-.legacyReview .iconBtn:hover {
+.contractReviewRuntime .iconBtn:hover {
 background: #f8fafc;
 }
-.legacyReview .zoomText {
+.contractReviewRuntime .zoomText {
 font-size: 12px; width: 52px; text-align: center; color: var(--text);
 }
-.legacyReview .toolbarHint {
+.contractReviewRuntime .toolbarHint {
 font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; display: block;
 }
-.legacyReview .docScroll {
+.contractReviewRuntime .docScroll {
   flex: 1 1 auto;
   width: 100%;
   height: 100%;
@@ -935,13 +936,13 @@ font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; tex
   /* Figma-style: neutral work surface behind the paper */
   background: transparent;
 }
-.legacyReview .docScroll--locked .editableBlock {
+.contractReviewRuntime .docScroll--locked .editableBlock {
   user-select: none;
 }
-.legacyReview .editableBlock--locked {
+.contractReviewRuntime .editableBlock--locked {
   caret-color: transparent;
 }
-.legacyReview .docInteractionMask {
+.contractReviewRuntime .docInteractionMask {
 position: absolute;
   inset: 0;
   z-index: 6;
@@ -951,7 +952,7 @@ position: absolute;
   backdrop-filter: blur(8px) saturate(1.04);
   -webkit-backdrop-filter: blur(8px) saturate(1.04);
 }
-.legacyReview .docInteractionMaskViewport {
+.contractReviewRuntime .docInteractionMaskViewport {
 width: 100%;
   height: 100%;
   min-height: 100%;
@@ -961,7 +962,7 @@ width: 100%;
   padding: clamp(20px, 4vh, 40px) 28px;
   box-sizing: border-box;
 }
-.legacyReview .docInteractionMaskCard {
+.contractReviewRuntime .docInteractionMaskCard {
 width: auto;
   max-width: calc(100% - 32px);
   display: flex;
@@ -971,11 +972,11 @@ width: auto;
   border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, 0.16);
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: var(--shadow-float);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
   padding: 18px 24px 16px;
   color: #111827;
 }
-.legacyReview .docInteractionMaskText {
+.contractReviewRuntime .docInteractionMaskText {
 display: inline-flex;
   align-items: baseline;
   justify-content: center;
@@ -986,24 +987,24 @@ display: inline-flex;
   color: #111827;
   white-space: nowrap;
 }
-.legacyReview .docInteractionMaskTextLabel {
+.contractReviewRuntime .docInteractionMaskTextLabel {
 flex: 0 0 auto;
 }
-.legacyReview .docInteractionMaskEllipsis {
+.contractReviewRuntime .docInteractionMaskEllipsis {
 flex: 0 0 auto;
   display: inline-flex;
   align-items: baseline;
   justify-content: flex-start;
   min-width: 3.75ch;
 }
-.legacyReview .docInteractionMaskEllipsisDot {
+.contractReviewRuntime .docInteractionMaskEllipsisDot {
 display: inline-block;
   min-width: 0.62ch;
   text-align: center;
   opacity: 0.22;
-  animation: legacyDocInteractionMaskEllipsisRoll 0.84s ease-in-out infinite;
+  animation: contractReviewDocInteractionMaskEllipsisRoll 0.84s ease-in-out infinite;
 }
-.legacyReview .docInteractionMaskProgress {
+.contractReviewRuntime .docInteractionMaskProgress {
 display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1012,7 +1013,7 @@ display: inline-flex;
   border: 1px solid rgba(15, 23, 42, 0.78);
   background: rgba(255, 255, 255, 0.98);
 }
-.legacyReview .docInteractionMaskProgressDot {
+.contractReviewRuntime .docInteractionMaskProgressDot {
 width: 10px;
   height: 10px;
   border-radius: 999px;
@@ -1021,11 +1022,11 @@ width: 10px;
   background: #ffffff;
   transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
-.legacyReview .docInteractionMaskProgressDot--filled {
+.contractReviewRuntime .docInteractionMaskProgressDot--filled {
 border-color: #111827;
   background: #111827;
 }
-@keyframes legacyDocInteractionMaskEllipsisRoll {
+@keyframes contractReviewDocInteractionMaskEllipsisRoll {
   0%, 100% {
     opacity: 0.22;
     transform: translateY(0);
@@ -1039,7 +1040,7 @@ border-color: #111827;
     transform: translateY(0);
   }
 }
-.legacyReview .docRow {
+.contractReviewRuntime .docRow {
 position: relative;
   width: max-content;
   min-width: 100%;
@@ -1049,17 +1050,17 @@ position: relative;
   padding: 16px 12px 44px;
   transition: gap 180ms ease;
 }
-.legacyReview .docRow--compact {
+.contractReviewRuntime .docRow--compact {
 gap: 8px;
   padding-right: 18px;
 }
-.legacyReview .docRow--withComments {
+.contractReviewRuntime .docRow--withComments {
 gap: 8px;
   /* Reserve space for the comment column so balloons never overlap the paper.
      (The gutter itself is absolutely positioned and doesn't contribute to layout width.) */
   padding-right: var(--commentPadRight);
 }
-.legacyReview .docCanvas {
+.contractReviewRuntime .docCanvas {
 position: relative;
   /* Do not add an extra white layer under the paper. The paper is the docx section itself. */
   width: max-content;
@@ -1067,65 +1068,65 @@ position: relative;
   box-shadow: none;
   outline: none;
 }
-.legacyReview .docCanvas > div:first-child {
+.contractReviewRuntime .docCanvas > div:first-child {
 position: relative;
   z-index: 1;
 }
-.legacyReview .changeOverlay {
+.contractReviewRuntime .changeOverlay {
 position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 2;
 }
-.legacyReview .changeHighlight {
+.contractReviewRuntime .changeHighlight {
 position: absolute;
   border-radius: 4px;
   box-shadow: inset 0 -1px 0 rgba(255,255,255,0.65);
 }
-.legacyReview .changeHighlight--insert {
-background: var(--color-success-bg);
-  outline: 1px solid var(--color-success-border);
+.contractReviewRuntime .changeHighlight--insert {
+background: rgba(34, 197, 94, 0.24);
+  outline: 1px solid rgba(34, 197, 94, 0.45);
 }
-.legacyReview .changeHighlight--replace {
-background: var(--color-brand-soft);
-  outline: 1px solid var(--color-brand-border);
+.contractReviewRuntime .changeHighlight--replace {
+background: rgba(59, 130, 246, 0.20);
+  outline: 1px solid rgba(59, 130, 246, 0.40);
 }
-.legacyReview .changeHighlight--delete {
-background: var(--color-danger-bg);
-  outline: 1px solid var(--color-danger-border);
+.contractReviewRuntime .changeHighlight--delete {
+background: rgba(239, 68, 68, 0.14);
+  outline: 1px solid rgba(239, 68, 68, 0.28);
 }
-.legacyReview .changeDeleteMarker {
+.contractReviewRuntime .changeDeleteMarker {
 position: absolute;
   width: 2px;
   border-radius: 999px;
-  background: var(--color-danger-icon);
+  background: rgba(239, 68, 68, 0.95);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.7);
 }
-.legacyReview .changeDeleteMarker--replace {
-background: var(--color-warning-text);
+.contractReviewRuntime .changeDeleteMarker--replace {
+background: rgba(245, 158, 11, 0.95);
 }
-.legacyReview .docx-wrapper {
+.contractReviewRuntime .docx-wrapper {
 background: transparent !important;
   padding: 0 !important;
 }
-.legacyReview .docx {
+.contractReviewRuntime .docx {
 background: transparent !important;
 }
-.legacyReview .docx > section {
+.contractReviewRuntime .docx > section {
   /* Render a single "paper" surface (no double-white background). */
   background: #fff;
-  box-shadow: var(--shadow-float);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10);
   outline: 1px solid #eceff3;
 }
-.legacyReview .editableBlock {
+.contractReviewRuntime .editableBlock {
 position: relative;
   outline: none;
   caret-color: #111827;
 }
-.legacyReview .changedBlock {
+.contractReviewRuntime .changedBlock {
 position: relative;
 }
-.legacyReview .changedBlock::before {
+.contractReviewRuntime .changedBlock::before {
 content: '';
   position: absolute;
   left: -12px;
@@ -1133,21 +1134,21 @@ content: '';
   bottom: 4px;
   width: 3px;
   border-radius: 999px;
-  background: var(--color-brand);
+  background: rgba(59,130,246,0.85);
 }
-.legacyReview .riskBlock {
+.contractReviewRuntime .riskBlock {
 background: rgba(250, 204, 21, 0.24);
   border-radius: 3px;
 }
-.legacyReview .focusPulse {
-animation: legacyPulse 1.6s ease-in-out 3;
+.contractReviewRuntime .focusPulse {
+animation: contractReviewPulse 1.6s ease-in-out 3;
 }
-@keyframes legacyPulse {
-  0% { box-shadow: 0 0 0 0 transparent; background: transparent; }
-  25% { box-shadow: 0 0 0 9px var(--color-focus-ring); background: var(--color-brand-soft); }
-  100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+@keyframes contractReviewPulse {
+  0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.00); background: rgba(59,130,246,0.00); }
+  25% { box-shadow: 0 0 0 9px rgba(59,130,246,0.16); background: rgba(59,130,246,0.10); }
+  100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.00); background: rgba(59,130,246,0.00); }
 }
-.legacyReview .commentLines {
+.contractReviewRuntime .commentLines {
 position: absolute;
   left: 0;
   top: 0;
@@ -1158,7 +1159,7 @@ position: absolute;
   pointer-events: none;
   z-index: 1;
 }
-.legacyReview .commentPolyline {
+.contractReviewRuntime .commentPolyline {
   fill: none;
   stroke: rgba(15,23,42,0.22);
   stroke-width: 1;
@@ -1168,12 +1169,12 @@ position: absolute;
   opacity: 0.65;
 }
 
-.legacyReview .commentTrunk {
+.contractReviewRuntime .commentTrunk {
 stroke-width: 1.05;
   stroke-dasharray: 4 3;
   opacity: 0.95;
 }
-.legacyReview .commentGutter {
+.contractReviewRuntime .commentGutter {
 width: var(--commentW);
   overflow: visible;
   position: absolute;
@@ -1184,16 +1185,16 @@ width: var(--commentW);
   pointer-events: none;
   transition: opacity 160ms ease;
 }
-.legacyReview .commentGutter--open {
+.contractReviewRuntime .commentGutter--open {
 opacity: 1;
   pointer-events: auto;
 }
-.legacyReview .commentGutterInner {
+.contractReviewRuntime .commentGutterInner {
 position: relative;
   min-height: 100%;
   padding-top: 12px;
 }
-.legacyReview .commentBalloon {
+.contractReviewRuntime .commentBalloon {
 width: var(--commentW);
   border-radius: 12px;
   border: 1px solid var(--line);
@@ -1204,50 +1205,50 @@ width: var(--commentW);
   position: absolute;
   left: 0;
   right: auto;
-  box-shadow: var(--shadow-float);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
 }
-.legacyReview .commentBalloon:hover {
-	box-shadow: var(--shadow-float);
+.contractReviewRuntime .commentBalloon:hover {
+box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
 }
-.legacyReview .commentBalloonHead {
+.contractReviewRuntime .commentBalloonHead {
 display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
 }
-.legacyReview .commentTag {
+.contractReviewRuntime .commentTag {
 font-size: 12px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid var(--color-danger-border);
-  background: var(--color-danger-bg);
+  border: 1px solid rgba(239,68,68,0.22);
+  background: rgba(239,68,68,0.06);
   color: var(--danger);
 }
-.legacyReview .commentTime {
+.contractReviewRuntime .commentTime {
 font-size: 12px; color: var(--muted); white-space: nowrap;
 }
-.legacyReview .commentText {
+.contractReviewRuntime .commentText {
 margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--text);
 }
-.legacyReview .commentDel {
+.contractReviewRuntime .commentDel {
 text-decoration: line-through; color: rgba(31,35,40,0.80);
 }
-.legacyReview .commentIns {
-color: var(--color-success-text);
+.contractReviewRuntime .commentIns {
+color: #16a34a;
 }
-.legacyReview .commentBalloon--delete .commentTag {
-	border-color: var(--color-danger-border); background: var(--color-danger-bg); color: var(--danger);
+.contractReviewRuntime .commentBalloon--delete .commentTag {
+border-color: rgba(239,68,68,0.24); background: rgba(239,68,68,0.08); color: var(--danger);
 }
-.legacyReview .commentBalloon--insert .commentTag {
-	border-color: var(--color-success-border); background: var(--color-success-bg); color: var(--color-success-text);
+.contractReviewRuntime .commentBalloon--insert .commentTag {
+border-color: rgba(34,197,94,0.24); background: rgba(34,197,94,0.08); color: #15803d;
 }
-.legacyReview .commentBalloon--replace .commentTag {
-	border-color: var(--color-warning-border); background: var(--color-warning-bg); color: var(--color-warning-text);
+.contractReviewRuntime .commentBalloon--replace .commentTag {
+border-color: rgba(245,158,11,0.24); background: rgba(245,158,11,0.08); color: #d97706;
 }
-.legacyReview .emptyState {
+.contractReviewRuntime .emptyState {
 padding: 16px;
   color: var(--muted);
   font-size: 13px;
 }
-.legacyReview .riskRoot {
+.contractReviewRuntime .riskRoot {
   height: 100vh;
   min-height: 100vh;
   min-height: 0;
@@ -1255,7 +1256,7 @@ padding: 16px;
   flex-direction: column;
   background: #fff;
 }
-.legacyReview .riskControls {
+.contractReviewRuntime .riskControls {
   padding: 10px 16px 10px;
   display: flex;
   flex-direction: column;
@@ -1263,7 +1264,7 @@ padding: 16px;
   background: #fff;
   border-bottom: 1px solid rgba(15,23,42,0.06);
 }
-.legacyReview .riskUndoBar {
+.contractReviewRuntime .riskUndoBar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1275,7 +1276,7 @@ padding: 16px;
   font-size: 12px;
   color: #475467;
 }
-.legacyReview .riskUndoBarText {
+.contractReviewRuntime .riskUndoBarText {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1283,7 +1284,7 @@ padding: 16px;
   gap: 2px;
   flex: 1 1 auto;
 }
-.legacyReview .riskUndoBarTitle {
+.contractReviewRuntime .riskUndoBarTitle {
   width: 100%;
   font-size: 13px;
   font-weight: 700;
@@ -1294,14 +1295,14 @@ padding: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.legacyReview .riskUndoBarMeta {
+.contractReviewRuntime .riskUndoBarMeta {
   font-size: 12px;
   line-height: 1.35;
   color: #475467;
   text-align: left;
 }
 
-.legacyReview .riskList {
+.contractReviewRuntime .riskList {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -1309,14 +1310,14 @@ padding: 16px;
   background: #f8fafc;
 }
 
-.legacyReview .riskGroup {
+.contractReviewRuntime .riskGroup {
   border: 0;
   border-radius: 0;
   background: transparent;
   margin-bottom: 16px;
 }
 
-.legacyReview .riskGroupTitle {
+.contractReviewRuntime .riskGroupTitle {
   cursor: pointer;
   padding: 6px 2px 10px;
   font-weight: 700;
@@ -1328,17 +1329,17 @@ padding: 16px;
   border-bottom: 1px solid rgba(15,23,42,0.06);
 }
 
-.legacyReview .riskGroupCount {
+.contractReviewRuntime .riskGroupCount {
 font-size: 12px; color: var(--muted);
 }
-.legacyReview .riskCards {
+.contractReviewRuntime .riskCards {
   padding: 12px 0 0;
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
 }
 
-.legacyReview .riskCard {
+.contractReviewRuntime .riskCard {
   border: 1px solid rgba(15,23,42,0.06);
   border-radius: 16px;
   background: #fff;
@@ -1346,13 +1347,13 @@ font-size: 12px; color: var(--muted);
   box-shadow: 0 1px 0 rgba(15,23,42,0.04);
 }
 
-.legacyReview .riskCardHead {
+.contractReviewRuntime .riskCardHead {
 display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
 }
-.legacyReview .riskTitle {
+.contractReviewRuntime .riskTitle {
 display: flex; align-items: center; gap: 8px;
 }
-.legacyReview .riskBadge {
+.contractReviewRuntime .riskBadge {
 font-size: 12px;
   font-weight: 800;
   width: 26px;
@@ -1364,19 +1365,19 @@ font-size: 12px;
   border: 1px solid var(--line);
   background: #fafafa;
 }
-.legacyReview .riskBadge--high {
-border-color: var(--color-danger-border); background: var(--color-danger-bg); color: var(--danger);
+.contractReviewRuntime .riskBadge--high {
+border-color: rgba(239,68,68,0.22); background: rgba(239,68,68,0.08); color: var(--danger);
 }
-.legacyReview .riskBadge--medium {
-border-color: var(--color-warning-border); background: var(--color-warning-bg); color: var(--color-warning-text);
+.contractReviewRuntime .riskBadge--medium {
+border-color: rgba(245,158,11,0.22); background: rgba(245,158,11,0.08); color: #d97706;
 }
-.legacyReview .riskBadge--low {
-border-color: var(--color-info-border); background: var(--color-info-bg); color: var(--color-info-text);
+.contractReviewRuntime .riskBadge--low {
+border-color: rgba(59,130,246,0.22); background: rgba(59,130,246,0.08); color: #2563eb;
 }
-.legacyReview .riskLabel {
+.contractReviewRuntime .riskLabel {
 font-size: 13px; font-weight: 700; line-height: 1.35;
 }
-.legacyReview .btnSmall {
+.contractReviewRuntime .btnSmall {
 height: 30px;
   padding: 0 10px;
   border-radius: 10px;
@@ -1386,22 +1387,22 @@ height: 30px;
   font-size: 12px;
   white-space: nowrap;
 }
-.legacyReview .btnSmall:hover {
+.contractReviewRuntime .btnSmall:hover {
 background: #f8fafc;
 }
-.legacyReview .btnSmall--primary {
-  border-color: var(--color-success-border);
-  background: var(--color-success-bg);
+.contractReviewRuntime .btnSmall--primary {
+  border-color: rgba(0,179,101,0.28);
+  background: rgba(0,179,101,0.10);
   color: #065f46;
   font-weight: 600;
 }
-.legacyReview .riskSection {
+.contractReviewRuntime .riskSection {
 margin-top: 12px;
 }
-.legacyReview .riskSectionTitle {
+.contractReviewRuntime .riskSectionTitle {
 font-size: 12px; font-weight: 700; margin-bottom: 6px;
 }
-.legacyReview .riskSectionBody {
+.contractReviewRuntime .riskSectionBody {
 font-size: 12px;
   line-height: 1.6;
   color: rgba(31,35,40,0.92);
@@ -1409,12 +1410,12 @@ font-size: 12px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-.legacyReview .riskSectionBody--scroll {
+.contractReviewRuntime .riskSectionBody--scroll {
 max-height: 220px;
   overflow: auto;
   padding-right: 4px;
 }
-.legacyReview .riskCardActions {
+.contractReviewRuntime .riskCardActions {
 display: flex;
   gap: 8px;
   justify-content: flex-end;
@@ -1423,37 +1424,37 @@ display: flex;
   margin-top: 10px;
   border-top: 1px solid var(--line);
 }
-.legacyReview .riskCardActions {
+.contractReviewRuntime .riskCardActions {
 flex-wrap: wrap;
 }
 /* NOTE: The original CSS had a mobile-only fallback that collapses the grid to 1 column.
    In this build we keep the desktop workspace two-column; a separate media query can be
    added later if you want a responsive single-column layout on small screens. */
-.legacyReview .docRow {
+.contractReviewRuntime .docRow {
 width: auto; min-width: 100%;
 }
-.legacyReview .topBar::-webkit-scrollbar {
+.contractReviewRuntime .topBar::-webkit-scrollbar {
 height: 6px;
 }
-.legacyReview .topBar::-webkit-scrollbar-thumb {
+.contractReviewRuntime .topBar::-webkit-scrollbar-thumb {
 background: rgba(15,23,42,0.12); border-radius: 999px;
 }
-.legacyReview .contentShell {
+.contractReviewRuntime .contentShell {
 display: flex; flex-direction: column;
 }
-.legacyReview .sideNav--collapsed .navIconWrap {
+.contractReviewRuntime .sideNav--collapsed .navIconWrap {
 width: 44px; height: 44px;
 }
-.legacyReview .sideNav--collapsed .navItem--active {
-box-shadow: none;
+.contractReviewRuntime .sideNav--collapsed .navItem--active {
+box-shadow: inset 0 0 0 1px rgba(37,99,235,0.16), 0 10px 24px rgba(15,23,42,0.08);
 }
-.legacyReview .statusTextPill:empty {
+.contractReviewRuntime .statusTextPill:empty {
 display: none;
 }
 
 
 /* Review progress (waiting view) */
-.legacyReview .progressWrap {
+.contractReviewRuntime .progressWrap {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -1462,7 +1463,7 @@ display: none;
   padding: 0;
   background: #eceff3;
 }
-.legacyReview .progressCard {
+.contractReviewRuntime .progressCard {
   width: 100%;
   max-width: none;
   border: 0;
@@ -1472,43 +1473,43 @@ display: none;
   padding: 18px 18px 16px;
   font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
 }
-.legacyReview .progressHeader {
+.contractReviewRuntime .progressHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
-.legacyReview .progressTitle {
+.contractReviewRuntime .progressTitle {
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0;
   color: #101828;
 }
-.legacyReview .progressSub {
+.contractReviewRuntime .progressSub {
   margin-top: 2px;
   font-size: 12px;
   color: #667085;
   line-height: 1.35;
 }
-.legacyReview .progressTags {
+.contractReviewRuntime .progressTags {
   margin-top: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.legacyReview .progressTag {
+.contractReviewRuntime .progressTag {
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  border: 1px solid var(--color-success-border);
-  background: var(--color-success-bg);
+  border: 1px solid rgba(0,179,101,0.20);
+  background: rgba(0,179,101,0.10);
   color: #065f46;
   font-size: 11px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
 }
-.legacyReview .progressRun {
+.contractReviewRuntime .progressRun {
   font-size: 11px;
   color: #667085;
   background: rgba(255,255,255,0.55);
@@ -1517,69 +1518,69 @@ display: none;
   padding: 4px 9px;
   white-space: nowrap;
 }
-.legacyReview .progressSteps {
+.contractReviewRuntime .progressSteps {
   margin-top: 14px;
   display: grid;
   gap: 12px;
 }
-.legacyReview .progressGroup {
+.contractReviewRuntime .progressGroup {
   display: grid;
   gap: 6px;
 }
-.legacyReview .progressGroupTitle {
+.contractReviewRuntime .progressGroupTitle {
   font-size: 16px;
   font-weight: 700;
   line-height: 1.25;
   color: #101828;
 }
-.legacyReview .progressGroupTasks {
+.contractReviewRuntime .progressGroupTasks {
   display: grid;
   gap: 6px;
 }
-.legacyReview .progressTask {
+.contractReviewRuntime .progressTask {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
 }
-.legacyReview .progressTaskIcon {
+.contractReviewRuntime .progressTaskIcon {
   width: 14px;
   height: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.legacyReview .progressTaskRing {
+.contractReviewRuntime .progressTaskRing {
   width: 12px;
   height: 12px;
   border-radius: 999px;
   border: 1.5px solid #c6c9d0;
   box-sizing: border-box;
 }
-.legacyReview .progressTaskRing--spin {
+.contractReviewRuntime .progressTaskRing--spin {
   border-top-color: #9aa2af;
   animation: reviewProgressSpin 1s linear infinite;
 }
-.legacyReview .progressTaskCheck {
+.contractReviewRuntime .progressTaskCheck {
   width: 12px;
   height: 12px;
   color: #34c38f;
 }
-.legacyReview .progressTask--done .progressTaskIcon {
+.contractReviewRuntime .progressTask--done .progressTaskIcon {
   border-radius: 999px;
   background: rgba(52, 195, 143, 0.12);
   border: 1px solid rgba(52, 195, 143, 0.42);
 }
-.legacyReview .progressTask--failed .progressTaskRing {
+.contractReviewRuntime .progressTask--failed .progressTaskRing {
   border-color: #e06d6d;
 }
-.legacyReview .progressTaskText {
+.contractReviewRuntime .progressTaskText {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
   color: #667085;
 }
-.legacyReview .progressHint {
+.contractReviewRuntime .progressHint {
   margin-top: 10px;
   font-size: 11px;
   color: #667085;
@@ -1587,7 +1588,7 @@ display: none;
   padding-top: 10px;
   border-top: 1px solid rgba(15,23,42,0.09);
 }
-.legacyReview .progressActions {
+.contractReviewRuntime .progressActions {
   margin-top: 10px;
   display: flex;
   gap: 8px;
@@ -1595,4 +1596,85 @@ display: none;
 @keyframes reviewProgressSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+.contractReviewRuntime .editorOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.contractReviewRuntime .editorSheet {
+  width: 100%;
+  max-width: 672px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.contractReviewRuntime .alertDialogSheet {
+  max-width: 520px;
+}
+
+.contractReviewRuntime .alertDialogHeader {
+  padding: 24px 24px 0;
+}
+
+.contractReviewRuntime .alertDialogTitle {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.contractReviewRuntime .alertDialogBody {
+  padding: 12px 24px 0;
+}
+
+.contractReviewRuntime .alertDialogMessage {
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 1px solid rgba(0, 179, 101, 0.18);
+  border-radius: 12px;
+  background: rgba(0, 179, 101, 0.08);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 24px;
+  white-space: pre-wrap;
+}
+
+.contractReviewRuntime .alertDialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding: 20px 24px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.contractReviewRuntime .alertDialogPrimary {
+  display: inline-flex;
+  min-width: 112px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  transition: background-color 160ms ease;
+}
+
+.contractReviewRuntime .alertDialogPrimary:hover {
+  background: #009f5a;
 }

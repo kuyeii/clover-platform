@@ -1,5 +1,5 @@
 import React from 'react'
-import { HelpCircle, LayoutGrid, Settings } from 'lucide-react'
+import { Clock, HelpCircle, History, LayoutGrid, Settings } from 'lucide-react'
 import type { NavKey } from './SideNav'
 import type { ReviewHistoryItem } from '../types'
 
@@ -35,6 +35,24 @@ function statusText(status?: string) {
   return status || ''
 }
 
+function MainNavButton(props: {
+  active: boolean
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      className={`sideNavMainButton ${props.active ? 'sideNavMainButton--active' : ''}`}
+      onClick={props.onClick}
+      type="button"
+    >
+      <span className="sideNavMainIcon">{props.icon}</span>
+      <span>{props.label}</span>
+    </button>
+  )
+}
+
 export function ModernSideNav(props: {
   activeNav: NavKey
   onSelect: (key: NavKey) => void
@@ -48,12 +66,23 @@ export function ModernSideNav(props: {
       <div className="sideNavGlow sideNavGlow--top" aria-hidden="true" />
       <div className="sideNavGlow sideNavGlow--bottom" aria-hidden="true" />
 
-      <div className="sideNavPrimaryNav">
-        <button className="sideNavStartButton" onClick={() => props.onSelect('upload')} type="button">
-          <LayoutGrid size={16} />
-          <span>开始审查</span>
-        </button>
-      </div>
+      <nav className="sideNavPrimaryNav">
+        <div className="sideNavSectionTitle">工作台</div>
+        <div className="sideNavMainList">
+          <MainNavButton
+            active={props.activeNav === 'upload'}
+            icon={<LayoutGrid size={18} />}
+            label="开始审查"
+            onClick={() => props.onSelect('upload')}
+          />
+          <MainNavButton
+            active={props.activeNav === 'history'}
+            icon={<History size={18} />}
+            label="审查记录"
+            onClick={() => props.onSelect('history')}
+          />
+        </div>
+      </nav>
 
       <div className="sideNavRecentScroll">
         <div className="sideNavSectionHeader">
@@ -61,7 +90,7 @@ export function ModernSideNav(props: {
           <span className="sideNavCountPill">{recent.length}</span>
         </div>
 
-        <div className="sideNavRecentList">
+        <div className="sideNavRecentPanel">
           {recent.length === 0 ? (
             <div className="sideNavEmptyState">暂无动态</div>
           ) : (
@@ -77,13 +106,16 @@ export function ModernSideNav(props: {
                   title={it.available === false ? '缺少原始合同文件，无法打开' : (it.file_name || it.run_id)}
                   type="button"
                 >
-                  <span className={`sideNavStatusDot ${statusClass}`} />
+                  <span className="sideNavRecentIcon">
+                    <Clock size={14} />
+                    <span className={`sideNavStatusDot ${statusClass}`} />
+                  </span>
                   <span className="sideNavRecentText">
                     <span className="sideNavRecentTitle">{it.file_name || it.run_id}</span>
                     <span className="sideNavRecentMeta">
-                      <span className="sideNavStatusText">{statusText(it.status)}</span>
-                      <span className="sideNavMetaDivider" />
                       <span>{formatRelativeTime(it.updated_at) || ''}</span>
+                      <span className="sideNavMetaDivider" />
+                      <span className="sideNavStatusText">{statusText(it.status)}</span>
                     </span>
                   </span>
                 </button>
@@ -91,10 +123,6 @@ export function ModernSideNav(props: {
             })
           )}
         </div>
-
-        <button className="sideNavViewAllButton" onClick={() => props.onSelect('history')} type="button">
-          查看全部
-        </button>
       </div>
 
       <div className="sideNavBottom">

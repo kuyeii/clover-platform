@@ -108,7 +108,7 @@ export function ReviewUploader(props: {
         ) : (
           <div>
             <strong>选择或拖入合同文件</strong>
-            <span>支持 PDF、Word（.doc/.docx），上传字段保持 legacy 的 file。</span>
+            <span>支持 PDF、Word（.doc/.docx），系统会自动转换为可审查文档。</span>
           </div>
         )}
       </div>

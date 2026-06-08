@@ -32,7 +32,7 @@ export const moduleEntries: PortalModule[] = [
     route: "/modules/contract-review",
     iframeRoute: "/modules/contract-review",
     apiPrefix: "/api/v1/contract-review",
-    legacyFrontend: "legacy/contract_review/frontend",
+    legacyFrontend: "",
     description: "合同风险审查、DOCX 批注、AI 改写和审查历史能力。",
     status: "running",
   },

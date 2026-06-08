@@ -65,7 +65,7 @@ export type RiskItem = {
   risk_source_type?: 'anchored' | 'missing_clause' | 'multi_clause'
 
   /**
-   * Legacy AI apply payload (old backend).
+   * AI apply payload compatibility shape.
    * Kept for backward compatibility.
    */
   ai_apply?: {

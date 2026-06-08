@@ -609,9 +609,15 @@ function AlertDialog(props: { open: boolean; title?: string; message: string; on
   if (!props.open) return null
   return (
     <div className="editorOverlay" onClick={props.onClose}>
-      <div className="editorSheet alertDialogSheet" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="editorSheet alertDialogSheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="contract-review-alert-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="alertDialogHeader">
-          <div className="alertDialogTitle">{props.title || '提示'}</div>
+          <div className="alertDialogTitle" id="contract-review-alert-title">{props.title || '提示'}</div>
         </div>
         <div className="alertDialogBody">
           <div className="alertDialogMessage">{props.message || '操作未完成，请稍后重试。'}</div>
@@ -631,7 +637,7 @@ export default function App() {
   const location = useLocation()
   const editorRef = useRef<DocumentEditorHandle | null>(null)
   const [activeNav, setActiveNav] = useState<NavKey>(() => navFromPathname(location.pathname))
-  // Legacy UI had a collapsible sidebar. In the current product flow we do NOT show a left sidebar
+  // The original UI had a collapsible sidebar. In the current product flow we do NOT show a left sidebar
   // on the review page (per Figma), so keep the flag only for backward compatibility.
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const prevNavRef = useRef<NavKey>('upload')
@@ -659,10 +665,10 @@ export default function App() {
   const historyEntriesRef = useRef<SessionReviewEntry[]>([])
   const restoredAcceptedCommentRunRef = useRef<string | null>(null)
 
-  // Some deployments only support the legacy AI endpoint (/ai_apply).
+  // Some deployments only support the compat AI endpoint (/ai_apply).
   // We auto-detect support for the newer AI rewrite endpoints once and cache the result
   // to avoid repeated 404s (and to prevent accidental re-triggering).
-  const aiEndpointModeRef = useRef<'auto' | 'legacy' | 'new'>('auto')
+  const aiEndpointModeRef = useRef<'auto' | 'compat' | 'new'>('auto')
 
   // Prevent duplicate history fetch in React StrictMode (dev) which mounts components twice.
   const historyFetchOnceRef = useRef(false)
@@ -1919,7 +1925,7 @@ export default function App() {
   /**
    * New AI rewrite flow (latest backend).
    * We attempt the new endpoints first; if the backend hasn't been updated,
-   * we fall back to the legacy ai_apply / status patch behavior.
+   * we fall back to the compat ai_apply / status patch behavior.
    */
   const onAiAcceptRisk = useCallback(
     async (riskId: number | string, revisedText?: string) => {
@@ -2055,7 +2061,7 @@ export default function App() {
     async (riskId: number | string, revisedText: string) => {
       if (!runId) throw new Error('当前没有可操作的 run_id')
       // New backend endpoint (optional). If unavailable (404), we fall back to local persistence.
-      // Even if we previously detected legacy mode, we still probe once here so upgrades take effect.
+      // Even if we previously detected compat mode, we still probe once here so upgrades take effect.
 
       const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_edit`, {
         method: 'PATCH',
@@ -2064,7 +2070,7 @@ export default function App() {
       })
 
       if (resp.status === 404) {
-        aiEndpointModeRef.current = 'legacy'
+        aiEndpointModeRef.current = 'compat'
         const err: any = new Error('Not Found')
         err.code = 404
         throw err
@@ -2099,7 +2105,7 @@ export default function App() {
         return payload.item
       }
 
-      if (aiEndpointModeRef.current === 'legacy') {
+      if (aiEndpointModeRef.current === 'compat') {
         await onRejectRisk(riskId)
         return
       }
@@ -2109,10 +2115,10 @@ export default function App() {
         aiEndpointModeRef.current = 'new'
         if (updated) mergeUpdatedRisk(riskId, updated)
       } catch (e: any) {
-        // fallback: treat as rejecting the whole risk (legacy)
+        // fallback: treat as rejecting the whole risk (compat)
         const msg = String(e?.message || e)
         if (msg.includes('404') || msg.includes('Not Found')) {
-          aiEndpointModeRef.current = 'legacy'
+          aiEndpointModeRef.current = 'compat'
           await onRejectRisk(riskId)
         } else {
           throw e
@@ -2302,7 +2308,7 @@ export default function App() {
       {activeNav === 'result' ? (
       // Review page: reuse the original (uploaded) review modules (TopBar/DocumentEditor/RiskPanel)
       // but DO NOT show the left sidebar. The page gets its own full-screen surface.
-      <div className="legacyReview">
+      <div className="contractReviewRuntime">
         <div className="reviewOnlyShell">
           <main className="contentShell">
             <div className="reviewWorkspace">

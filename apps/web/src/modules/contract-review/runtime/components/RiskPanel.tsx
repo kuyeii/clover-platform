@@ -298,7 +298,7 @@ export function RiskPanel(props: {
   onAcceptRisk?: (riskId: number | string, opts?: { revisedText?: string }) => Promise<void>
   onRejectRisk?: (riskId: number | string) => Promise<void>
 
-  /** Legacy APIs (old backend) */
+  /** Compatibility API handlers */
   onAiApplyRisk?: (riskId: number | string) => Promise<void>
 
   /** New AI rewrite APIs (latest backend) */
@@ -497,7 +497,7 @@ export function RiskPanel(props: {
                           const effectiveRevised = (localDraftById[localKey] ?? ai?.revised_text ?? '') as string
                           const effectiveTarget = normalizePatchTargetForRisk(r, String((ai as any)?.target_text || ''))
 
-                          // Legacy backend sometimes returns ai_apply without a `state` field.
+                          // The API may return ai_apply without a `state` field.
                           // If we have revised_text, we treat it as succeeded.
                           const aiState = (ai as any)?.state || (effectiveRevised ? 'succeeded' : undefined)
 

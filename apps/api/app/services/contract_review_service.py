@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from difflib import SequenceMatcher
 import os
 import re
@@ -8,7 +9,6 @@ import shutil
 import subprocess
 import sys
 import threading
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -19,22 +19,23 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from app.core.config import get_api_settings
-from app.services.pipt_gateway_service import preprocess_payload
-
-BASE_DIR = get_api_settings().repo_root / "legacy" / "contract_review"
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
-from config import settings
-from src.clause_ref_display import build_clause_alias_map, humanize_clause_refs
-from src.dify_client import DifyWorkflowClient, DifyWorkflowError, extract_blocking_outputs
-from src.docx_locator import enrich_reviewed_risks_with_locators
-from src.text_patch_ops import build_structured_patch_ops
-from src.document_ingest import DocumentIngestError, SUPPORTED_UPLOAD_EXTENSIONS, get_libreoffice_diagnostics, is_valid_docx_file, normalize_upload_to_docx
-from src.analysis_scope import analysis_scope_label, normalize_analysis_scope
-from src.parse_outputs import _load_json_with_repair, strip_markdown_json
-from src.review_store import (
+from app.services.pipt_gateway_service import postprocess_payload, preprocess_internal_payload, preprocess_payload
+from app.services.contract_review_engine.config import API_ROOT, DEFAULT_DATA_ROOT, REPO_ROOT, settings
+from app.services.contract_review_engine.checkpoint import load_existing_clause_batch
+from app.services.contract_review_engine.clause_ref_display import build_clause_alias_map, humanize_clause_refs
+from app.services.contract_review_engine.clean_text import clean_contract_text
+from app.services.contract_review_engine.dify_client import DifyWorkflowClient, DifyWorkflowError, extract_blocking_outputs
+from app.services.contract_review_engine.docx_locator import enrich_reviewed_risks_with_locators
+from app.services.contract_review_engine.text_patch_ops import build_structured_patch_ops
+from app.services.contract_review_engine.document_ingest import DocumentIngestError, SUPPORTED_UPLOAD_EXTENSIONS, get_libreoffice_diagnostics, is_valid_docx_file, normalize_upload_to_docx
+from app.services.contract_review_engine.analysis_scope import analysis_scope_label, normalize_analysis_scope
+from app.services.contract_review_engine.analysis_scope import apply_analysis_scope
+from app.services.contract_review_engine.extract_docx import extract_docx_text
+from app.services.contract_review_engine.merge_clauses import merge_clause_batches
+from app.services.contract_review_engine.merge_risk_results import merge_risk_results
+from app.services.contract_review_engine.normalize_clauses import normalize_clause_records, normalize_clauses
+from app.services.contract_review_engine.parse_outputs import _load_json_with_repair, strip_markdown_json
+from app.services.contract_review_engine.review_store import (
     get_review_meta,
     init_storage,
     list_review_meta,
@@ -42,10 +43,23 @@ from src.review_store import (
     store_json_artifact_by_path,
     upsert_review_meta,
 )
+from app.services.contract_review_engine.split_segments import split_into_segments
+from app.services.contract_review_engine.validate_risks import validate_risk_result
+from app.services.contract_review_engine.workflow_runner import WorkflowRunner
+from app.services.contract_review_engine import workflow_runner as contract_workflow_runner_module
 
 
-RUN_ROOT = BASE_DIR / "data" / "runs"
-UPLOAD_ROOT = BASE_DIR / "data" / "uploads"
+DATA_ROOT = DEFAULT_DATA_ROOT
+RUN_ROOT = DATA_ROOT / "runs"
+UPLOAD_ROOT = DATA_ROOT / "uploads"
+ARCHIVED_DATA_ROOT = Path(
+    os.environ.get(
+        "CONTRACT_REVIEW_ARCHIVED_DATA_ROOT",
+        str(REPO_ROOT / "legacy" / "contract_review" / "data"),
+    )
+)
+ARCHIVED_RUN_ROOT = ARCHIVED_DATA_ROOT / "runs"
+ARCHIVED_UPLOAD_ROOT = ARCHIVED_DATA_ROOT / "uploads"
 _RUN_LOCKS_GUARD = threading.Lock()
 _RUN_LOCKS: dict[str, threading.RLock] = {}
 _ACTIVE_REVIEW_LOCK = threading.Lock()
@@ -70,6 +84,137 @@ def _contract_review_pipt_workflow_fields(text: str = "", mapping_table: dict[st
         "enabled": _contract_review_pipt_enabled(),
     })
     return dict(payload.get("workflow_fields") or {})
+
+
+def _contract_review_pipt_preprocess(
+    *,
+    text: str,
+    purpose: str,
+    request_id: str,
+) -> dict[str, Any]:
+    return preprocess_internal_payload(
+        {
+            "text": text,
+            "module_code": "contract-review",
+            "purpose": purpose,
+            "request_id": request_id,
+            "mode": "compatibility",
+            "enabled": _contract_review_pipt_enabled(),
+        }
+    )
+
+
+def _contract_review_pipt_postprocess(
+    *,
+    text: str,
+    purpose: str,
+    request_id: str,
+    placeholder_manifest: dict[str, Any] | str | None,
+) -> dict[str, Any]:
+    return postprocess_payload(
+        {
+            "text": text,
+            "module_code": "contract-review",
+            "purpose": purpose,
+            "request_id": request_id,
+            "mode": "compatibility",
+            "placeholder_manifest": placeholder_manifest or {},
+        }
+    )
+
+
+def _json_text_for_pipt(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value or "")
+
+
+def _collect_contract_review_pipt_text(inputs: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    for key in ("segment_text", "clauses_json", "contract_outline", "target_text", "clause_text", "suggestion"):
+        value = inputs.get(key)
+        if value not in (None, ""):
+            chunks.append(_json_text_for_pipt(value))
+    return "\n".join(chunks)
+
+
+def _collect_contract_review_output_text(outputs: dict[str, Any]) -> str:
+    if not isinstance(outputs, dict):
+        return ""
+    values: list[str] = []
+    for value in outputs.values():
+        if value in (None, ""):
+            continue
+        values.append(_json_text_for_pipt(value))
+    return "\n".join(values)
+
+
+class _ContractReviewPiptWorkflowClient:
+    def __init__(self, inner: DifyWorkflowClient, *, purpose: str, run_id: str) -> None:
+        self._inner = inner
+        self._purpose = purpose
+        self._run_id = run_id
+
+    def run_workflow(
+        self,
+        *,
+        inputs: dict[str, Any],
+        user: str,
+        response_mode: str = "blocking",
+    ) -> dict[str, Any]:
+        next_inputs = dict(inputs or {})
+        request_id = f"{self._run_id}:{self._purpose}:{uuid.uuid4().hex[:12]}"
+        pipt_payload: dict[str, Any] = {}
+        pipt_warning = ""
+        try:
+            pipt_payload = _contract_review_pipt_preprocess(
+                text=_collect_contract_review_pipt_text(next_inputs),
+                purpose=self._purpose,
+                request_id=request_id,
+            )
+            next_inputs.update(dict(pipt_payload.get("workflow_fields") or {}))
+        except Exception as exc:
+            pipt_warning = str(exc)
+            next_inputs.update(_contract_review_pipt_workflow_fields(""))
+
+        response = self._inner.run_workflow(inputs=next_inputs, user=user, response_mode=response_mode)
+
+        try:
+            outputs = response.get("data", {}).get("outputs")
+            if isinstance(outputs, dict):
+                post = _contract_review_pipt_postprocess(
+                    text=_collect_contract_review_output_text(outputs),
+                    purpose=self._purpose,
+                    request_id=str(pipt_payload.get("request_id") or request_id),
+                    placeholder_manifest=pipt_payload.get("placeholder_manifest"),
+                )
+                validation = post.get("validation") if isinstance(post, dict) else {}
+                if isinstance(validation, dict) and (
+                    validation.get("missing_count")
+                    or validation.get("unexpected_count")
+                    or validation.get("unsupported_count")
+                ):
+                    response.setdefault("data", {})["pipt_gateway_warning"] = {
+                        "purpose": self._purpose,
+                        "request_id": str(pipt_payload.get("request_id") or request_id),
+                        "validation": validation,
+                    }
+        except Exception as exc:
+            response.setdefault("data", {})["pipt_gateway_warning"] = {
+                "purpose": self._purpose,
+                "request_id": str(pipt_payload.get("request_id") or request_id),
+                "error": str(exc),
+            }
+        if pipt_warning:
+            response.setdefault("data", {})["pipt_gateway_preprocess_warning"] = {
+                "purpose": self._purpose,
+                "request_id": request_id,
+                "error": pipt_warning,
+            }
+        return response
 
 
 def _ensure_data_roots() -> None:
@@ -2150,8 +2295,30 @@ def _latest_mtime_iso(target: Path) -> str:
     return datetime.utcfromtimestamp(latest).isoformat() + "Z"
 
 
+def _migrate_archived_run_if_needed(run_id: str) -> None:
+    run_id = str(run_id or "").strip()
+    if not _is_safe_run_id(run_id):
+        return
+    target_dir = RUN_ROOT / run_id
+    if target_dir.exists():
+        return
+
+    source_dir = ARCHIVED_RUN_ROOT / run_id
+    if not source_dir.exists() or not source_dir.is_dir():
+        return
+
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
+
+    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    for upload in ARCHIVED_UPLOAD_ROOT.glob(f"{run_id}.*"):
+        if upload.is_file():
+            shutil.copy2(upload, UPLOAD_ROOT / upload.name)
+
+
 def _infer_meta_from_run(run_id: str) -> dict[str, Any]:
     run_id = _require_safe_run_id(run_id)
+    _migrate_archived_run_if_needed(run_id)
     run_dir = RUN_ROOT / run_id
     if not run_dir.exists() or not run_dir.is_dir():
         raise HTTPException(status_code=404, detail="run_id 不存在")
@@ -2233,6 +2400,7 @@ def _repair_run_state_if_outputs_ready(
     if not _is_safe_run_id(run_id):
         return meta
 
+    _migrate_archived_run_if_needed(run_id)
     current = dict(meta or get_review_meta(run_id) or {})
     current.setdefault("run_id", run_id)
     current_status = str(current.get("status") or "").strip().lower()
@@ -2300,6 +2468,7 @@ def _repair_run_state_if_outputs_ready(
 
 def _read_meta(run_id: str) -> dict[str, Any]:
     run_id = _require_safe_run_id(run_id)
+    _migrate_archived_run_if_needed(run_id)
     payload = get_review_meta(run_id)
     if payload is None:
         payload = _infer_meta_from_run(run_id)
@@ -2338,6 +2507,7 @@ def _read_meta(run_id: str) -> dict[str, Any]:
 
 
 def _safe_json(path: Path, *, persist: bool = False) -> Any:
+    _migrate_archived_run_if_needed(path.parent.name)
     if path.exists():
         payload = json.loads(path.read_text(encoding="utf-8"))
         # GET/status/history/result 请求默认只读，避免读取文件时反向写数据库
@@ -3863,6 +4033,7 @@ def _build_result_payload(run_id: str) -> dict[str, Any]:
 
 
 def _resolve_document_path(run_id: str) -> Path | None:
+    _migrate_archived_run_if_needed(run_id)
     run_dir = RUN_ROOT / run_id
     for candidate in (
         run_dir / "source.docx",
@@ -3995,6 +4166,15 @@ def _is_retryable_dify_connect_failure(stderr: str, stdout: str = "") -> bool:
 
 def _build_pipeline_failure_meta(stderr: str, stdout: str = "") -> dict[str, Any]:
     raw_error = (stderr or stdout or "未知错误").strip()
+    if _is_dify_provider_missing_failure(raw_error):
+        return {
+            "status": "failed",
+            "step": "Dify 工作流配置错误",
+            "progress": 100,
+            "error": "合同审查 Dify 工作流引用了当前 Dify 环境不存在的模型供应商。请在 Dify 控制台修复该工作流的模型 Provider 配置后重试。",
+            "error_detail": raw_error,
+            "error_code": "DIFY_WORKFLOW_PROVIDER_MISSING",
+        }
     if _is_retryable_dify_connect_failure(stderr, stdout):
         return {
             "status": "failed",
@@ -4003,6 +4183,43 @@ def _build_pipeline_failure_meta(stderr: str, stdout: str = "") -> dict[str, Any
             "error": "Dify 工作流连接失败，系统已自动重试但仍未成功。请稍后重试，或联系管理员检查合同审查 Dify 服务地址和运行环境。",
             "error_detail": raw_error,
             "error_code": "DIFY_WORKFLOW_CONNECT_FAILED",
+        }
+    return {
+        "status": "failed",
+        "step": "主流程执行失败",
+        "progress": 100,
+        "error": raw_error,
+    }
+
+
+def _is_dify_provider_missing_failure(raw_error: str) -> bool:
+    text = str(raw_error or "").strip().lower()
+    return "provider " in text and " does not exist" in text
+
+
+def _build_pipeline_exception_failure_meta(exc: Exception) -> dict[str, Any]:
+    raw_error = str(exc) or repr(exc)
+    if _is_retryable_dify_connect_failure(raw_error):
+        return _build_pipeline_failure_meta(raw_error)
+    if _is_dify_provider_missing_failure(raw_error):
+        return _build_pipeline_failure_meta(raw_error)
+    if isinstance(exc, DifyWorkflowError):
+        return {
+            "status": "failed",
+            "step": "Dify 工作流调用失败",
+            "progress": 100,
+            "error": "合同审查 Dify 工作流调用失败。请检查工作流发布状态、模型配置和 API Key 后重试。",
+            "error_detail": raw_error,
+            "error_code": "DIFY_WORKFLOW_FAILED",
+        }
+    if isinstance(exc, ValueError) and "Missing required environment variables" in raw_error:
+        return {
+            "status": "failed",
+            "step": "合同审查配置缺失",
+            "progress": 100,
+            "error": "合同审查运行配置缺失，请检查 Dify 工作流 API Key 和审查方配置。",
+            "error_detail": raw_error,
+            "error_code": "CONTRACT_REVIEW_CONFIG_MISSING",
         }
     return {
         "status": "failed",
@@ -4035,10 +4252,248 @@ def _start_ai_rewrite_job(run_id: str) -> bool:
     return True
 
 
+def _contract_review_runtime_settings(*, review_side: str, contract_type_hint: str, analysis_scope: str):
+    return replace(
+        settings,
+        review_side=review_side,
+        contract_type_hint=contract_type_hint,
+        analysis_scope=analysis_scope,
+        run_root=RUN_ROOT,
+    )
+
+
+def _save_pipeline_stage_outputs(run_dir: Path, extracted_text: str, cleaned_text: str, segment_bundle: dict[str, Any]) -> None:
+    _atomic_write_text(run_dir / "extracted_text.txt", extracted_text)
+    _atomic_write_text(run_dir / "cleaned_text.txt", cleaned_text)
+    _write_json_artifact(run_dir / "segments.json", segment_bundle)
+
+
+def _attach_contract_review_pipt_clients(runner: WorkflowRunner, *, run_id: str) -> None:
+    runner.clause_client = _ContractReviewPiptWorkflowClient(
+        runner.clause_client,
+        purpose="contract_clause_split",
+        run_id=run_id,
+    )
+    runner.anchored_risk_client = _ContractReviewPiptWorkflowClient(
+        runner.anchored_risk_client,
+        purpose="contract_risk_review",
+        run_id=run_id,
+    )
+    runner.missing_multi_risk_client = _ContractReviewPiptWorkflowClient(
+        runner.missing_multi_risk_client,
+        purpose="contract_risk_review",
+        run_id=run_id,
+    )
+    runner.fast_screen_client = _ContractReviewPiptWorkflowClient(
+        runner.fast_screen_client,
+        purpose="contract_fast_screen",
+        run_id=run_id,
+    )
+    runner.risk_client = runner.anchored_risk_client
+
+
+def _attach_contract_review_native_writers() -> None:
+    contract_workflow_runner_module.write_json = _write_json_artifact
+
+
+def _run_contract_review_native_pipeline(
+    *,
+    run_id: str,
+    source_docx: Path,
+    review_side: str,
+    contract_type_hint: str,
+    analysis_scope: str,
+    resume: bool = False,
+) -> None:
+    run_dir = RUN_ROOT / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "clauses").mkdir(parents=True, exist_ok=True)
+
+    runtime_settings = _contract_review_runtime_settings(
+        review_side=review_side,
+        contract_type_hint=contract_type_hint,
+        analysis_scope=analysis_scope,
+    )
+    runtime_settings.validate_for_live_call()
+    _attach_contract_review_native_writers()
+    runner = WorkflowRunner(settings=runtime_settings, run_dir=run_dir, user_id=f"contract-review-{run_id}")
+    _attach_contract_review_pipt_clients(runner, run_id=run_id)
+
+    _write_meta(run_id, {"status": "running", "step": "正在解析合同文本", "progress": 32})
+    extracted_text = extract_docx_text(source_docx)
+    cleaned_text = clean_contract_text(extracted_text)
+    segment_bundle = split_into_segments(cleaned_text)
+    _save_pipeline_stage_outputs(run_dir, extracted_text, cleaned_text, segment_bundle)
+
+    _write_meta(run_id, {"status": "running", "step": "正在解析与拆分合同", "progress": 40})
+    merged_clauses_path = run_dir / "merged_clauses.json"
+    anchored_outputs_prefetched: dict[str, Any] | None = None
+    anchored_payload_prefetched: dict[str, Any] | None = None
+
+    if resume and merged_clauses_path.exists():
+        merged_clauses = json.loads(merged_clauses_path.read_text(encoding="utf-8"))
+    elif resume:
+        clause_batches: list[list[dict[str, Any]]] = []
+        for segment in segment_bundle["segments"]:
+            segment_id = str(segment.get("segment_id") or "")
+            existing_path = run_dir / "clauses" / f"{segment_id}.json"
+            clauses = load_existing_clause_batch(existing_path)
+            if clauses is None:
+                clauses = runner.run_clause_splitter(segment)
+            clause_batches.append(clauses)
+
+        raw_merged_clauses = merge_clause_batches(clause_batches)
+        raw_merged_clauses = normalize_clause_records(raw_merged_clauses)
+        _write_json_artifact(run_dir / "merged_clauses_raw.json", raw_merged_clauses)
+        merged_clauses = normalize_clauses(raw_merged_clauses)
+        _write_json_artifact(run_dir / "merged_clauses.json", merged_clauses)
+    else:
+        segments = list(segment_bundle["segments"])
+        segment_order_index = {str(seg.get("segment_id") or ""): idx for idx, seg in enumerate(segments)}
+        clause_batches_map: dict[str, list[dict[str, Any]]] = {}
+        anchored_segment_results: list[dict[str, Any]] = []
+
+        def run_clause_splitter_for_segment(segment: dict[str, Any]) -> tuple[str, str, list[dict[str, Any]]]:
+            clauses = runner.run_clause_splitter(segment)
+            return str(segment.get("segment_id") or ""), str(segment.get("segment_title") or ""), clauses
+
+        with ThreadPoolExecutor(max_workers=max(1, int(runtime_settings.clause_split_max_concurrency))) as clause_executor, ThreadPoolExecutor(
+            max_workers=max(1, int(runtime_settings.dify_max_concurrency))
+        ) as anchored_executor:
+            clause_future_map = {
+                clause_executor.submit(run_clause_splitter_for_segment, segment): segment for segment in segments
+            }
+            anchored_future_map: dict[Any, str] = {}
+
+            for clause_future in as_completed(clause_future_map):
+                segment_id, segment_title, clauses = clause_future.result()
+                clause_batches_map[segment_id] = clauses
+
+                anchored_clauses = normalize_clauses(normalize_clause_records(list(clauses)))
+                anchored_future = anchored_executor.submit(
+                    runner.run_anchored_for_segment,
+                    segment_id=segment_id,
+                    segment_title=segment_title,
+                    clauses=anchored_clauses,
+                    segment_start_idx=segment_order_index.get(segment_id, 0),
+                )
+                anchored_future_map[anchored_future] = segment_id
+
+            for anchored_future in as_completed(anchored_future_map):
+                anchored_segment_results.append(anchored_future.result())
+
+        clause_batches: list[list[dict[str, Any]]] = []
+        for segment in segments:
+            sid = str(segment.get("segment_id") or "")
+            if sid not in clause_batches_map:
+                raise RuntimeError(f"Missing clause batch for segment: {sid}")
+            clause_batches.append(clause_batches_map[sid])
+
+        raw_merged_clauses = merge_clause_batches(clause_batches)
+        raw_merged_clauses = normalize_clause_records(raw_merged_clauses)
+        _write_json_artifact(run_dir / "merged_clauses_raw.json", raw_merged_clauses)
+        merged_clauses = normalize_clauses(raw_merged_clauses)
+        _write_json_artifact(run_dir / "merged_clauses.json", merged_clauses)
+
+        anchored_by_clause: list[dict[str, Any]] = []
+        anchored_skipped: list[dict[str, Any]] = []
+        anchored_risk_items: list[dict[str, Any]] = []
+        anchored_errors: list[dict[str, Any]] = []
+        segment_results_summary: list[dict[str, Any]] = []
+        for result in sorted(anchored_segment_results, key=lambda item: int(item.get("segment_start_idx", 0))):
+            anchored_by_clause.extend(list(result.get("by_clause_records") or []))
+            anchored_skipped.extend(list(result.get("skipped") or []))
+            anchored_risk_items.extend(list(result.get("accepted_items") or []))
+            summary_item = {
+                "segment_id": str(result.get("segment_id") or ""),
+                "segment_start_idx": int(result.get("segment_start_idx") or 0),
+                "status": "ok" if not result.get("error") else "error",
+                "duration_seconds": float(result.get("duration_seconds") or 0.0),
+                "risk_item_count": len(result.get("accepted_items") or []),
+                "by_clause_count": len(result.get("by_clause_records") or []),
+            }
+            segment_results_summary.append(summary_item)
+            if result.get("error"):
+                anchored_errors.append(
+                    {
+                        "segment_id": str(result.get("segment_id") or ""),
+                        "segment_start_idx": int(result.get("segment_start_idx") or 0),
+                        **dict(result.get("error") or {}),
+                    }
+                )
+
+        _write_json_artifact(
+            run_dir / "risk_checkpoints" / "anchored_pipeline_state.json",
+            {
+                "version": 1,
+                "clause_split_max_concurrency": int(runtime_settings.clause_split_max_concurrency),
+                "dify_max_concurrency": int(runtime_settings.dify_max_concurrency),
+                "segment_results_summary": segment_results_summary,
+                "errors": anchored_errors,
+            },
+        )
+        anchored_outputs_prefetched = {"by_clause": anchored_by_clause, "skipped": anchored_skipped}
+        if anchored_errors:
+            anchored_outputs_prefetched["errors"] = anchored_errors
+        anchored_payload_prefetched = {"risk_items": anchored_risk_items}
+
+    _write_meta(run_id, {"status": "running", "step": "正在识别风险点", "progress": 65})
+    if resume or anchored_outputs_prefetched is None or anchored_payload_prefetched is None:
+        risk_stream_payloads = runner.run_risk_reviewers(merged_clauses, resume=resume)
+    else:
+        missing_multi_outputs, missing_multi_payload = runner.run_risk_reviewer_missing_multi(merged_clauses)
+        _write_json_artifact(
+            run_dir / "risk_result_outputs.json",
+            {
+                "anchored": anchored_outputs_prefetched,
+                "missing_multi": missing_multi_outputs,
+            },
+        )
+        risk_stream_payloads = {
+            "anchored": anchored_payload_prefetched,
+            "missing_multi": missing_multi_payload,
+        }
+
+    normalized_risk_payload = merge_risk_results(
+        anchored_payload=risk_stream_payloads.get("anchored", {}),
+        missing_multi_payload=risk_stream_payloads.get("missing_multi", {}),
+        clauses=merged_clauses,
+    )
+    normalized_scope = normalize_analysis_scope(analysis_scope)
+    scoped_risk_payload = apply_analysis_scope(normalized_risk_payload, normalized_scope)
+    _write_json_artifact(
+        run_dir / "risk_result_raw.json",
+        {
+            "anchored": risk_stream_payloads.get("anchored", {}),
+            "missing_multi": risk_stream_payloads.get("missing_multi", {}),
+            "unified": normalized_risk_payload,
+            "scoped": scoped_risk_payload,
+            "analysis_scope": normalized_scope,
+        },
+    )
+    _write_json_artifact(run_dir / "risk_result_normalized.full.json", normalized_risk_payload)
+    _write_json_artifact(run_dir / "risk_result_normalized.json", scoped_risk_payload)
+
+    _write_meta(run_id, {"status": "running", "step": "风险识别完成，正在校验结果", "progress": 85})
+    is_valid, error_message = validate_risk_result(scoped_risk_payload)
+    _write_json_artifact(
+        run_dir / "risk_result_validated.json",
+        {
+            "is_valid": is_valid,
+            "error_message": error_message,
+            "risk_result": scoped_risk_payload,
+            "analysis_scope": normalized_scope,
+        },
+    )
+    if not is_valid:
+        raise ValueError(error_message or "risk_result_validated.json 校验未通过")
+
+
 def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_side: str, contract_type_hint: str, analysis_scope: str) -> None:
     run_dir = RUN_ROOT / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
+    env["PYTHONPATH"] = str(API_ROOT)
     env["RUN_ROOT"] = str(RUN_ROOT)
     env["REVIEW_SIDE"] = review_side
     env["CONTRACT_TYPE_HINT"] = contract_type_hint
@@ -4116,13 +4571,9 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
     )
 
     max_pipeline_attempts = _pipeline_retry_attempts()
-    stdout = ""
-    stderr = ""
-    returncode = 1
     for attempt in range(1, max_pipeline_attempts + 1):
-        cmd = [sys.executable, "app.py", str(source_docx), "--run-id", run_id]
-        if attempt > 1:
-            cmd.append("--resume")
+        resume = attempt > 1
+        if resume:
             _write_meta(
                 run_id,
                 {
@@ -4132,75 +4583,28 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
                 },
             )
         try:
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(BASE_DIR),
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+            _run_contract_review_native_pipeline(
+                run_id=run_id,
+                source_docx=source_docx,
+                review_side=review_side,
+                contract_type_hint=contract_type_hint,
+                analysis_scope=analysis_scope,
+                resume=resume,
             )
-        except OSError as exc:
-            _write_meta(
-                run_id,
-                {
-                    "status": "failed",
-                    "step": "审查流程启动失败",
-                    "progress": 100,
-                    "error": "无法启动后端审查流程，请检查 Python 运行环境后重试。",
-                    "error_detail": str(exc),
-                },
-            )
+            (run_dir / "app.stdout.log").write_text("native pipeline completed\n", encoding="utf-8")
+            (run_dir / "app.stderr.log").write_text("", encoding="utf-8")
+            break
+        except Exception as exc:
+            error_text = str(exc) or repr(exc)
+            (run_dir / "app.stdout.log").write_text("", encoding="utf-8")
+            (run_dir / "app.stderr.log").write_text(error_text, encoding="utf-8")
+            if max_pipeline_attempts > 1:
+                (run_dir / f"app.attempt_{attempt}.stdout.log").write_text("", encoding="utf-8")
+                (run_dir / f"app.attempt_{attempt}.stderr.log").write_text(error_text, encoding="utf-8")
+            if attempt < max_pipeline_attempts and _is_retryable_dify_connect_failure(error_text):
+                continue
+            _write_meta(run_id, _build_pipeline_exception_failure_meta(exc))
             return
-
-        last_phase = ""
-        while True:
-            merged_ready = (run_dir / "merged_clauses.json").exists()
-            validated_ready = (run_dir / "risk_result_validated.json").exists()
-            if validated_ready:
-                phase = "assemble"
-                phase_step = "风险识别完成，正在生成结果"
-                phase_progress = 85
-            elif merged_ready:
-                phase = "scan"
-                phase_step = "正在识别风险点"
-                phase_progress = 65
-            else:
-                phase = "parse"
-                phase_step = "正在解析与拆分合同"
-                phase_progress = 35
-
-            if phase != last_phase:
-                _write_meta(
-                    run_id,
-                    {
-                        "status": "running",
-                        "step": phase_step,
-                        "progress": phase_progress,
-                    },
-                )
-                last_phase = phase
-
-            if proc.poll() is not None:
-                break
-            time.sleep(1.0)
-
-        stdout, stderr = proc.communicate()
-        returncode = int(proc.returncode or 0)
-        (run_dir / "app.stdout.log").write_text(stdout or "", encoding="utf-8")
-        (run_dir / "app.stderr.log").write_text(stderr or "", encoding="utf-8")
-        if max_pipeline_attempts > 1:
-            (run_dir / f"app.attempt_{attempt}.stdout.log").write_text(stdout or "", encoding="utf-8")
-            (run_dir / f"app.attempt_{attempt}.stderr.log").write_text(stderr or "", encoding="utf-8")
-
-        if returncode == 0:
-            break
-        if attempt >= max_pipeline_attempts or not _is_retryable_dify_connect_failure(stderr, stdout):
-            break
-
-    if returncode != 0:
-        _write_meta(run_id, _build_pipeline_failure_meta(stderr, stdout))
-        return
 
     validated = _safe_json(run_dir / "risk_result_validated.json") or {}
     is_valid = bool(validated.get("is_valid"))
@@ -4228,7 +4632,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
     export_cmd = [
         sys.executable,
         "-m",
-        "src.docx_comments",
+        "app.services.contract_review_engine.docx_comments",
         str(source_docx),
         str(run_dir / "merged_clauses.json"),
         str(run_dir / "risk_result_validated.json"),
@@ -4239,7 +4643,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
     ]
     export_proc = subprocess.run(
         export_cmd,
-        cwd=str(BASE_DIR),
+        cwd=str(API_ROOT),
         env=env,
         capture_output=True,
         text=True,
@@ -4499,7 +4903,7 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
     patch_cmd = [
         sys.executable,
         "-m",
-        "src.docx_apply_patches",
+        "app.services.contract_review_engine.docx_apply_patches",
         str(source_doc),
         str(reviewed_path),
         "--out",
@@ -4509,8 +4913,8 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
     ]
     patch_proc = subprocess.run(
         patch_cmd,
-        cwd=str(BASE_DIR),
-        env=os.environ.copy(),
+        cwd=str(API_ROOT),
+        env={**os.environ.copy(), "PYTHONPATH": str(API_ROOT)},
         capture_output=True,
         text=True,
     )
@@ -4519,7 +4923,7 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
     comment_cmd = [
         sys.executable,
         "-m",
-        "src.docx_comments",
+        "app.services.contract_review_engine.docx_comments",
         str(patched_docx),
         str(merged_path),
         str(reviewed_path),
@@ -4532,8 +4936,8 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
     ]
     comment_proc = subprocess.run(
         comment_cmd,
-        cwd=str(BASE_DIR),
-        env=os.environ.copy(),
+        cwd=str(API_ROOT),
+        env={**os.environ.copy(), "PYTHONPATH": str(API_ROOT)},
         capture_output=True,
         text=True,
     )
