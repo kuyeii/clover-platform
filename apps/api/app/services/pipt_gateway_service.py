@@ -1184,7 +1184,20 @@ def _historical_mapping_reuse_limit() -> int:
 
 
 def _permanent_mapping_purposes() -> set[str]:
-    raw = os.environ.get("PIPT_GATEWAY_PERMANENT_PURPOSES", "knowledge_sync,document_preprocess")
+    raw = os.environ.get(
+        "PIPT_GATEWAY_PERMANENT_PURPOSES",
+        ",".join(
+            [
+                "knowledge_sync",
+                "document_preprocess",
+                "contract_review_document_preprocess",
+                "contract_clause_split",
+                "contract_risk_review",
+                "contract_fast_screen",
+                "contract_ai_rewrite",
+            ]
+        ),
+    )
     return {item.strip() for item in raw.split(",") if item.strip()}
 
 

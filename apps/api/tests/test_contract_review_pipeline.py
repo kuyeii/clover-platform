@@ -13,6 +13,7 @@ if API_ROOT_VALUE not in sys.path:
     sys.path.insert(0, API_ROOT_VALUE)
 
 from app.services import contract_review_service as service
+from app.services import pipt_gateway_service
 
 
 DIFY_CONNECT_TRACEBACK = """Traceback (most recent call last):
@@ -27,7 +28,7 @@ src.dify_client.DifyWorkflowError: Workflow request could not connect after 3 at
 
 
 class ContractReviewPipelineTests(unittest.TestCase):
-    def test_rewrite_inputs_include_pipt_gateway_fields_by_default_disabled(self) -> None:
+    def test_rewrite_inputs_include_pipt_gateway_fields_by_default_enabled_strong(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             run_dir = Path(td)
             (run_dir / "merged_clauses.json").write_text(
@@ -44,16 +45,16 @@ class ContractReviewPipelineTests(unittest.TestCase):
             }
             with (
                 patch.object(service, "_read_meta", return_value={"review_side": "甲方", "contract_type_hint": "服务合同"}),
-                patch.dict(service.os.environ, {}, clear=False),
+                patch.dict(service.os.environ, {}, clear=True),
             ):
                 inputs = service._build_rewrite_inputs(run_id="rewrite_pipt", run_dir=run_dir, risk=risk)
 
-        self.assertEqual(inputs["pipt_gateway_enabled"], "false")
-        self.assertEqual(inputs["pipt_gateway_mode"], "compatibility")
+        self.assertEqual(inputs["pipt_gateway_enabled"], "true")
+        self.assertEqual(inputs["pipt_gateway_mode"], "strong")
         self.assertIn("placeholder_policy", inputs)
         self.assertIn("placeholder_manifest", inputs)
 
-    def test_contract_review_pipt_enabled_still_uses_compatibility_mode(self) -> None:
+    def test_contract_review_pipt_can_be_disabled_to_compatibility_mode(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             run_dir = Path(td)
             (run_dir / "merged_clauses.json").write_text(
@@ -70,23 +71,25 @@ class ContractReviewPipelineTests(unittest.TestCase):
             }
             with (
                 patch.object(service, "_read_meta", return_value={"review_side": "甲方", "contract_type_hint": "服务合同"}),
-                patch.object(service, "preprocess_payload", return_value={
+                patch.object(service, "preprocess_internal_payload", return_value={
+                    "text": "张三",
                     "workflow_fields": {
-                        "pipt_gateway_enabled": "true",
+                        "pipt_gateway_enabled": "false",
                         "pipt_gateway_mode": "compatibility",
                         "placeholder_manifest": "{}",
                         "placeholder_policy": "{}",
-                    }
+                    },
+                    "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
                 }) as preprocess,
-                patch.dict(service.os.environ, {"CONTRACT_REVIEW_PIPT_GATEWAY_ENABLED": "true"}),
+                patch.dict(service.os.environ, {"CONTRACT_REVIEW_PIPT_GATEWAY_ENABLED": "false"}),
             ):
                 inputs = service._build_rewrite_inputs(run_id="rewrite_pipt_enabled", run_dir=run_dir, risk=risk)
 
-        self.assertEqual(inputs["pipt_gateway_enabled"], "true")
+        self.assertEqual(inputs["pipt_gateway_enabled"], "false")
         self.assertEqual(inputs["pipt_gateway_mode"], "compatibility")
         call_payload = preprocess.call_args.args[0]
         self.assertEqual(call_payload["mode"], "compatibility")
-        self.assertTrue(call_payload["enabled"])
+        self.assertFalse(call_payload["enabled"])
 
     def test_pipeline_retries_retryable_dify_connect_failure_with_resume(self) -> None:
         writes: list[tuple[str, dict]] = []
@@ -237,7 +240,69 @@ class ContractReviewPipelineTests(unittest.TestCase):
         self.assertIn("Dify 工作流", failed_meta["error"])
         self.assertIn("Provider", failed_meta["error_detail"])
 
-    def test_contract_review_pipt_client_injects_workflow_fields_without_blocking(self) -> None:
+    def test_contract_review_pipt_client_desensitizes_inputs_and_restores_outputs(self) -> None:
+        captured_inputs: dict[str, object] = {}
+
+        class FakeClient:
+            def run_workflow(self, *, inputs, user, response_mode="blocking"):
+                captured_inputs.update(inputs)
+                return {
+                    "data": {
+                        "status": "succeeded",
+                        "outputs": {
+                            "risk_items": [
+                                {
+                                    "risk_label": "联系人风险",
+                                    "issue": "联系人 @@PIPT:v1:e000001:k11111111@@ 未约定授权。",
+                                    "evidence_text": "@@PIPT:v1:e000001:k11111111@@",
+                                }
+                            ]
+                        },
+                    }
+                }
+
+        client = service._ContractReviewPiptWorkflowClient(FakeClient(), purpose="contract_clause_split", run_id="run1")
+        with (
+            patch.object(
+                service,
+                "_contract_review_pipt_preprocess",
+                side_effect=lambda *, text, purpose, request_id: {
+                    "request_id": request_id,
+                    "text": str(text).replace("张三", "@@PIPT:v1:e000001:k11111111@@"),
+                    "placeholder_manifest": {"@@PIPT:v1:e000001:k11111111@@": {"entity_type": "name"}},
+                    "workflow_fields": {
+                        "placeholder_manifest": "{}",
+                        "placeholder_policy": "{}",
+                        "pipt_gateway_enabled": "true",
+                        "pipt_gateway_mode": "strong",
+                    },
+                    "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                },
+            ),
+            patch.object(
+                service,
+                "_contract_review_pipt_postprocess",
+                side_effect=lambda *, text, purpose, request_id, placeholder_manifest: {
+                    "request_id": request_id,
+                    "text": str(text).replace("@@PIPT:v1:e000001:k11111111@@", "张三"),
+                    "restored_count": 1,
+                    "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                },
+            ),
+        ):
+            response = client.run_workflow(
+                inputs={"segment_text": "联系人 张三"},
+                user="u1",
+            )
+
+        self.assertEqual(captured_inputs["pipt_gateway_enabled"], "true")
+        self.assertEqual(captured_inputs["pipt_gateway_mode"], "strong")
+        self.assertIn("placeholder_manifest", captured_inputs)
+        self.assertEqual(captured_inputs["segment_text"], "联系人 @@PIPT:v1:e000001:k11111111@@")
+        self.assertEqual(response["data"]["outputs"]["risk_items"][0]["issue"], "联系人 张三 未约定授权。")
+        self.assertNotIn("pipt_gateway_warning", response["data"])
+
+    def test_contract_review_pipt_client_falls_back_to_plain_text_on_preprocess_error(self) -> None:
         captured_inputs: dict[str, object] = {}
 
         class FakeClient:
@@ -247,34 +312,34 @@ class ContractReviewPipelineTests(unittest.TestCase):
 
         client = service._ContractReviewPiptWorkflowClient(FakeClient(), purpose="contract_clause_split", run_id="run1")
         with (
+            patch.object(service, "_contract_review_pipt_preprocess", side_effect=RuntimeError("vault down")),
             patch.object(
                 service,
-                "_contract_review_pipt_preprocess",
+                "_contract_review_pipt_workflow_fields",
                 return_value={
-                    "request_id": "req1",
-                    "placeholder_manifest": {"@@PIPT:v1:e000001:k11111111@@": {"entity_type": "name"}},
-                    "workflow_fields": {
-                        "placeholder_manifest": "{}",
-                        "placeholder_policy": "{}",
-                        "pipt_gateway_enabled": "true",
-                        "pipt_gateway_mode": "compatibility",
-                    },
+                    "placeholder_manifest": "{}",
+                    "placeholder_policy": "{}",
+                    "pipt_gateway_enabled": "true",
+                    "pipt_gateway_mode": "strong",
                 },
             ),
-            patch.object(
-                service,
-                "_contract_review_pipt_postprocess",
-                return_value={"validation": {"missing_count": 1, "unexpected_count": 0, "unsupported_count": 0}},
-            ),
         ):
-            response = client.run_workflow(
-                inputs={"segment_text": "联系人 @@PIPT:v1:e000001:k11111111@@"},
-                user="u1",
-            )
+            response = client.run_workflow(inputs={"segment_text": "联系人 张三"}, user="u1")
 
-        self.assertEqual(captured_inputs["pipt_gateway_enabled"], "true")
-        self.assertIn("placeholder_manifest", captured_inputs)
-        self.assertIn("pipt_gateway_warning", response["data"])
+        self.assertEqual(captured_inputs["segment_text"], "联系人 张三")
+        self.assertIn("pipt_gateway_preprocess_warning", response["data"])
+
+    def test_contract_review_pipt_purposes_are_permanent(self) -> None:
+        for purpose in (
+            "contract_review_document_preprocess",
+            "contract_clause_split",
+            "contract_risk_review",
+            "contract_fast_screen",
+            "contract_ai_rewrite",
+        ):
+            self.assertIsNone(
+                pipt_gateway_service._vault_ttl_seconds(module_code="contract-review", purpose=purpose)
+            )
 
     def test_attach_contract_review_native_writers_routes_runner_json_to_service_writer(self) -> None:
         original = service.contract_workflow_runner_module.write_json

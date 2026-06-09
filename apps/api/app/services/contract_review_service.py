@@ -70,8 +70,13 @@ _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,96}$")
 
 
 def _contract_review_pipt_enabled() -> bool:
-    """合同审核 PIPT 适配开关；默认关闭，避免改变法律审查语义。"""
-    return str(os.environ.get("CONTRACT_REVIEW_PIPT_GATEWAY_ENABLED", "false")).strip().lower() == "true"
+    """合同审查默认启用 PIPT；可通过环境变量显式关闭。"""
+    value = str(os.environ.get("CONTRACT_REVIEW_PIPT_GATEWAY_ENABLED", "true")).strip().lower()
+    return value not in {"0", "false", "no", "off", "disabled"}
+
+
+def _contract_review_pipt_mode() -> str:
+    return "strong" if _contract_review_pipt_enabled() else "compatibility"
 
 
 def _contract_review_pipt_workflow_fields(text: str = "", mapping_table: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -80,7 +85,7 @@ def _contract_review_pipt_workflow_fields(text: str = "", mapping_table: dict[st
         "mapping_table": mapping_table or {},
         "module_code": "contract-review",
         "purpose": "dify_rewrite",
-        "mode": "compatibility",
+        "mode": _contract_review_pipt_mode(),
         "enabled": _contract_review_pipt_enabled(),
     })
     return dict(payload.get("workflow_fields") or {})
@@ -98,7 +103,7 @@ def _contract_review_pipt_preprocess(
             "module_code": "contract-review",
             "purpose": purpose,
             "request_id": request_id,
-            "mode": "compatibility",
+            "mode": _contract_review_pipt_mode(),
             "enabled": _contract_review_pipt_enabled(),
         }
     )
@@ -117,39 +122,313 @@ def _contract_review_pipt_postprocess(
             "module_code": "contract-review",
             "purpose": purpose,
             "request_id": request_id,
-            "mode": "compatibility",
+            "mode": _contract_review_pipt_mode(),
             "placeholder_manifest": placeholder_manifest or {},
         }
     )
 
 
-def _json_text_for_pipt(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    try:
-        return json.dumps(value, ensure_ascii=False)
-    except Exception:
-        return str(value or "")
+_CONTRACT_REVIEW_PIPT_INPUT_TEXT_FIELDS = {
+    "segment_text",
+    "clauses_json",
+    "contract_outline",
+    "target_text",
+    "clause_text",
+    "suggestion",
+    "anchored_risks_json",
+    "anchored_risk_json",
+    "multi_clause_risks_json",
+    "multi_clause_risk_json",
+}
+
+_CONTRACT_REVIEW_PIPT_RECURSIVE_TEXT_KEYS = {
+    "clause_text",
+    "source_excerpt",
+    "clause_context",
+    "clause_text_excerpt",
+    "target_text",
+    "main_text",
+    "evidence_text",
+    "anchor_text",
+    "suggestion",
+    "suggestion_minimal",
+    "suggestion_optimized",
+    "issue",
+    "risk_label",
+    "factual_basis",
+    "reasoning_basis",
+    "normative_basis",
+    "contract_outline",
+}
+
+_CONTRACT_REVIEW_PIPT_OUTPUT_TEXT_FIELDS = {
+    "text",
+    "output",
+    "clauses",
+    "risk_items",
+    "contract_risk_report",
+}
 
 
-def _collect_contract_review_pipt_text(inputs: dict[str, Any]) -> str:
-    chunks: list[str] = []
-    for key in ("segment_text", "clauses_json", "contract_outline", "target_text", "clause_text", "suggestion"):
-        value = inputs.get(key)
-        if value not in (None, ""):
-            chunks.append(_json_text_for_pipt(value))
-    return "\n".join(chunks)
+def _contract_review_pipt_json_loads(value: str) -> Any:
+    return json.loads(str(value or ""))
 
 
-def _collect_contract_review_output_text(outputs: dict[str, Any]) -> str:
-    if not isinstance(outputs, dict):
-        return ""
-    values: list[str] = []
-    for value in outputs.values():
-        if value in (None, ""):
+def _contract_review_pipt_json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _contract_review_pipt_preprocess_text_field(
+    *,
+    text: str,
+    purpose: str,
+    request_id: str,
+) -> tuple[str, dict[str, Any]]:
+    payload = _contract_review_pipt_preprocess(
+        text=str(text or ""),
+        purpose=purpose,
+        request_id=request_id,
+    )
+    return str(payload.get("text") or payload.get("desensitized_text") or text or ""), payload
+
+
+def _contract_review_pipt_postprocess_text_field(
+    *,
+    text: str,
+    purpose: str,
+    request_id: str,
+    placeholder_manifest: Any,
+) -> tuple[str, dict[str, Any]]:
+    payload = _contract_review_pipt_postprocess(
+        text=str(text or ""),
+        purpose=purpose,
+        request_id=request_id,
+        placeholder_manifest=placeholder_manifest,
+    )
+    return str(payload.get("text") or text or ""), payload
+
+
+def _contract_review_pipt_transform_json_texts(
+    value: Any,
+    *,
+    transform,
+    path_prefix: str,
+    text_keys: set[str],
+    warnings: list[dict[str, Any]],
+) -> Any:
+    if isinstance(value, list):
+        return [
+            _contract_review_pipt_transform_json_texts(
+                item,
+                transform=transform,
+                path_prefix=f"{path_prefix}.{idx}",
+                text_keys=text_keys,
+                warnings=warnings,
+            )
+            for idx, item in enumerate(value)
+        ]
+    if isinstance(value, dict):
+        next_value: dict[str, Any] = {}
+        for key, item in value.items():
+            item_path = f"{path_prefix}.{key}" if path_prefix else str(key)
+            if key in text_keys and isinstance(item, str) and item:
+                try:
+                    next_value[key] = transform(item, item_path)
+                except Exception as exc:
+                    warnings.append({"field": item_path, "error": str(exc), "fallback": "plain_text"})
+                    next_value[key] = item
+                continue
+            next_value[key] = _contract_review_pipt_transform_json_texts(
+                item,
+                transform=transform,
+                path_prefix=item_path,
+                text_keys=text_keys,
+                warnings=warnings,
+            )
+        return next_value
+    return value
+
+
+def _contract_review_pipt_merge_manifest(payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for payload in payloads:
+        manifest = payload.get("placeholder_manifest") if isinstance(payload, dict) else None
+        if isinstance(manifest, dict):
+            merged.update(manifest)
+    return merged
+
+
+def _contract_review_pipt_workflow_fields_from_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    for payload in payloads:
+        fields = payload.get("workflow_fields") if isinstance(payload, dict) else None
+        if isinstance(fields, dict) and fields:
+            merged_manifest = _contract_review_pipt_merge_manifest(payloads)
+            next_fields = dict(fields)
+            if merged_manifest:
+                next_fields["placeholder_manifest"] = json.dumps(merged_manifest, ensure_ascii=False)
+            return next_fields
+    return _contract_review_pipt_workflow_fields("")
+
+
+def _contract_review_pipt_validation_has_warning(payload: dict[str, Any]) -> bool:
+    validation = payload.get("validation") if isinstance(payload, dict) else None
+    if not isinstance(validation, dict):
+        return False
+    return bool(validation.get("missing_count") or validation.get("unexpected_count") or validation.get("unsupported_count"))
+
+
+def _contract_review_pipt_warning_record(
+    *,
+    purpose: str,
+    request_id: str,
+    field: str = "",
+    payload: dict[str, Any] | None = None,
+    error: str = "",
+    fallback: str = "",
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "purpose": purpose,
+        "request_id": request_id,
+    }
+    if field:
+        item["field"] = field
+    if fallback:
+        item["fallback"] = fallback
+    if error:
+        item["error"] = error
+    if isinstance(payload, dict):
+        validation = payload.get("validation")
+        if isinstance(validation, dict):
+            item["validation"] = validation
+        restored_count = payload.get("restored_count")
+        if restored_count is not None:
+            item["restored_count"] = restored_count
+    return item
+
+
+def _contract_review_pipt_prepare_inputs(
+    *,
+    inputs: dict[str, Any],
+    purpose: str,
+    run_id: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    next_inputs = dict(inputs or {})
+    payloads: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    field_payloads: dict[str, dict[str, Any]] = {}
+    request_seed = uuid.uuid4().hex[:12]
+
+    def preprocess_plain_text(value: str, field_path: str) -> str:
+        request_id = f"{run_id}:{purpose}:{request_seed}:{field_path}"
+        text, payload = _contract_review_pipt_preprocess_text_field(text=value, purpose=purpose, request_id=request_id)
+        payloads.append(payload)
+        field_payloads[field_path] = payload
+        if _contract_review_pipt_validation_has_warning(payload):
+            warnings.append(_contract_review_pipt_warning_record(purpose=purpose, request_id=request_id, field=field_path, payload=payload))
+        return text
+
+    for key, value in list(next_inputs.items()):
+        if key not in _CONTRACT_REVIEW_PIPT_INPUT_TEXT_FIELDS or value in (None, ""):
             continue
-        values.append(_json_text_for_pipt(value))
-    return "\n".join(values)
+        if not isinstance(value, str):
+            continue
+        if key.endswith("_json") or key == "clauses_json":
+            try:
+                parsed = _contract_review_pipt_json_loads(value)
+                transformed = _contract_review_pipt_transform_json_texts(
+                    parsed,
+                    transform=preprocess_plain_text,
+                    path_prefix=key,
+                    text_keys=_CONTRACT_REVIEW_PIPT_RECURSIVE_TEXT_KEYS,
+                    warnings=warnings,
+                )
+                next_inputs[key] = _contract_review_pipt_json_dumps(transformed)
+                continue
+            except Exception as exc:
+                warnings.append({"field": key, "error": str(exc), "fallback": "whole_field"})
+        try:
+            next_inputs[key] = preprocess_plain_text(value, key)
+        except Exception as exc:
+            warnings.append({"field": key, "error": str(exc), "fallback": "plain_text"})
+
+    try:
+        next_inputs.update(_contract_review_pipt_workflow_fields_from_payloads(payloads))
+    except Exception as exc:
+        warnings.append({"error": str(exc), "fallback": "workflow_fields_default"})
+        next_inputs.update(_contract_review_pipt_workflow_fields(""))
+
+    return next_inputs, {
+        "payloads": payloads,
+        "field_payloads": field_payloads,
+        "warnings": warnings,
+    }
+
+
+def _contract_review_pipt_restore_outputs(
+    *,
+    outputs: dict[str, Any],
+    purpose: str,
+    pipt_context: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not isinstance(outputs, dict):
+        return outputs, []
+    field_payloads = pipt_context.get("field_payloads") if isinstance(pipt_context, dict) else {}
+    field_payloads = field_payloads if isinstance(field_payloads, dict) else {}
+    fallback_payloads = list(pipt_context.get("payloads") or []) if isinstance(pipt_context, dict) else []
+    fallback_payload = fallback_payloads[0] if fallback_payloads and isinstance(fallback_payloads[0], dict) else {}
+    warnings: list[dict[str, Any]] = []
+
+    def payload_for_field(field_path: str) -> dict[str, Any]:
+        if field_path in field_payloads and isinstance(field_payloads[field_path], dict):
+            return field_payloads[field_path]
+        return fallback_payload if isinstance(fallback_payload, dict) else {}
+
+    def restore_plain_text(value: str, field_path: str) -> str:
+        source_payload = payload_for_field(field_path)
+        request_id = str(source_payload.get("request_id") or f"{uuid.uuid4().hex}:{field_path}")
+        restored, payload = _contract_review_pipt_postprocess_text_field(
+            text=value,
+            purpose=purpose,
+            request_id=request_id,
+            placeholder_manifest=source_payload.get("placeholder_manifest") if isinstance(source_payload, dict) else {},
+        )
+        if _contract_review_pipt_validation_has_warning(payload):
+            warnings.append(_contract_review_pipt_warning_record(purpose=purpose, request_id=request_id, field=field_path, payload=payload))
+        return restored
+
+    next_outputs = dict(outputs)
+    for key, value in list(next_outputs.items()):
+        if key not in _CONTRACT_REVIEW_PIPT_OUTPUT_TEXT_FIELDS or value in (None, ""):
+            continue
+        if isinstance(value, str):
+            if key in {"text", "output"}:
+                try:
+                    parsed = _contract_review_pipt_json_loads(value)
+                    transformed = _contract_review_pipt_transform_json_texts(
+                        parsed,
+                        transform=restore_plain_text,
+                        path_prefix=key,
+                        text_keys=_CONTRACT_REVIEW_PIPT_RECURSIVE_TEXT_KEYS,
+                        warnings=warnings,
+                    )
+                    next_outputs[key] = _contract_review_pipt_json_dumps(transformed)
+                    continue
+                except Exception:
+                    pass
+            try:
+                next_outputs[key] = restore_plain_text(value, key)
+            except Exception as exc:
+                warnings.append({"field": key, "error": str(exc), "fallback": "raw_output"})
+            continue
+        if isinstance(value, (list, dict)):
+            next_outputs[key] = _contract_review_pipt_transform_json_texts(
+                value,
+                transform=restore_plain_text,
+                path_prefix=key,
+                text_keys=_CONTRACT_REVIEW_PIPT_RECURSIVE_TEXT_KEYS,
+                warnings=warnings,
+            )
+    return next_outputs, warnings
 
 
 class _ContractReviewPiptWorkflowClient:
@@ -166,18 +445,15 @@ class _ContractReviewPiptWorkflowClient:
         response_mode: str = "blocking",
     ) -> dict[str, Any]:
         next_inputs = dict(inputs or {})
-        request_id = f"{self._run_id}:{self._purpose}:{uuid.uuid4().hex[:12]}"
-        pipt_payload: dict[str, Any] = {}
-        pipt_warning = ""
+        pipt_context: dict[str, Any] = {"payloads": [], "field_payloads": {}, "warnings": []}
         try:
-            pipt_payload = _contract_review_pipt_preprocess(
-                text=_collect_contract_review_pipt_text(next_inputs),
+            next_inputs, pipt_context = _contract_review_pipt_prepare_inputs(
+                inputs=next_inputs,
                 purpose=self._purpose,
-                request_id=request_id,
+                run_id=self._run_id,
             )
-            next_inputs.update(dict(pipt_payload.get("workflow_fields") or {}))
         except Exception as exc:
-            pipt_warning = str(exc)
+            pipt_context.setdefault("warnings", []).append({"error": str(exc), "fallback": "plain_text"})
             next_inputs.update(_contract_review_pipt_workflow_fields(""))
 
         response = self._inner.run_workflow(inputs=next_inputs, user=user, response_mode=response_mode)
@@ -185,35 +461,19 @@ class _ContractReviewPiptWorkflowClient:
         try:
             outputs = response.get("data", {}).get("outputs")
             if isinstance(outputs, dict):
-                post = _contract_review_pipt_postprocess(
-                    text=_collect_contract_review_output_text(outputs),
+                restored_outputs, output_warnings = _contract_review_pipt_restore_outputs(
+                    outputs=outputs,
                     purpose=self._purpose,
-                    request_id=str(pipt_payload.get("request_id") or request_id),
-                    placeholder_manifest=pipt_payload.get("placeholder_manifest"),
+                    pipt_context=pipt_context,
                 )
-                validation = post.get("validation") if isinstance(post, dict) else {}
-                if isinstance(validation, dict) and (
-                    validation.get("missing_count")
-                    or validation.get("unexpected_count")
-                    or validation.get("unsupported_count")
-                ):
-                    response.setdefault("data", {})["pipt_gateway_warning"] = {
-                        "purpose": self._purpose,
-                        "request_id": str(pipt_payload.get("request_id") or request_id),
-                        "validation": validation,
-                    }
+                response.setdefault("data", {})["outputs"] = restored_outputs
+                if output_warnings:
+                    response.setdefault("data", {})["pipt_gateway_warning"] = output_warnings
         except Exception as exc:
-            response.setdefault("data", {})["pipt_gateway_warning"] = {
-                "purpose": self._purpose,
-                "request_id": str(pipt_payload.get("request_id") or request_id),
-                "error": str(exc),
-            }
-        if pipt_warning:
-            response.setdefault("data", {})["pipt_gateway_preprocess_warning"] = {
-                "purpose": self._purpose,
-                "request_id": request_id,
-                "error": pipt_warning,
-            }
+            response.setdefault("data", {})["pipt_gateway_warning"] = [{"purpose": self._purpose, "error": str(exc)}]
+        preprocess_warnings = pipt_context.get("warnings") if isinstance(pipt_context, dict) else None
+        if preprocess_warnings:
+            response.setdefault("data", {})["pipt_gateway_preprocess_warning"] = preprocess_warnings
         return response
 
 
@@ -3827,10 +4087,14 @@ def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -
             "host_clause_id": str(aggregate_group.get("host_clause_id") or ""),
             "target_text_source": str(aggregate_group.get("target_text_source") or ""),
         }
-        inputs.update(_contract_review_pipt_workflow_fields(str(clause_text or target_text or "")))
         if len(multi_clause_risks) == 1 and isinstance(multi_clause_risks[0], dict):
             inputs["multi_clause_risk_json"] = json.dumps(multi_clause_risks[0], ensure_ascii=False)
-        return inputs
+        prepared_inputs, _ = _contract_review_pipt_prepare_inputs(
+            inputs=inputs,
+            purpose="contract_ai_rewrite",
+            run_id=run_id,
+        )
+        return prepared_inputs
 
     target_text = _extract_target_text(risk)
     merged_path = run_dir / "merged_clauses.json"
@@ -3859,8 +4123,12 @@ def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -
         "review_side": meta.get("review_side"),
         "contract_type_hint": meta.get("contract_type_hint"),
     }
-    inputs.update(_contract_review_pipt_workflow_fields(str(clause_text or target_text or "")))
-    return inputs
+    prepared_inputs, _ = _contract_review_pipt_prepare_inputs(
+        inputs=inputs,
+        purpose="contract_ai_rewrite",
+        run_id=run_id,
+    )
+    return prepared_inputs
 
 
 def _generate_ai_rewrite(
@@ -4511,8 +4779,10 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
             "analysis_scope_label": analysis_scope_label(analysis_scope),
             "pipt_gateway": {
                 "enabled": _contract_review_pipt_enabled(),
-                "mode": "compatibility",
-                "stage": "adapter_only",
+                "mode": _contract_review_pipt_mode(),
+                "stage": "field_level_redaction",
+                "failure_policy": "plain_text_fallback",
+                "scope": "external_llm_inputs",
             },
             "run_dir": str(run_dir),
             "step": "排队完成，准备开始审查",
