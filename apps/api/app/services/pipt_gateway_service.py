@@ -829,7 +829,7 @@ def _preprocess_strong_payload(
     purpose: str,
     source_text: str,
 ) -> dict[str, Any]:
-    target_entities = _target_entities(data.get("target_entities"))
+    target_entities = _target_entities(data.get("target_entities"), module_code=module_code)
     llm_mode = _llm_mode(data.get("llm_mode"))
     result = desensitize_with_platform_recognizer(
         text=source_text,
@@ -1163,12 +1163,32 @@ def _restore_from_vault(*, request_id: str, text_value: str) -> tuple[str, int]:
     return restored, restored_count
 
 
-def _target_entities(value: Any) -> list[str]:
+def _target_entities(value: Any, *, module_code: str | None = None) -> list[str]:
+    strict_allowed = False
+    if module_code in {"contract-review", "bid-generator"}:
+        try:
+            from app.services.pipt_config_service import get_module_pipt_runtime_config
+
+            runtime_config = get_module_pipt_runtime_config(str(module_code or ""))
+            if not runtime_config["enabled"]:
+                return []
+            configured = runtime_config["target_entities"]
+            if isinstance(configured, list):
+                allowed = set(configured)
+                strict_allowed = True
+            else:
+                allowed = set(DEFAULT_TARGET_ENTITIES)
+        except Exception:
+            logger.exception("Failed to load PIPT task config, falling back to request/default entities.")
+            allowed = set(DEFAULT_TARGET_ENTITIES)
+    else:
+        allowed = set(DEFAULT_TARGET_ENTITIES)
     if not isinstance(value, list):
-        return DEFAULT_TARGET_ENTITIES
-    allowed = set(DEFAULT_TARGET_ENTITIES)
+        if strict_allowed:
+            return list(allowed)
+        return list(allowed) or DEFAULT_TARGET_ENTITIES
     entities = [str(item).strip() for item in value if str(item or "").strip() in allowed]
-    return entities or DEFAULT_TARGET_ENTITIES
+    return entities or list(allowed)
 
 
 def _llm_mode(value: Any) -> str | None:

@@ -41,3 +41,14 @@ def test_recognize_privacy_uses_platform_pipt_provider_boundary() -> None:
     assert payload["has_sensitive"] is True
     assert payload["sensitive_count"] == 1
     assert payload["sensitive_types"] == ["name"]
+
+
+def test_dual_dataset_id_helpers_fallback_to_default() -> None:
+    with (
+        patch("app.services.rag_dify_service._env_value", side_effect=lambda names, fallback="": fallback or "default-dataset"),
+        patch("app.services.rag_dify_service.get_default_dataset_id", return_value="default-dataset"),
+    ):
+        from app.services import rag_dify_service
+
+        assert rag_dify_service.get_raw_dataset_id() == "default-dataset"
+        assert rag_dify_service.get_desensitized_dataset_id() == "default-dataset"

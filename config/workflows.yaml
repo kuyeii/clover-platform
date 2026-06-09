@@ -85,6 +85,8 @@ workflows:
       api_base_url_env: DIFY_API_BASE_URL
       api_key_env: DIFY_DATASET_API_KEY
       default_dataset_id_env: DIFY_DEFAULT_DATASET_ID
+      raw_dataset_id_env: DIFY_RAW_DATASET_ID
+      desensitized_dataset_id_env: DIFY_DESENSITIZED_DATASET_ID
       # 仅供后续 Dify 知识库自动初始化使用；运行时文档同步不直接传入这些模型，
       # 避免目标 Dify 环境未初始化模型凭据时创建文档失败。
       initialization:

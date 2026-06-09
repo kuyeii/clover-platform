@@ -234,7 +234,8 @@ class DesensitizeEngine:
 
         # 正则识别（所有模式共用）
         entities = []
-        for entity_type, pattern in self.regex_patterns.items():
+        regex_patterns = self._runtime_regex_patterns()
+        for entity_type, pattern in regex_patterns.items():
             if entity_type not in target_entities:
                 continue
             for match in pattern.finditer(text):
@@ -286,6 +287,27 @@ class DesensitizeEngine:
 
         logger.info(f"识别完成 [{llm_mode}]: {len(entities)} 个实体")
         return entities
+
+    def _runtime_regex_patterns(self) -> dict[str, re.Pattern]:
+        patterns = dict(self.regex_patterns)
+        try:
+            from app.services.pipt_config_service import get_custom_regex_patterns
+
+            for entity_type, rules in get_custom_regex_patterns().items():
+                compiled_rules = []
+                for rule in rules:
+                    pattern = str(rule.get("pattern") or "").strip()
+                    if not pattern:
+                        continue
+                    try:
+                        compiled_rules.append(re.compile(pattern))
+                    except re.error as exc:
+                        logger.warning("跳过无效自定义 PIPT 正则: %s %s", entity_type, exc)
+                if compiled_rules:
+                    patterns[entity_type] = re.compile("|".join(f"(?:{rule.pattern})" for rule in compiled_rules))
+        except Exception as exc:
+            logger.warning("加载自定义 PIPT 正则失败: %s", exc)
+        return patterns
 
     # ──────────────────────────────────────────────────────────────────────────
     # LLM 辅助方法

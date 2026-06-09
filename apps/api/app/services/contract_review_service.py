@@ -71,8 +71,25 @@ _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,96}$")
 
 def _contract_review_pipt_enabled() -> bool:
     """合同审查默认启用 PIPT；可通过环境变量显式关闭。"""
+    try:
+        from app.services.pipt_config_service import get_module_pipt_runtime_config
+
+        return bool(get_module_pipt_runtime_config("contract-review")["enabled"])
+    except Exception:
+        logger.exception("Failed to load contract review PIPT config, falling back to env.")
     value = str(os.environ.get("CONTRACT_REVIEW_PIPT_GATEWAY_ENABLED", "true")).strip().lower()
     return value not in {"0", "false", "no", "off", "disabled"}
+
+
+def _contract_review_pipt_target_entities() -> list[str]:
+    try:
+        from app.services.pipt_config_service import get_module_pipt_runtime_config
+
+        config = get_module_pipt_runtime_config("contract-review")
+        return list(config.get("target_entities") or [])
+    except Exception:
+        logger.exception("Failed to load contract review PIPT target entities.")
+        return []
 
 
 def _contract_review_pipt_mode() -> str:
@@ -87,6 +104,7 @@ def _contract_review_pipt_workflow_fields(text: str = "", mapping_table: dict[st
         "purpose": "dify_rewrite",
         "mode": _contract_review_pipt_mode(),
         "enabled": _contract_review_pipt_enabled(),
+        "target_entities": _contract_review_pipt_target_entities(),
     })
     return dict(payload.get("workflow_fields") or {})
 
@@ -105,6 +123,7 @@ def _contract_review_pipt_preprocess(
             "request_id": request_id,
             "mode": _contract_review_pipt_mode(),
             "enabled": _contract_review_pipt_enabled(),
+            "target_entities": _contract_review_pipt_target_entities(),
         }
     )
 

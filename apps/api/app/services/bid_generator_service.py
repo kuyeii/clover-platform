@@ -6029,7 +6029,16 @@ def _load_desensitize_profile(profile_name: str) -> dict[str, Any]:
 
 def _run_bid_pipt_preprocess(*, text: str, project_id: str, task_id: str, profile_name: str) -> dict[str, Any]:
     profile = _load_desensitize_profile(profile_name)
-    target_entities = profile.get("target_entities")
+    try:
+        from app.services.pipt_config_service import get_module_pipt_runtime_config
+
+        runtime_config = get_module_pipt_runtime_config("bid-generator")
+        enabled = bool(runtime_config.get("enabled"))
+        target_entities = runtime_config.get("target_entities")
+    except Exception:
+        logger.exception("Failed to load bid generator PIPT config, falling back to legacy profile.")
+        enabled = True
+        target_entities = profile.get("target_entities")
     if not isinstance(target_entities, list):
         target_entities = ["name", "phone", "email", "id_number"]
     method = str(profile.get("method") or "placeholder").strip().lower()
@@ -6041,7 +6050,7 @@ def _run_bid_pipt_preprocess(*, text: str, project_id: str, task_id: str, profil
             "module_code": "bid-generator",
             "purpose": "document_preprocess",
             "mode": "strong",
-            "enabled": True,
+            "enabled": enabled,
             "request_id": f"{project_id}:{task_id}",
             "target_entities": target_entities,
             "llm_mode": os.environ.get("PIPT_LLM_MODE_EXTRACT", "verify_only"),

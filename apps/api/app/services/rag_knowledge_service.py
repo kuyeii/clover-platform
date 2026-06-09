@@ -20,7 +20,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.errors import PlatformError
 from app.services.pipt_recognition_adapter import recognize_with_platform_recognizer
 from app.services.pipt_gateway_service import DEFAULT_TARGET_ENTITIES, preprocess_payload
-from app.services.rag_dify_service import get_dataset_api_base_url, get_dataset_api_key, get_default_dataset_id
+from app.services.rag_dify_service import (
+    get_dataset_api_base_url,
+    get_dataset_api_key,
+    get_default_dataset_id,
+    get_desensitized_dataset_id,
+    get_raw_dataset_id,
+)
 from packages.py_common.db.session import get_engine
 
 
@@ -106,6 +112,26 @@ def _ensure_knowledge_storage() -> None:
             conn.execute(text("ALTER TABLE rag.knowledge_documents ALTER COLUMN content_hash SET DEFAULT repeat('0', 64)"))
             conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS parse_status TEXT NOT NULL DEFAULT 'pending'"))
             conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS parsed_at TIMESTAMPTZ NULL"))
+            conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS raw_dify_document_id TEXT NULL"))
+            conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS raw_dify_batch TEXT NULL"))
+            conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS raw_sync_status TEXT NOT NULL DEFAULT 'pending'"))
+            conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS desensitized_dify_document_id TEXT NULL"))
+            conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS desensitized_dify_batch TEXT NULL"))
+            conn.execute(text("ALTER TABLE rag.knowledge_documents ADD COLUMN IF NOT EXISTS desensitized_sync_status TEXT NOT NULL DEFAULT 'pending'"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE rag.knowledge_documents
+                    SET desensitized_dify_document_id = COALESCE(desensitized_dify_document_id, dify_document_id),
+                        desensitized_dify_batch = COALESCE(desensitized_dify_batch, dify_batch),
+                        desensitized_sync_status = CASE
+                          WHEN dify_document_id IS NOT NULL AND sync_status = 'synced' THEN 'synced'
+                          ELSE desensitized_sync_status
+                        END
+                    WHERE dify_document_id IS NOT NULL
+                    """
+                )
+            )
             conn.execute(
                 text(
                     """
@@ -303,6 +329,12 @@ def _row_to_local_document(row: Any) -> dict[str, Any]:
         "recognition_summary": summary if isinstance(summary, dict) else {},
         "sync_status": row.get("sync_status"),
         "dify_document_id": row.get("dify_document_id"),
+        "raw_dify_document_id": row.get("raw_dify_document_id"),
+        "raw_dify_batch": row.get("raw_dify_batch"),
+        "raw_sync_status": row.get("raw_sync_status"),
+        "desensitized_dify_document_id": row.get("desensitized_dify_document_id"),
+        "desensitized_dify_batch": row.get("desensitized_dify_batch"),
+        "desensitized_sync_status": row.get("desensitized_sync_status"),
         "pipt_request_id": row.get("pipt_request_id"),
         "pipt_mapping_count": int(row.get("pipt_mapping_count") or 0),
         "last_error": row.get("last_error"),
@@ -387,6 +419,8 @@ def _ensure_local_document_parsed(row: dict[str, Any]) -> dict[str, Any]:
                         UPDATE rag.knowledge_documents
                         SET parse_status = 'failed',
                             sync_status = 'failed',
+                            raw_sync_status = 'failed',
+                            desensitized_sync_status = 'failed',
                             last_error = :last_error,
                             updated_at = now()
                         WHERE id = CAST(:document_id AS uuid)
@@ -415,6 +449,20 @@ def _dataset_id() -> str:
     dataset_id = get_default_dataset_id().strip()
     if not dataset_id:
         raise RagKnowledgeError("知识库服务配置错误：未设置 DIFY_DEFAULT_DATASET_ID。", status_code=503)
+    return dataset_id
+
+
+def _raw_dataset_id() -> str:
+    dataset_id = get_raw_dataset_id().strip()
+    if not dataset_id:
+        raise RagKnowledgeError("知识库服务配置错误：未设置 DIFY_RAW_DATASET_ID。", status_code=503)
+    return dataset_id
+
+
+def _desensitized_dataset_id() -> str:
+    dataset_id = get_desensitized_dataset_id().strip()
+    if not dataset_id:
+        raise RagKnowledgeError("知识库服务配置错误：未设置 DIFY_DESENSITIZED_DATASET_ID。", status_code=503)
     return dataset_id
 
 
@@ -517,12 +565,12 @@ async def _wait_indexing_complete(
     return last_status, "Timeout waiting for indexing to complete"
 
 
-async def create_text_document_and_wait(name: str, text: str) -> dict[str, Any]:
+async def create_text_document_and_wait(name: str, text: str, *, dataset_id: str | None = None) -> dict[str, Any]:
     base = get_dataset_api_base_url()
-    dataset_id = _dataset_id()
+    target_dataset_id = dataset_id or _dataset_id()
     headers = {**_dify_headers(), "Content-Type": "application/json"}
     payload = _create_by_text_payload(name.strip(), text)
-    url = f"{base}/datasets/{dataset_id}/document/create-by-text"
+    url = f"{base}/datasets/{target_dataset_id}/document/create-by-text"
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0), trust_env=False) as client:
         try:
@@ -545,7 +593,7 @@ async def create_text_document_and_wait(name: str, text: str) -> dict[str, Any]:
         final_status, error = await _wait_indexing_complete(
             client,
             base=base,
-            dataset_id=dataset_id,
+            dataset_id=target_dataset_id,
             batch=batch,
             document_id=document_id,
             headers=_dify_headers(),
@@ -578,13 +626,14 @@ async def create_local_file_document(file: UploadFile) -> dict[str, Any]:
                     INSERT INTO rag.knowledge_documents (
                       name, source_type, original_content, content_text, content_hash,
                       mime_type, file_size, parse_status, privacy_status, has_sensitive,
-                      sensitive_count, sensitive_types, recognition_summary, sync_status, updated_at
+                      sensitive_count, sensitive_types, recognition_summary, sync_status,
+                      raw_sync_status, desensitized_sync_status, updated_at
                     )
                     VALUES (
                       :name, 'file', :original_content, '', repeat('0', 64),
                       :mime_type, :file_size, 'pending', :privacy_status, :has_sensitive, :sensitive_count,
                       CAST(:sensitive_types AS jsonb), CAST(:recognition_summary AS jsonb),
-                      'pending', now()
+                      'pending', 'pending', 'pending', now()
                     )
                     RETURNING *
                     """
@@ -630,13 +679,14 @@ async def create_local_text_document(name: str, text_value: str) -> dict[str, An
                     INSERT INTO rag.knowledge_documents (
                       name, source_type, content_text, content_hash, parse_status,
                       privacy_status, has_sensitive, sensitive_count, sensitive_types,
-                      recognition_summary, sync_status, parsed_at, updated_at
+                      recognition_summary, sync_status, raw_sync_status, desensitized_sync_status,
+                      parsed_at, updated_at
                     )
                     VALUES (
                       :name, 'text', :content_text, :content_hash, 'parsed',
                       :privacy_status, :has_sensitive, :sensitive_count,
                       CAST(:sensitive_types AS jsonb), CAST(:recognition_summary AS jsonb),
-                      'pending', now(), now()
+                      'pending', 'pending', 'pending', now(), now()
                     )
                     RETURNING *
                     """
@@ -690,14 +740,19 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
     row = _get_local_document_row(document_id)
     if row is None:
         raise RagKnowledgeError("本地资料不存在。", status_code=404)
-    if row.get("sync_status") == "synced" and row.get("dify_document_id"):
+    if (
+        row.get("sync_status") == "synced"
+        and row.get("raw_dify_document_id")
+        and (row.get("desensitized_dify_document_id") or row.get("dify_document_id"))
+    ):
         return {
             "ok": True,
             "skipped": True,
             "document_id": str(row["id"]),
-            "dify_document_id": row.get("dify_document_id"),
+            "raw_dify_document_id": row.get("raw_dify_document_id"),
+            "desensitized_dify_document_id": row.get("desensitized_dify_document_id") or row.get("dify_document_id"),
             "name": row.get("name"),
-            "batch": row.get("dify_batch") or "",
+            "batch": row.get("desensitized_dify_batch") or row.get("dify_batch") or "",
             "indexing_status": "synced",
         }
     row = await asyncio.to_thread(_ensure_local_document_parsed, row)
@@ -709,7 +764,14 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
                 text(
                     """
                     UPDATE rag.knowledge_documents
-                    SET sync_status = 'syncing', last_error = NULL, updated_at = now()
+                    SET sync_status = 'syncing',
+                        raw_sync_status = CASE WHEN raw_dify_document_id IS NULL THEN 'syncing' ELSE raw_sync_status END,
+                        desensitized_sync_status = CASE
+                          WHEN desensitized_dify_document_id IS NULL AND dify_document_id IS NULL THEN 'syncing'
+                          ELSE desensitized_sync_status
+                        END,
+                        last_error = NULL,
+                        updated_at = now()
                     WHERE id = CAST(:document_id AS uuid)
                     """
                 ),
@@ -719,10 +781,41 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
         raise _database_error(exc) from exc
 
     try:
+        source_text = str(row.get("content_text") or "")
+        raw_created = None
+        raw_document_id = str(row.get("raw_dify_document_id") or "")
+        if not raw_document_id:
+            raw_created = await create_text_document_and_wait(
+                str(row.get("name") or "知识库资料"),
+                source_text,
+                dataset_id=_raw_dataset_id(),
+            )
+            raw_document_id = str(raw_created.get("document_id") or "")
+            if not raw_document_id:
+                raise RagKnowledgeError("原文知识库未返回文档 ID。", status_code=502)
+            with get_engine().begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE rag.knowledge_documents
+                        SET raw_dify_document_id = :raw_dify_document_id,
+                            raw_dify_batch = :raw_dify_batch,
+                            raw_sync_status = 'synced',
+                            updated_at = now()
+                        WHERE id = CAST(:document_id AS uuid)
+                        """
+                    ),
+                    {
+                        "document_id": local_id,
+                        "raw_dify_document_id": raw_document_id,
+                        "raw_dify_batch": raw_created.get("batch") or "",
+                    },
+                )
+
         preprocess_result = await asyncio.to_thread(
             preprocess_payload,
             {
-                "text": row.get("content_text") or "",
+                "text": source_text,
                 "module_code": "rag-web-search",
                 "purpose": "knowledge_sync",
                 "mode": "strong",
@@ -737,10 +830,10 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
         recognition = _recognition_from_preprocess_result(preprocess_result)
 
         upload_name = f"{Path(str(row.get('name') or '知识库资料')).stem}（脱敏）"
-        created = await create_text_document_and_wait(upload_name, safe_text)
+        created = await create_text_document_and_wait(upload_name, safe_text, dataset_id=_desensitized_dataset_id())
         dify_document_id = str(created.get("document_id") or "")
         if not dify_document_id:
-            raise RagKnowledgeError("Dify 未返回文档 ID。", status_code=502)
+            raise RagKnowledgeError("脱敏知识库未返回文档 ID。", status_code=502)
 
         try:
             with get_engine().begin() as conn:
@@ -751,6 +844,10 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
                         SET sync_status = 'synced',
                             dify_document_id = :dify_document_id,
                             dify_batch = :dify_batch,
+                            desensitized_dify_document_id = :dify_document_id,
+                            desensitized_dify_batch = :dify_batch,
+                            desensitized_sync_status = 'synced',
+                            raw_sync_status = 'synced',
                             privacy_status = :privacy_status,
                             has_sensitive = :has_sensitive,
                             sensitive_count = :sensitive_count,
@@ -784,6 +881,8 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
         return {
             **created,
             "document_id": local_id,
+            "raw_dify_document_id": raw_document_id,
+            "desensitized_dify_document_id": dify_document_id,
             "dify_document_id": dify_document_id,
             "desensitized": True,
             "mapping_table_count": int(preprocess_result.get("mapping_table_count") or 0),
@@ -798,7 +897,14 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
                     text(
                         """
                         UPDATE rag.knowledge_documents
-                        SET sync_status = 'failed', last_error = :last_error, updated_at = now()
+                        SET sync_status = 'failed',
+                            raw_sync_status = CASE WHEN raw_dify_document_id IS NULL THEN 'failed' ELSE raw_sync_status END,
+                            desensitized_sync_status = CASE
+                              WHEN desensitized_dify_document_id IS NULL AND dify_document_id IS NULL THEN 'failed'
+                              ELSE desensitized_sync_status
+                            END,
+                            last_error = :last_error,
+                            updated_at = now()
                         WHERE id = CAST(:document_id AS uuid)
                         """
                     ),
@@ -861,94 +967,8 @@ def _summarize_segment(segment: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def get_knowledge_document_detail(document_id: str) -> dict[str, Any]:
-    local_row = _get_local_document_row(document_id)
-    if local_row is not None:
-        local_document = _row_to_local_document(local_row)
-        dify_document_id = local_row.get("dify_document_id")
-        if dify_document_id and local_row.get("sync_status") == "synced":
-            payload = await get_knowledge_document_detail(str(dify_document_id))
-            document = payload.get("document") if isinstance(payload.get("document"), dict) else {}
-            return {
-                **payload,
-                "document": {
-                    **document,
-                    "id": local_document["id"],
-                    "name": local_document["name"],
-                    "dify_document_id": dify_document_id,
-                    "sync_status": local_document["sync_status"],
-                    "privacy_status": local_document["privacy_status"],
-                    "has_sensitive": local_document["has_sensitive"],
-                    "sensitive_count": local_document["sensitive_count"],
-                    "sensitive_types": local_document["sensitive_types"],
-                    "pipt_request_id": local_document["pipt_request_id"],
-                    "pipt_mapping_count": local_document["pipt_mapping_count"],
-                },
-            }
-
-        content_text = str(local_row.get("content_text") or "")
-        return {
-            "document": {
-                "id": local_document["id"],
-                "name": local_document["name"],
-                "data_source_type": local_document["data_source_type"],
-                "created_from": "local",
-                "word_count": len(content_text),
-                "tokens": None,
-                "hit_count": None,
-                "indexing_status": local_document["sync_status"],
-                "display_status": local_document["sync_status"],
-                "doc_form": "text_model",
-                "doc_language": "Chinese",
-                "segment_count": 1 if content_text else 0,
-                "average_segment_length": len(content_text) if content_text else 0,
-                "indexing_latency": None,
-                "created_at": local_document["created_at"],
-                "updated_at": local_document["updated_at"],
-                "completed_at": local_document["synced_at"],
-                "doc_metadata": {
-                    "sync_status": local_document["sync_status"],
-                    "privacy_status": local_document["privacy_status"],
-                    "has_sensitive": local_document["has_sensitive"],
-                    "sensitive_count": local_document["sensitive_count"],
-                    "sensitive_types": local_document["sensitive_types"],
-                    "recognition_summary": local_document["recognition_summary"],
-                },
-                "upload_file": {
-                    "name": local_document["name"],
-                    "size": local_document["file_size"],
-                    "extension": Path(local_document["name"]).suffix,
-                    "mime_type": local_document["mime_type"],
-                },
-                "enabled": local_document["enabled"],
-                "error": local_document["last_error"],
-                "sync_status": local_document["sync_status"],
-                "privacy_status": local_document["privacy_status"],
-                "has_sensitive": local_document["has_sensitive"],
-                "sensitive_count": local_document["sensitive_count"],
-                "sensitive_types": local_document["sensitive_types"],
-                "pipt_request_id": local_document["pipt_request_id"],
-                "pipt_mapping_count": local_document["pipt_mapping_count"],
-            },
-            "segments": [
-                {
-                    "id": f"{local_document['id']}:local",
-                    "position": 1,
-                    "content": content_text,
-                    "word_count": len(content_text),
-                    "tokens": None,
-                    "hit_count": None,
-                    "status": local_document["sync_status"],
-                    "keywords": [],
-                }
-            ]
-            if content_text
-            else [],
-            "segment_total": 1 if content_text else 0,
-        }
-
+async def _get_dify_document_detail(document_id: str, *, dataset_id: str) -> dict[str, Any]:
     base = get_dataset_api_base_url()
-    dataset_id = _dataset_id()
     headers = _dify_headers()
     doc_url = f"{base}/datasets/{dataset_id}/documents/{document_id}"
 
@@ -1002,6 +1022,84 @@ async def get_knowledge_document_detail(document_id: str) -> dict[str, Any]:
     if doc_form_from_segments and not summary.get("doc_form"):
         summary["doc_form"] = doc_form_from_segments
     return {"document": summary, "segments": segments, "segment_total": len(segments)}
+
+
+async def get_knowledge_document_detail(document_id: str) -> dict[str, Any]:
+    local_row = _get_local_document_row(document_id)
+    if local_row is not None:
+        local_document = _row_to_local_document(local_row)
+        dify_document_id = local_row.get("desensitized_dify_document_id") or local_row.get("dify_document_id")
+        if dify_document_id and local_row.get("desensitized_sync_status") == "synced":
+            payload = await _get_dify_document_detail(str(dify_document_id), dataset_id=_desensitized_dataset_id())
+            document = payload.get("document") if isinstance(payload.get("document"), dict) else {}
+            return {
+                **payload,
+                "document": {
+                    **document,
+                    "id": local_document["id"],
+                    "name": local_document["name"],
+                    "dify_document_id": dify_document_id,
+                    "raw_dify_document_id": local_document.get("raw_dify_document_id"),
+                    "desensitized_dify_document_id": local_document.get("desensitized_dify_document_id"),
+                    "sync_status": local_document["sync_status"],
+                    "raw_sync_status": local_document.get("raw_sync_status"),
+                    "desensitized_sync_status": local_document.get("desensitized_sync_status"),
+                    "privacy_status": local_document["privacy_status"],
+                    "has_sensitive": local_document["has_sensitive"],
+                    "sensitive_count": local_document["sensitive_count"],
+                    "sensitive_types": local_document["sensitive_types"],
+                    "pipt_request_id": local_document["pipt_request_id"],
+                    "pipt_mapping_count": local_document["pipt_mapping_count"],
+                },
+            }
+
+        return {
+            "document": {
+                "id": local_document["id"],
+                "name": local_document["name"],
+                "data_source_type": local_document["data_source_type"],
+                "created_from": "local",
+                "word_count": 0,
+                "tokens": None,
+                "hit_count": None,
+                "indexing_status": local_document["sync_status"],
+                "display_status": local_document["sync_status"],
+                "doc_form": "text_model",
+                "doc_language": "Chinese",
+                "segment_count": 0,
+                "average_segment_length": 0,
+                "indexing_latency": None,
+                "created_at": local_document["created_at"],
+                "updated_at": local_document["updated_at"],
+                "completed_at": local_document["synced_at"],
+                "doc_metadata": {
+                    "sync_status": local_document["sync_status"],
+                    "privacy_status": local_document["privacy_status"],
+                    "has_sensitive": local_document["has_sensitive"],
+                    "sensitive_count": local_document["sensitive_count"],
+                    "sensitive_types": local_document["sensitive_types"],
+                    "recognition_summary": local_document["recognition_summary"],
+                },
+                "upload_file": {
+                    "name": local_document["name"],
+                    "size": local_document["file_size"],
+                    "extension": Path(local_document["name"]).suffix,
+                    "mime_type": local_document["mime_type"],
+                },
+                "enabled": local_document["enabled"],
+                "error": local_document["last_error"],
+                "sync_status": local_document["sync_status"],
+                "privacy_status": local_document["privacy_status"],
+                "has_sensitive": local_document["has_sensitive"],
+                "sensitive_count": local_document["sensitive_count"],
+                "sensitive_types": local_document["sensitive_types"],
+                "pipt_request_id": local_document["pipt_request_id"],
+                "pipt_mapping_count": local_document["pipt_mapping_count"],
+            },
+            "segments": [],
+            "segment_total": 0,
+        }
+    return await _get_dify_document_detail(document_id, dataset_id=_dataset_id())
 
 
 def _safe_export_filename(name: str | None, suffix: str) -> str:
@@ -1059,16 +1157,32 @@ async def download_knowledge_document(document_id: str, *, format: str = "markdo
     )
 
 
+async def _delete_dify_document(document_id: str, *, dataset_id: str) -> None:
+    base = get_dataset_api_base_url()
+    headers = _dify_headers()
+    url = f"{base}/datasets/{dataset_id}/documents/{document_id}"
+    async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
+        try:
+            response = await client.delete(url, headers=headers)
+        except httpx.RequestError as exc:
+            raise RagKnowledgeError(f"Upstream error: {exc}") from exc
+
+    if response.status_code in {204, 404}:
+        return
+    if response.status_code == 400:
+        raise RagKnowledgeError(_upstream_error_message(response, "Bad request"), status_code=400)
+    raise RagKnowledgeError(_upstream_error_message(response), status_code=response.status_code)
+
+
 async def delete_knowledge_document(document_id: str) -> Response:
     local_row = _get_local_document_row(document_id)
     if local_row is not None:
-        dify_document_id = local_row.get("dify_document_id")
-        if dify_document_id:
-            try:
-                await delete_knowledge_document(str(dify_document_id))
-            except RagKnowledgeError as exc:
-                if exc.status_code != 404:
-                    raise
+        for dify_document_id, dataset_id in (
+            (local_row.get("raw_dify_document_id"), _raw_dataset_id()),
+            (local_row.get("desensitized_dify_document_id") or local_row.get("dify_document_id"), _desensitized_dataset_id()),
+        ):
+            if dify_document_id:
+                await _delete_dify_document(str(dify_document_id), dataset_id=dataset_id)
         try:
             with get_engine().begin() as conn:
                 conn.execute(
@@ -1084,20 +1198,5 @@ async def delete_knowledge_document(document_id: str) -> Response:
             raise _database_error(exc) from exc
         return Response(status_code=204)
 
-    base = get_dataset_api_base_url()
-    dataset_id = _dataset_id()
-    headers = _dify_headers()
-    url = f"{base}/datasets/{dataset_id}/documents/{document_id}"
-    async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
-        try:
-            response = await client.delete(url, headers=headers)
-        except httpx.RequestError as exc:
-            raise RagKnowledgeError(f"Upstream error: {exc}") from exc
-
-    if response.status_code == 204:
-        return Response(status_code=204)
-    if response.status_code == 400:
-        raise RagKnowledgeError(_upstream_error_message(response, "Bad request"), status_code=400)
-    if response.status_code == 404:
-        raise RagKnowledgeError("Document not found.", status_code=404)
-    raise RagKnowledgeError(_upstream_error_message(response), status_code=response.status_code)
+    await _delete_dify_document(document_id, dataset_id=_dataset_id())
+    return Response(status_code=204)

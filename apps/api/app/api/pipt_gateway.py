@@ -22,6 +22,13 @@ from app.services.pipt_gateway_service import (
     preprocess_payload,
     validate_placeholders_payload,
 )
+from app.services.pipt_config_service import (
+    delete_custom_entity_type_payload,
+    get_pipt_config_payload,
+    test_custom_regex_payload,
+    update_task_configs_payload,
+    upsert_custom_entity_type_payload,
+)
 
 router = APIRouter()
 
@@ -116,6 +123,55 @@ def get_pipt_gateway_admin_summary(
 ):
     _ = user
     return ok(request, get_gateway_admin_summary_payload())
+
+
+@router.get("/pipt-gateway/config", name="get_pipt_gateway_config")
+def get_pipt_gateway_config(
+    request: Request,
+    user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
+):
+    _ = user
+    return ok(request, get_pipt_config_payload())
+
+
+@router.put("/pipt-gateway/config/tasks", name="update_pipt_gateway_task_config")
+async def update_pipt_gateway_task_config(
+    request: Request,
+    user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
+):
+    _ = user
+    body = await _read_json_body(request)
+    return ok(request, update_task_configs_payload(body.get("items")))
+
+
+@router.post("/pipt-gateway/config/custom-types", name="upsert_pipt_gateway_custom_entity_type")
+async def upsert_pipt_gateway_custom_entity_type(
+    request: Request,
+    user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
+):
+    _ = user
+    body = await _read_json_body(request)
+    return ok(request, upsert_custom_entity_type_payload(body))
+
+
+@router.delete("/pipt-gateway/config/custom-types/{code}", name="delete_pipt_gateway_custom_entity_type")
+def delete_pipt_gateway_custom_entity_type(
+    code: str,
+    request: Request,
+    user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
+):
+    _ = user
+    return ok(request, delete_custom_entity_type_payload(code))
+
+
+@router.post("/pipt-gateway/config/custom-types/test", name="test_pipt_gateway_custom_entity_type_regex")
+async def test_pipt_gateway_custom_entity_type_regex(
+    request: Request,
+    user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
+):
+    _ = user
+    body = await _read_json_body(request)
+    return ok(request, test_custom_regex_payload(body))
 
 
 @router.get("/pipt-gateway/events", name="list_pipt_gateway_events")

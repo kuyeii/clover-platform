@@ -230,6 +230,28 @@ class PiptGatewayServiceTests(unittest.TestCase):
         self.assertEqual(result.text, f"第一段 {token} 未替换。第二段 {token} 已替换。")
         self.assertEqual(result.replacement_count, 1)
 
+    def test_target_entities_respects_disabled_task_config(self) -> None:
+        with patch(
+            "app.services.pipt_config_service.get_module_pipt_runtime_config",
+            return_value={"enabled": False, "target_entities": ["name"]},
+        ):
+            result = service._target_entities(["name"], module_code="bid-generator")
+
+        self.assertEqual(result, [])
+
+    def test_custom_regex_test_returns_match_positions(self) -> None:
+        from app.services import pipt_config_service
+
+        result = pipt_config_service.test_custom_regex_payload(
+            {
+                "regex_rules": [{"name": "邮箱", "pattern": r"[A-Za-z0-9._%+-]+@example\.com"}],
+                "text": "联系 test@example.com 处理。",
+            }
+        )
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["matches"][0]["text"], "test@example.com")
+
 
 if __name__ == "__main__":
     unittest.main()
