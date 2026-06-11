@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import init_db
+from packages.py_common.db.init_schema import init_database_schema
 
 
 class InitDbBootstrapTests(unittest.TestCase):
@@ -46,6 +47,39 @@ class InitDbBootstrapTests(unittest.TestCase):
 
         self.assertFalse(created)
         self.assertEqual(conn.execute.call_count, 1)
+
+    def test_init_database_schema_applies_core_table_alters(self) -> None:
+        conn = Mock()
+        begin = Mock()
+        begin.__enter__ = Mock(return_value=conn)
+        begin.__exit__ = Mock(return_value=False)
+        engine = Mock()
+        engine.begin.return_value = begin
+
+        init_database_schema(engine)
+
+        executed_sql = [str(call.args[0]) for call in conn.execute.call_args_list]
+        self.assertTrue(
+            any(
+                "ALTER TABLE core.pipt_gateway_events" in sql
+                and "ADD COLUMN IF NOT EXISTS unexpected_count" in sql
+                for sql in executed_sql
+            )
+        )
+        self.assertTrue(
+            any(
+                "ALTER TABLE core.pipt_gateway_mappings" in sql
+                and "ADD COLUMN IF NOT EXISTS encryption_status" in sql
+                for sql in executed_sql
+            )
+        )
+        self.assertTrue(
+            any(
+                "ALTER TABLE bid_generator.entity_registry" in sql
+                and "ADD COLUMN IF NOT EXISTS strong_placeholder" in sql
+                for sql in executed_sql
+            )
+        )
 
 
 if __name__ == "__main__":

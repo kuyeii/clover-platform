@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "./index.css";
 import "./App.css";
 import { getHistoryRecord, listHistory, runAnalysisStream, runCompanyNameValidationWorkflow } from "../services/competitorApi";
@@ -16,7 +17,11 @@ const lookupCompanyNameValidationCache = runCompanyNameValidationWorkflow;
 
 const DEFAULT_COMPETITOR_ROWS = 1;
 const MAX_COMPETITOR_COUNT = 5;
-const COMPANY_VALIDATION_DEBOUNCE_MS = 2000;
+const COMPETITOR_PLACEHOLDER_COUNT = 5;
+const COMPANY_VALIDATION_LOCAL_DEBOUNCE_MS = 300;
+const COMPANY_VALIDATION_WEB_DELAY_MS = 1200;
+const COMPANY_VALIDATION_LOCAL_MIN_KEYWORD_LENGTH = 1;
+const COMPANY_VALIDATION_MIN_KEYWORD_LENGTH = 2;
 const DEFAULT_PROVINCE = "全国";
 const SAME_COMPANY_NAME_ERROR = "竞争对手名称不能与我方企业名称相同。";
 const DUPLICATE_COMPETITOR_NAME_ERROR = "竞争对手名称不能重复。";
@@ -254,8 +259,15 @@ function getNewsHref(item) {
   return "";
 }
 
+function stripThinkContent(value) {
+  return String(value || "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<\/?think>/gi, "")
+    .trim();
+}
+
 function renderInlineMarkdown(text) {
-  const raw = String(text ?? "").replace(/\\\*/g, "*");
+  const raw = stripThinkContent(text).replace(/\\\*/g, "*");
   if (!raw) return "";
 
   const segments = [];
@@ -297,11 +309,38 @@ function renderInlineMarkdown(text) {
 
 function MarkdownReport({ text }) {
   const normalizeMarkdownText = (value) => {
-    const withoutFences = String(value || "")
+    let raw = stripThinkContent(value);
+    if ((raw.startsWith("\"") && raw.endsWith("\"")) || (raw.startsWith("'") && raw.endsWith("'"))) {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        raw = raw.slice(1, -1);
+      }
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      raw = parsed?.markdown || parsed?.report || parsed?.text || parsed?.content || raw;
+    } catch {
+      const jsonMatch = raw.match(/^\s*\{[\s\S]*\}\s*$/);
+      if (jsonMatch) {
+        raw = raw
+          .replace(/^\s*\{\s*"?(markdown|report|text|content)"?\s*:\s*"?/i, "")
+          .replace(/"?\s*\}\s*$/, "");
+      }
+    }
+
+    const withoutFences = String(raw || "")
       .replace(/```[a-z]*\s*/gi, "")
       .replace(/```/g, "")
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, "\"")
+      .replace(/\\\*/g, "*")
+      .replace(/\\#/g, "#")
+      .replace(/\\\|/g, "|")
       .trim();
-    return withoutFences.includes("\n") ? withoutFences : withoutFences.replace(/\\n/g, "\n");
+    return withoutFences;
   };
 
   const parseMarkdownTableRow = (line) => {
@@ -858,6 +897,24 @@ function getCompanySuggestionItems(result, fallbackName = "") {
   return normalizeCandidateCompanyItems([...(result?.candidateItems || []), result?.company, companyName]);
 }
 
+function decorateCompanySuggestionItems(items, { source = "local", keyword = "", stale = false } = {}) {
+  return normalizeCandidateCompanyItems(items).map((item) => ({
+    ...item,
+    source,
+    keyword,
+    stale,
+    disabled: stale
+  }));
+}
+
+function markCompanySuggestionsStale(items) {
+  return (items || []).map((item) => ({
+    ...item,
+    stale: true,
+    disabled: true
+  }));
+}
+
 function isSameCompanyName(left, right) {
   const leftName = String(left || "").trim();
   const rightName = String(right || "").trim();
@@ -944,9 +1001,42 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
   const confirmedValueRef = useRef("");
   const selectingValueRef = useRef("");
   const requestSeqRef = useRef(0);
+  const localTimerRef = useRef(null);
+  const webTimerRef = useRef(null);
+  const localSearchAbortRef = useRef(null);
+  const webSearchingKeywordRef = useRef("");
   const keyword = String(value || "").trim();
   const isValidated = validationState === "validated";
   const showPendingStatus = shouldShowValidationPendingStatus(validationState, keyword);
+
+  const clearSearchTimers = () => {
+    if (localTimerRef.current) {
+      window.clearTimeout(localTimerRef.current);
+      localTimerRef.current = null;
+    }
+    if (webTimerRef.current) {
+      window.clearTimeout(webTimerRef.current);
+      webTimerRef.current = null;
+    }
+  };
+
+  const cancelLocalSearch = () => {
+    localSearchAbortRef.current?.abort();
+    localSearchAbortRef.current = null;
+  };
+
+  const createLocalSearchController = () => {
+    cancelLocalSearch();
+    const controller = new AbortController();
+    localSearchAbortRef.current = controller;
+    return controller;
+  };
+
+  const clearLocalSearchController = (controller) => {
+    if (localSearchAbortRef.current === controller) {
+      localSearchAbortRef.current = null;
+    }
+  };
 
   const confirmCompany = (company, fallbackName = "") => {
     const normalizedCompany = {
@@ -955,6 +1045,8 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       business: company?.business || ""
     };
     const confirmedName = normalizedCompany.name || fallbackName;
+    clearSearchTimers();
+    cancelLocalSearch();
     selectingValueRef.current = "";
     confirmedValueRef.current = confirmedName;
     onChange(confirmedName, true, normalizedCompany);
@@ -963,6 +1055,129 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     setValidationMeta({ searchResult: "已确认企业", note: "", error: "" });
     setShowDropdown(false);
   };
+
+  const applyImmediateLookupPayload = (payload, { currentKeyword, requestId, source = "web", fromCacheOnly = false } = {}) => {
+    if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return true;
+    const result = extractCompanyValidationResult(payload);
+    const candidateItems = decorateCompanySuggestionItems(getCompanySuggestionItems(result, currentKeyword), {
+      source,
+      keyword: currentKeyword,
+      stale: false
+    });
+    const hasAnyCompanyInfo = Boolean(result.company?.name || result.company?.intro || result.company?.business);
+    if (fromCacheOnly && result.cacheMiss) {
+      return false;
+    }
+
+    if (hasAnyCompanyInfo) {
+      if (requireCompanyDetails && !hasCompanyDetails(result.company)) {
+        setSuggestions(candidateItems);
+        setValidationMeta({
+          searchResult: "企业信息确认失败",
+          note: "",
+          error: "未获取到企业介绍和主营业务，请补充更准确的企业名称。"
+        });
+        setValidationState(candidateItems.length ? "ready" : "error");
+        setShowDropdown(true);
+        return true;
+      }
+      setSuggestions(candidateItems);
+      setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
+      setValidationState(source === "local" ? "localMatched" : "webMatched");
+      setShowDropdown(true);
+      return true;
+    }
+
+    if (result.candidateItems.length) {
+      setSuggestions(decorateCompanySuggestionItems(result.candidateItems, {
+        source,
+        keyword: currentKeyword,
+        stale: false
+      }));
+      setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
+      setValidationState(source === "local" ? "localMatched" : "webMatched");
+      setShowDropdown(true);
+      return true;
+    }
+
+    return false;
+  };
+
+  const runImmediateLookup = async ({ skipLocal = false } = {}) => {
+    const currentKeyword = String(value || "").trim();
+    const minKeywordLength = skipLocal ? COMPANY_VALIDATION_MIN_KEYWORD_LENGTH : COMPANY_VALIDATION_LOCAL_MIN_KEYWORD_LENGTH;
+    if (suspendValidation || currentKeyword.length < minKeywordLength) return;
+
+    clearSearchTimers();
+    requestSeqRef.current += 1;
+    const requestId = requestSeqRef.current;
+    setSuggestions((prev) => markCompanySuggestionsStale(prev));
+    setValidationMeta({
+      searchResult: skipLocal ? "本地未找到，正在联网查找..." : "正在匹配本地企业...",
+      note: "",
+      error: ""
+    });
+    setValidationState(skipLocal ? "webSearching" : "localSearching");
+    setShowDropdown(true);
+
+    try {
+      if (!skipLocal) {
+        const localSearchController = createLocalSearchController();
+        const cachedPayload = await lookupCompanyNameValidationCache(
+          { companyName: currentKeyword, cacheOnly: true },
+          { signal: localSearchController.signal }
+        );
+        clearLocalSearchController(localSearchController);
+        if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
+        const handledFromCache = applyImmediateLookupPayload(cachedPayload, {
+          currentKeyword,
+          requestId,
+          source: "local",
+          fromCacheOnly: true
+        });
+        if (handledFromCache) return;
+      }
+
+      if (currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) {
+        setSuggestions([]);
+        setValidationMeta({ searchResult: "本地未找到，继续输入后可联网查找。", note: "", error: "" });
+        setValidationState("localEmpty");
+        setShowDropdown(true);
+        return;
+      }
+
+      setSuggestions([]);
+      setValidationMeta({ searchResult: "本地未找到，正在联网查找...", note: "", error: "" });
+      setValidationState("webSearching");
+      const payload = await runCompanyNameValidationWorkflow({
+        companyName: currentKeyword,
+        ...(skipLocal ? { forceRefresh: true } : {})
+      });
+      if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
+      const handled = applyImmediateLookupPayload(payload, { currentKeyword, requestId, source: "web" });
+      if (!handled) {
+        setSuggestions([]);
+        setValidationMeta({ searchResult: "未找到匹配企业，可继续修改企业名称", note: "", error: "" });
+        setValidationState("empty");
+        setShowDropdown(true);
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      if (requestSeqRef.current !== requestId || currentKeyword !== String(value || "").trim()) return;
+      setSuggestions([]);
+      setValidationMeta({
+        searchResult: "搜索失败，请稍后重试，或继续手动输入企业名称",
+        note: "",
+        error: error.message || String(error)
+      });
+      setValidationState("error");
+      setShowDropdown(true);
+    }
+  };
+
+  useEffect(() => {
+    return () => clearSearchTimers();
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -978,10 +1193,14 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
   useEffect(() => {
     const currentKeyword = String(value || "").trim();
 
+    clearSearchTimers();
+
     if (!currentKeyword) {
       requestSeqRef.current += 1;
       confirmedValueRef.current = "";
       selectingValueRef.current = "";
+      webSearchingKeywordRef.current = "";
+      cancelLocalSearch();
       setValidationState("idle");
       setSuggestions([]);
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -992,6 +1211,8 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     if (suspendValidation) {
       requestSeqRef.current += 1;
       selectingValueRef.current = "";
+      webSearchingKeywordRef.current = "";
+      cancelLocalSearch();
       setValidationState("idle");
       setSuggestions([]);
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1001,6 +1222,8 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
 
     if (confirmedValueRef.current === currentKeyword) {
       selectingValueRef.current = "";
+      webSearchingKeywordRef.current = "";
+      cancelLocalSearch();
       setValidationState("validated");
       setSuggestions([]);
       setValidationMeta({ searchResult: "已确认企业", note: "", error: "" });
@@ -1019,24 +1242,18 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     requestSeqRef.current += 1;
     const requestId = requestSeqRef.current;
     let cancelled = false;
-    let fullLookupTimer = null;
 
-    const applyValidationPayload = (payload, { fromCacheOnly = false } = {}) => {
+    const isLatestSearch = () => !cancelled && requestSeqRef.current === requestId && currentKeyword === String(value || "").trim();
+
+    const applyValidationPayload = (payload, { source = "web", fromCacheOnly = false } = {}) => {
       if (cancelled || requestSeqRef.current !== requestId) return true;
       const result = extractCompanyValidationResult(payload);
-      const candidateItems = getCompanySuggestionItems(result, currentKeyword);
+      const candidateItems = decorateCompanySuggestionItems(getCompanySuggestionItems(result, currentKeyword), {
+        source,
+        keyword: currentKeyword,
+        stale: false
+      });
       const hasAnyCompanyInfo = Boolean(result.company?.name || result.company?.intro || result.company?.business);
-      const isExactCompanyCache = Boolean(
-        result.cacheHit &&
-        hasCompanyDetails(result.company) &&
-        isSameCompanyName(result.company?.name, currentKeyword)
-      );
-
-      if (isExactCompanyCache) {
-        confirmCompany(result.company, currentKeyword);
-        return true;
-      }
-
       if (fromCacheOnly && result.cacheMiss) {
         return false;
       }
@@ -1055,15 +1272,19 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
         }
         setSuggestions(candidateItems);
         setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
-        setValidationState("ready");
+        setValidationState(source === "local" ? "localMatched" : "webMatched");
         setShowDropdown(true);
         return true;
       }
 
       if (result.candidateItems.length) {
-        setSuggestions(result.candidateItems);
+        setSuggestions(decorateCompanySuggestionItems(result.candidateItems, {
+          source,
+          keyword: currentKeyword,
+          stale: false
+        }));
         setValidationMeta({ searchResult: result.searchResult || "检索完成", note: "", error: "" });
-        setValidationState("ready");
+        setValidationState(source === "local" ? "localMatched" : "webMatched");
         setShowDropdown(true);
         return true;
       }
@@ -1077,42 +1298,105 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       return false;
     };
 
-    const runFullLookup = async () => {
-      if (cancelled || requestSeqRef.current !== requestId) return;
-      setValidationState("loading");
-      setSuggestions([]);
-      setValidationMeta({ searchResult: "正在检索企业库", note: "", error: "" });
+    const runWebLookup = async () => {
+      if (!isLatestSearch()) return;
+      if (currentKeyword.length < COMPANY_VALIDATION_MIN_KEYWORD_LENGTH) return;
+      if (webSearchingKeywordRef.current === currentKeyword) return;
+      webSearchingKeywordRef.current = currentKeyword;
+      setValidationState("webSearching");
+      setValidationMeta({ searchResult: "本地未找到，正在联网查找...", note: "", error: "" });
       setShowDropdown(true);
 
       try {
-        const cachedPayload = await lookupCompanyNameValidationCache({ companyName: currentKeyword });
-        const handledFromCache = applyValidationPayload(cachedPayload, { fromCacheOnly: true });
-        if (handledFromCache || cancelled || requestSeqRef.current !== requestId) return;
         const payload = await runCompanyNameValidationWorkflow({ companyName: currentKeyword });
-        applyValidationPayload(payload);
+        if (!isLatestSearch()) return;
+        const handled = applyValidationPayload(payload, { source: "web" });
+        if (!handled) {
+          setSuggestions([]);
+          setValidationMeta({ searchResult: "未找到匹配企业，可继续修改企业名称", note: "", error: "" });
+          setValidationState("empty");
+          setShowDropdown(true);
+        }
       } catch (error) {
-        if (cancelled || requestSeqRef.current !== requestId) return;
+        if (!isLatestSearch()) return;
         setSuggestions([]);
         setValidationMeta({
-          searchResult: "企业库检索失败",
+          searchResult: "搜索失败，请稍后重试，或继续手动输入企业名称",
+          note: "",
+          error: error.message || String(error)
+        });
+        setValidationState("error");
+        setShowDropdown(true);
+      } finally {
+        if (webSearchingKeywordRef.current === currentKeyword) {
+          webSearchingKeywordRef.current = "";
+        }
+      }
+    };
+
+    if (currentKeyword.length < COMPANY_VALIDATION_LOCAL_MIN_KEYWORD_LENGTH) {
+      setValidationState("idle");
+      setSuggestions([]);
+      setValidationMeta({ searchResult: "", note: "", error: "" });
+      setShowDropdown(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSuggestions((prev) => markCompanySuggestionsStale(prev));
+    setValidationState(suggestions.length ? "refreshing" : "waiting");
+    setValidationMeta({ searchResult: "正在重新匹配...", note: "", error: "" });
+    setShowDropdown(suggestions.length > 0);
+
+    localTimerRef.current = window.setTimeout(async () => {
+      if (!isLatestSearch()) return;
+      setValidationState("localSearching");
+      setValidationMeta({ searchResult: "正在匹配本地企业...", note: "", error: "" });
+      setShowDropdown(true);
+
+      try {
+        const localSearchController = createLocalSearchController();
+        const cachedPayload = await lookupCompanyNameValidationCache(
+          { companyName: currentKeyword, cacheOnly: true },
+          { signal: localSearchController.signal }
+        );
+        clearLocalSearchController(localSearchController);
+        if (!isLatestSearch()) return;
+        const handledFromCache = applyValidationPayload(cachedPayload, { source: "local", fromCacheOnly: true });
+        if (handledFromCache || !isLatestSearch()) return;
+
+        setSuggestions([]);
+        const canSearchWeb = currentKeyword.length >= COMPANY_VALIDATION_MIN_KEYWORD_LENGTH;
+        setValidationMeta({
+          searchResult: canSearchWeb ? "本地未找到，准备联网查找..." : "本地未找到，继续输入后可联网查找。",
+          note: "",
+          error: ""
+        });
+        setValidationState("localEmpty");
+        setShowDropdown(true);
+
+        if (canSearchWeb) {
+          webTimerRef.current = window.setTimeout(runWebLookup, COMPANY_VALIDATION_WEB_DELAY_MS);
+        }
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        if (!isLatestSearch()) return;
+        setSuggestions([]);
+        setValidationMeta({
+          searchResult: "搜索失败，请稍后重试，或继续手动输入企业名称",
           note: "",
           error: error.message || String(error)
         });
         setValidationState("error");
         setShowDropdown(true);
       }
-    };
-
-    setValidationState("waiting");
-    setSuggestions([]);
-    setValidationMeta({ searchResult: "等待用户输入完成", note: "", error: "" });
-    setShowDropdown(false);
-
-    fullLookupTimer = window.setTimeout(runFullLookup, COMPANY_VALIDATION_DEBOUNCE_MS);
+    }, COMPANY_VALIDATION_LOCAL_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
-      if (fullLookupTimer) window.clearTimeout(fullLookupTimer);
+      clearSearchTimers();
+      cancelLocalSearch();
     };
   }, [requireCompanyDetails, suspendValidation, value]);
 
@@ -1121,15 +1405,19 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
     onChange(nextValue, false, null);
     confirmedValueRef.current = "";
     selectingValueRef.current = "";
+    webSearchingKeywordRef.current = "";
+    clearSearchTimers();
+    cancelLocalSearch();
+    requestSeqRef.current += 1;
 
     if (nextValue.trim()) {
       const nextMeta = suspendValidation
         ? { searchResult: "", note: "", error: "" }
-        : { searchResult: "等待用户输入完成", note: "", error: "" };
-      setValidationState(suspendValidation ? "idle" : "waiting");
+        : { searchResult: "正在重新匹配...", note: "", error: "" };
+      setSuggestions((prev) => markCompanySuggestionsStale(prev));
+      setValidationState(suspendValidation ? "idle" : "refreshing");
       setValidationMeta(nextMeta);
-      setSuggestions([]);
-      setShowDropdown(false);
+      setShowDropdown((prev) => Boolean(prev || suggestions.length));
     } else {
       setValidationState("idle");
       setValidationMeta({ searchResult: "", note: "", error: "" });
@@ -1144,7 +1432,13 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
       : selectedItem || {};
     const name = String(selectedCompany.name || "").trim();
     if (!name) return;
+    if (selectedCompany.disabled || selectedCompany.stale || (selectedCompany.keyword && selectedCompany.keyword !== keyword)) return;
+    clearSearchTimers();
+    cancelLocalSearch();
     if (hasCompanyDetails(selectedCompany)) {
+      runCompanyNameValidationWorkflow({ companyName: name, sourceQuery: name, selectedCompany }).catch(() => {
+        // 确认操作不依赖缓存写入成功；失败时不阻塞用户继续分析。
+      });
       confirmCompany(selectedCompany, name);
       return;
     }
@@ -1200,6 +1494,14 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
         onFocus={() => {
           if (keyword && !suspendValidation && !isValidated && validationState !== "fetching" && validationState !== "idle") setShowDropdown(true);
         }}
+        onKeyDown={(event) => {
+          inputProps.onKeyDown?.(event);
+          if (event.defaultPrevented) return;
+          if (event.key === "Enter" && keyword.length >= COMPANY_VALIDATION_MIN_KEYWORD_LENGTH && !isValidated && !suspendValidation) {
+            event.preventDefault();
+            runImmediateLookup();
+          }
+        }}
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -1219,29 +1521,52 @@ function CompanyValidationInput({ value, onChange, placeholder, inputProps = {},
 
       {shouldShowValidationDropdown({ showDropdown, keyword, isValidated, validationState }) && (
         <div className="validation-dropdown">
-          {validationState === "loading" ? (
+          {suggestions.length > 0 ? (
+            <>
+              {["refreshing", "waiting", "localSearching", "localEmpty", "webSearching"].includes(validationState) && (
+                <div className="validation-refreshing-row">
+                  <span className="validation-spinner" aria-hidden />
+                  <span>{validationMeta.searchResult || "正在重新匹配..."}</span>
+                </div>
+              )}
+              <div className="validation-option-list">
+                {suggestions.map((item, index) => {
+                  const isStale = Boolean(item.stale || item.disabled);
+                  return (
+                    <button
+                      type="button"
+                      className={`validation-option ${isStale ? "validation-option--stale" : ""}`.trim()}
+                      key={`${item.name}-${index}`}
+                      onClick={() => handleSelect(item)}
+                      disabled={isStale}
+                      aria-disabled={isStale ? "true" : undefined}
+                    >
+                      <span>
+                        <strong>{item.name}</strong>
+                        <em>{isStale ? "旧候选，正在重新匹配" : item.source === "web" ? "联网搜索" : "本地企业库"}</em>
+                      </span>
+                    </button>
+                  );
+                })}
+                {["localMatched", "webMatched"].includes(validationState) && (
+                  <button
+                    type="button"
+                    className="validation-more-option"
+                    onClick={() => runImmediateLookup({ skipLocal: true })}
+                  >
+                    联网搜索更多
+                  </button>
+                )}
+              </div>
+            </>
+          ) : ["loading", "localSearching", "localEmpty", "webSearching"].includes(validationState) ? (
             <div className="validation-loading-row">
               <span className="validation-spinner" aria-hidden />
-              <span>正在检索企业库，请稍候</span>
-            </div>
-          ) : suggestions.length > 0 ? (
-            <div className="validation-option-list">
-              {suggestions.map((item, index) => (
-                <button
-                  type="button"
-                  className="validation-option"
-                  key={`${item.name}-${index}`}
-                  onClick={() => handleSelect(item)}
-                >
-                  <span>
-                    <strong>{item.name}</strong>
-                  </span>
-                </button>
-              ))}
+              <span>{validationMeta.searchResult || "正在匹配企业，请稍候"}</span>
             </div>
           ) : (
             <div className={`validation-empty ${validationState === "error" ? "validation-empty--error" : ""}`.trim()}>
-              {validationMeta.error || validationMeta.note || "未返回候选企业，请补充更完整的企业名称。"}
+              {validationMeta.error || validationMeta.searchResult || validationMeta.note || "未找到匹配企业，可继续修改企业名称"}
             </div>
           )}
         </div>
@@ -1272,6 +1597,33 @@ function getCompetitorDetailSummary(detailData) {
 
 function isPendingCompetitorIntro(value) {
   return typeof value === "string" && value.includes("正在");
+}
+
+function pickObjectEntriesByIds(source, allowedIds) {
+  if (!source || typeof source !== "object") return {};
+  return Object.fromEntries(Object.entries(source).filter(([id]) => allowedIds.has(id)));
+}
+
+function isCompetitorFailed(competitorId, details = {}, reports = {}) {
+  return details?.[competitorId]?.status === "error" || reports?.[competitorId]?.status === "error";
+}
+
+function filterRenderableCompetitorState(competitors = [], details = {}, reports = {}) {
+  const nextCompetitors = competitors.filter((item) => !isCompetitorFailed(item.id, details, reports));
+  const allowedIds = new Set(nextCompetitors.map((item) => item.id));
+  return {
+    competitors: nextCompetitors,
+    competitorDetails: pickObjectEntriesByIds(details, allowedIds),
+    compareReports: pickObjectEntriesByIds(reports, allowedIds)
+  };
+}
+
+function getVisibleWarnings(warnings) {
+  if (!Array.isArray(warnings)) return [];
+  return warnings.filter((message) => {
+    const text = String(message || "");
+    return !text.startsWith("已过滤竞品") && !text.startsWith("已过滤对比报告生成失败的竞品");
+  });
 }
 
 function CompetitorCard({ item, scoreItem, detailData, detailStatus = "idle", reportStatus = "idle", scoreStatus = "idle", detailError = "", reportError = "", isActive, onClick }) {
@@ -1320,6 +1672,16 @@ function CompetitorCard({ item, scoreItem, detailData, detailStatus = "idle", re
       )}
       <p>{isSummaryPending ? <ResultPendingText>{summaryText}</ResultPendingText> : summaryText}</p>
     </button>
+  );
+}
+
+function CompetitorPlaceholderCard() {
+  return (
+    <div className="competitor-card competitor-card--placeholder" role="status" aria-live="polite">
+      <div className="competitor-card-placeholder-glass">
+        <span className="competitor-card-placeholder-text">竞争对手信息获取中</span>
+      </div>
+    </div>
   );
 }
 
@@ -1389,20 +1751,30 @@ function CompanyOverview({ targetName, targetCompanyInfo, targetDetail, detailSt
   );
 }
 
-function InfoGrid({ companyName, companyIntro, analysisSummary }) {
+function InfoGrid({ companyName, companyIntro, analysisSummary, onOpenDrawer }) {
   return (
-    <div className="detail-summary-grid">
-      <div className="detail-text-block">
-        <h3>公司名称</h3>
-        <p className="detail-company-name">{companyName || "暂无公司名称。"}</p>
+    <div className="detail-overview">
+      <div className="detail-overview-head">
+        <div>
+          <p className="section-eyebrow">竞争对手总体信息</p>
+          <h3>{companyName || "暂无公司名称。"}</h3>
+        </div>
+        <div className="detail-overview-actions">
+          <button type="button" className="secondary-action secondary-action--brand" onClick={() => onOpenDrawer("公司近况")}>
+            查看近况与报告
+          </button>
+        </div>
       </div>
-      <div className="detail-text-block">
-        <h3>公司简介</h3>
-        <p>{companyIntro || "暂无企业简介。"}</p>
-      </div>
-      <div className="detail-text-block">
-        <h3>竞争分析小结</h3>
-        <p>{analysisSummary || "暂无竞争分析小结。"}</p>
+
+      <div className="detail-overview-copy">
+        <div>
+          <h4>公司简介</h4>
+          <p>{companyIntro || "暂无企业简介。"}</p>
+        </div>
+        <div>
+          <h4>竞争分析小结</h4>
+          <p>{analysisSummary || "暂无竞争分析小结。"}</p>
+        </div>
       </div>
     </div>
   );
@@ -1432,7 +1804,7 @@ function DynamicsPanel({ competitorDetail, status = "idle", error = "" }) {
       return items;
     }
 
-    const summary = typeof detail?.lately === "string" ? detail.lately.trim() : "";
+    const summary = typeof detail?.lately === "string" ? stripThinkContent(detail.lately) : "";
     if (!summary || summary === "暂无近期动态" || summary === "未检索到企业近期信息") {
       return [];
     }
@@ -1468,8 +1840,8 @@ function DynamicsPanel({ competitorDetail, status = "idle", error = "" }) {
                   </h4>
                   {item.type && <span className="timeline-type">{item.type}</span>}
                 </div>
-                <p>{item.content || item.impact || "暂无详情。"}</p>
-                {item.source && <small>来源：{item.source}</small>}
+                <p>{stripThinkContent(item.content || item.impact || "暂无详情。")}</p>
+                {item.source && <small>来源：{stripThinkContent(item.source)}</small>}
               </div>
             </div>
           </article>
@@ -1482,18 +1854,9 @@ function DynamicsPanel({ competitorDetail, status = "idle", error = "" }) {
 }
 
 function DetailPanel({
-  targetName,
-  targetCompanyInfo,
-  targetDetail,
   selectedCompetitor,
-  selectedDetail,
-  selectedDetailStatus,
-  selectedDetailError,
-  selectedReport,
   selectedScoreItem,
-  activeTab,
-  setActiveTab,
-  singleMode
+  onOpenDrawer
 }) {
   if (!selectedCompetitor) {
     return (
@@ -1506,61 +1869,117 @@ function DetailPanel({
 
   return (
     <section className="details-panel card-panel">
-      <div className="tabbar">
-        {RESULT_TABS.map(({ label: tab }) => (
-          <button
-            type="button"
-            key={tab}
-            className={activeTab === tab ? "tab-btn tab-btn--active" : "tab-btn"}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+      <InfoGrid
+        companyName={selectedCompetitor.name}
+        companyIntro={selectedCompetitor.intro}
+        analysisSummary={selectedScoreItem?.竞争分析小结}
+        onOpenDrawer={onOpenDrawer}
+      />
+    </section>
+  );
+}
 
-      {activeTab === DEFAULT_RESULT_TAB && (
-        <InfoGrid
-          companyName={selectedCompetitor.name}
-          companyIntro={selectedCompetitor.intro}
-          analysisSummary={selectedScoreItem?.竞争分析小结}
-        />
-      )}
-      {activeTab === "公司近况" && (
-        <DynamicsPanel competitorDetail={selectedDetail} status={selectedDetailStatus} error={selectedDetailError} />
-      )}
-      {activeTab === "对比分析报告" && (
-        <div className="report-wrap">
-          <div className="report-title-row">
-            <div>
-              <h3>{targetName} vs {selectedCompetitor.name}</h3>
-              <p>围绕产品服务、技术力、近期动态与战略威胁展开对比。</p>
-            </div>
-            {selectedReport?.status === "loading" && <span className="status-dot"><ResultPendingText>报告生成中</ResultPendingText></span>}
-            {selectedReport?.status === "error" && <span className="status-dot status-dot--error">生成失败</span>}
+function ResultDetailDrawer({
+  open,
+  targetName,
+  selectedCompetitor,
+  selectedDetail,
+  selectedDetailStatus,
+  selectedDetailError,
+  selectedReport,
+  selectedScoreItem,
+  activeTab,
+  onTabChange,
+  onClose
+}) {
+  const [mounted, setMounted] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      return undefined;
+    }
+    const timer = setTimeout(() => setMounted(false), 260);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  if (!mounted || !selectedCompetitor || typeof document === "undefined") {
+    return null;
+  }
+
+  const drawerTab = activeTab === "对比分析报告" ? "对比分析报告" : "公司近况";
+
+  return createPortal(
+    <div className={`competitor-analysis-legacy-viewport competitor-drawer-layer result-detail-drawer-layer ${open ? "result-detail-drawer-layer--open" : "result-detail-drawer-layer--closing"}`} role="presentation">
+      <button
+        type="button"
+        className="competitor-drawer-backdrop"
+        aria-label="关闭竞争对手分析详情"
+        onClick={onClose}
+      />
+      <aside className="competitor-drawer result-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="result-detail-drawer-title">
+        <div className="competitor-drawer-head result-detail-drawer-head">
+          <div>
+            <h2 id="result-detail-drawer-title">{selectedCompetitor.name}</h2>
+            <p>{targetName} 的竞争对手延展信息</p>
           </div>
-          {selectedReport?.status === "loading" ? (
-            <AnalysisLoadingCard
-              title="对比分析报告生成中"
-              steps={[
-                { label: "企业信息与动态已接入", state: "done" },
-                { label: "生成产品、技术与近期动态对比", state: "active", detail: "正在组织报告段落与关键判断" },
-                { label: "汇总战略威胁结论", state: "pending" }
-              ]}
-            />
-          ) : selectedReport?.status === "error" ? (
-            <p className="api-error">{selectedReport.error}</p>
+          <button type="button" className="competitor-drawer-close" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <div className="result-detail-drawer-tabs" role="tablist" aria-label="竞争对手详情类型">
+          {["公司近况", "对比分析报告"].map((tab) => (
+            <button
+              type="button"
+              key={tab}
+              className={drawerTab === tab ? "result-detail-drawer-tab result-detail-drawer-tab--active" : "result-detail-drawer-tab"}
+              onClick={() => onTabChange(tab)}
+              role="tab"
+              aria-selected={drawerTab === tab}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        <div className="competitor-drawer-body result-detail-drawer-body">
+          {drawerTab === "公司近况" ? (
+            <DynamicsPanel competitorDetail={selectedDetail} status={selectedDetailStatus} error={selectedDetailError} />
           ) : (
-            <MarkdownReport text={selectedReport?.text || selectedScoreItem?.竞争分析小结 || "暂无报告。"} />
+            <div className="report-wrap">
+              <div className="report-title-row">
+                <div>
+                  <h3>{targetName} vs {selectedCompetitor.name}</h3>
+                  <p>围绕产品服务、技术力、近期动态与战略威胁展开对比。</p>
+                </div>
+                {selectedReport?.status === "loading" && <span className="status-dot"><ResultPendingText>报告生成中</ResultPendingText></span>}
+                {selectedReport?.status === "error" && <span className="status-dot status-dot--error">生成失败</span>}
+              </div>
+              {selectedReport?.status === "loading" ? (
+                <AnalysisLoadingCard
+                  title="对比分析报告生成中"
+                  steps={[
+                    { label: "企业信息与动态已接入", state: "done" },
+                    { label: "生成产品、技术与近期动态对比", state: "active", detail: "正在组织报告段落与关键判断" },
+                    { label: "汇总战略威胁结论", state: "pending" }
+                  ]}
+                />
+              ) : selectedReport?.status === "error" ? (
+                <p className="api-error">{selectedReport.error}</p>
+              ) : (
+                <MarkdownReport text={selectedReport?.text || selectedScoreItem?.竞争分析小结 || "暂无报告。"} />
+              )}
+            </div>
           )}
         </div>
-      )}
-    </section>
+      </aside>
+    </div>,
+    document.body
   );
 }
 
 function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLoading, apiError, resetSeed }) {
   const [modeError, setModeError] = useState("");
+  const [competitorDrawerOpen, setCompetitorDrawerOpen] = useState(false);
   const getRowsFromForm = useCallback((value) => {
     const names = splitCompetitorNames(value);
     const rows = names.length ? names.slice(0, MAX_COMPETITOR_COUNT) : [];
@@ -1595,13 +2014,22 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
   const hasSameAsTargetCompetitor = sameAsTargetCompetitorIndexes.size > 0;
   const hasDuplicateCompetitor = duplicateCompetitorIndexes.size > 0;
   const hasBlockingCompetitorError = matchMode === "exact" && (hasSameAsTargetCompetitor || hasDuplicateCompetitor);
+  const competitorNames = useMemo(
+    () => competitorRows.map((item) => item.trim()).filter(Boolean).slice(0, MAX_COMPETITOR_COUNT),
+    [competitorRows]
+  );
 
   useEffect(() => {
     const rows = getRowsFromForm("");
     setModeError("");
     setCompetitorRows(rows);
     lastSyncedCompetitorValue.current = "";
-  }, [getRowsFromForm, resetSeed]);
+    setForm({
+      ...createEmptyForm(),
+      province: matchMode === "auto" ? DEFAULT_PROVINCE : "",
+      matchMode
+    });
+  }, [getRowsFromForm, matchMode, resetSeed, setForm]);
 
   useEffect(() => {
     if (previousMatchMode.current === matchMode) return;
@@ -1680,14 +2108,17 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
 
     if (matchMode === "exact" && splitCompetitorNames(form.competitorCompanyName).length === 0) {
       setModeError("请至少输入一家竞争对手企业名称。");
+      setCompetitorDrawerOpen(true);
       return;
     }
     if (matchMode === "exact" && hasSameAsTargetCompetitor) {
       setModeError(SAME_COMPANY_NAME_ERROR);
+      setCompetitorDrawerOpen(true);
       return;
     }
     if (matchMode === "exact" && hasDuplicateCompetitor) {
       setModeError(DUPLICATE_COMPETITOR_NAME_ERROR);
+      setCompetitorDrawerOpen(true);
       return;
     }
 
@@ -1756,7 +2187,7 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
 
                 <div className="home-form-column home-form-column--right">
                   {matchMode === "auto" ? (
-                    <div className="match-mode-content match-mode-content--auto" key="auto">
+                    <div className="match-mode-content match-mode-content--auto home-mode-panel" key="auto">
                       <FieldGroup
                         icon="search"
                         label="选择省份"
@@ -1771,59 +2202,24 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
                           {PROVINCES.map((province) => <option value={province} key={province}>{province}</option>)}
                         </select>
                       </FieldGroup>
+                      <p className="home-mode-note">自动匹配会根据省份筛选 5 家对手，适合快速生成第一版竞争分析。</p>
                     </div>
                   ) : (
-                    <div className="match-mode-content match-mode-content--exact competitor-field-card" key="exact">
-                      <div className="manual-list-head">
-                        <span className="field-title"><Icon name="user" />竞争对手名称</span>
-                        <button
-                          type="button"
-                          className="mini-add"
-                          onClick={addCompetitor}
-                          disabled={competitorRows.length >= MAX_COMPETITOR_COUNT}
-                          aria-label="新增竞争对手输入行"
-                        >
-                          + 添加对手
-                        </button>
-                      </div>
-                      <div className="competitor-input-list">
-                        {competitorRows.map((name, index) => {
-                          const isSameAsTarget = sameAsTargetCompetitorIndexes.has(index);
-                          const isDuplicateCompetitor = duplicateCompetitorIndexes.has(index);
-                          const rowError = isSameAsTarget
-                            ? SAME_COMPANY_NAME_ERROR
-                            : isDuplicateCompetitor
-                              ? DUPLICATE_COMPETITOR_NAME_ERROR
-                              : "";
-                          const errorId = `competitor-name-error-${index}`;
-                          return (
-                            <div className={`competitor-input-row ${rowError ? "competitor-input-row--error" : ""}`.trim()} key={`competitor-row-${index}`}>
-                              <CompanyValidationInput
-                                value={name}
-                                onChange={(value) => updateCompetitorAt(index, value)}
-                                placeholder="请输入竞争对手名称"
-                                className={rowError ? "company-validation-input--error" : ""}
-                                suspendValidation={Boolean(rowError)}
-                                inputProps={{
-                                  "data-competitor-input": index,
-                                  "aria-invalid": rowError ? "true" : undefined,
-                                  "aria-describedby": rowError ? errorId : undefined
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeCompetitorAt(index)}
-                                disabled={!name.trim() && competitorRows.length <= DEFAULT_COMPETITOR_ROWS}
-                                aria-label={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
-                                title={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
-                              >
-                                ×
-                              </button>
-                              {rowError && <p className="competitor-row-error" id={errorId}>{rowError}</p>}
-                            </div>
-                          );
-                        })}
-                      </div>
+                    <div className="match-mode-content match-mode-content--exact home-mode-panel competitor-summary-panel" key="exact">
+                      <div className="field-title">竞争对手</div>
+                      <button
+                        type="button"
+                        className="competitor-summary-card"
+                        onClick={() => setCompetitorDrawerOpen(true)}
+                        aria-haspopup="dialog"
+                      >
+                        <span className="competitor-summary-main">
+                          <strong>{competitorNames.length > 0 ? `${competitorNames.length} 家已配置` : "尚未配置对手"}</strong>
+                          <small>{competitorNames.length > 0 ? competitorNames.join("、") : "打开侧栏录入 1-5 家企业"}</small>
+                        </span>
+                        <span className="competitor-summary-action">配置</span>
+                      </button>
+                      <p className="home-mode-note">精确匹配适合已有明确对手名单的场景，主页仅保留配置摘要。</p>
                     </div>
                   )}
                 </div>
@@ -1841,6 +2237,87 @@ function HomePage({ form, setForm, matchMode, onMatchModeChange, onAnalyze, isLo
           </div>
         </section>
 
+        {competitorDrawerOpen ? (
+          <div className="competitor-drawer-layer" role="presentation">
+            <button
+              type="button"
+              className="competitor-drawer-backdrop"
+              aria-label="关闭竞争对手配置"
+              onClick={() => setCompetitorDrawerOpen(false)}
+            />
+            <aside className="competitor-drawer" role="dialog" aria-modal="true" aria-labelledby="competitor-drawer-title">
+              <div className="competitor-drawer-head">
+                <div>
+                  <h2 id="competitor-drawer-title">配置竞争对手</h2>
+                  <p>最多录入 5 家企业，校验通过后即可开始分析。</p>
+                </div>
+                <button type="button" className="competitor-drawer-close" onClick={() => setCompetitorDrawerOpen(false)} aria-label="关闭">
+                  ×
+                </button>
+              </div>
+
+              <div className="competitor-drawer-body">
+                <div className="manual-list-head">
+                  <span className="field-title">竞争对手名称</span>
+                  <button
+                    type="button"
+                    className="mini-add"
+                    onClick={addCompetitor}
+                    disabled={competitorRows.length >= MAX_COMPETITOR_COUNT}
+                    aria-label="新增竞争对手输入行"
+                  >
+                    + 添加
+                  </button>
+                </div>
+                <div className="competitor-input-list">
+                  {competitorRows.map((name, index) => {
+                    const isSameAsTarget = sameAsTargetCompetitorIndexes.has(index);
+                    const isDuplicateCompetitor = duplicateCompetitorIndexes.has(index);
+                    const rowError = isSameAsTarget
+                      ? SAME_COMPANY_NAME_ERROR
+                      : isDuplicateCompetitor
+                        ? DUPLICATE_COMPETITOR_NAME_ERROR
+                        : "";
+                    const errorId = `competitor-name-error-${index}`;
+                    return (
+                      <div className={`competitor-input-row ${rowError ? "competitor-input-row--error" : ""}`.trim()} key={`competitor-row-${index}`}>
+                        <CompanyValidationInput
+                          value={name}
+                          onChange={(value) => updateCompetitorAt(index, value)}
+                          placeholder="请输入竞争对手名称"
+                          className={rowError ? "company-validation-input--error" : ""}
+                          suspendValidation={Boolean(rowError)}
+                          inputProps={{
+                            "data-competitor-input": index,
+                            "aria-invalid": rowError ? "true" : undefined,
+                            "aria-describedby": rowError ? errorId : undefined
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeCompetitorAt(index)}
+                          disabled={!name.trim() && competitorRows.length <= DEFAULT_COMPETITOR_ROWS}
+                          aria-label={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
+                          title={competitorRows.length > DEFAULT_COMPETITOR_ROWS ? "删除竞争对手输入行" : "清空竞争对手输入行"}
+                        >
+                          ×
+                        </button>
+                        {rowError && <p className="competitor-row-error" id={errorId}>{rowError}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="competitor-drawer-footer">
+                {(modeError || hasBlockingCompetitorError) ? <p className="drawer-error">{modeError || "请先处理竞争对手名称错误。"}</p> : null}
+                <button type="button" className="secondary-action" onClick={() => setCompetitorDrawerOpen(false)}>
+                  完成配置
+                </button>
+              </div>
+            </aside>
+          </div>
+        ) : null}
       </div>
     </main>
   );
@@ -1869,6 +2346,7 @@ function ResultsPage({
   finalizing,
   analysisMessage
 }) {
+  const [detailDrawerOpen, setDetailDrawerOpen] = useState(activeTab !== DEFAULT_RESULT_TAB);
   const scoreItems = Array.isArray(scoreResult?.竞争对手分析与打分) ? scoreResult.竞争对手分析与打分 : [];
   const scoreByName = useMemo(() => {
     return buildScoreItemNameMap(scoreItems);
@@ -1884,20 +2362,33 @@ function ResultsPage({
     });
   }, [competitors, competitorDetails, scoreByName]);
 
-  const selectedCompetitor = displayCompetitors.find((item) => item.id === selectedCompetitorId) || null;
+  const selectedCompetitor = displayCompetitors.find((item) => item.id === selectedCompetitorId) || displayCompetitors[0] || null;
   const selectedDetailEntry = selectedCompetitor ? competitorDetails[selectedCompetitor.id] || {} : {};
   const selectedDetail = selectedDetailEntry?.data || null;
   const selectedReport = selectedCompetitor ? compareReports[selectedCompetitor.id] : null;
   const selectedScoreItem = selectedCompetitor
     ? getScoreItemByCompanyName(scoreByName, selectedCompetitor.name)
     : null;
+  const openDetailDrawer = useCallback((tab = "公司近况") => {
+    const nextTab = tab === "对比分析报告" ? "对比分析报告" : "公司近况";
+    setActiveTab(nextTab);
+    setDetailDrawerOpen(true);
+  }, [setActiveTab]);
+  const closeDetailDrawer = useCallback(() => {
+    setDetailDrawerOpen(false);
+    setActiveTab(DEFAULT_RESULT_TAB);
+  }, [setActiveTab]);
+
+  useEffect(() => {
+    if (activeTab !== DEFAULT_RESULT_TAB && selectedCompetitor) {
+      setDetailDrawerOpen(true);
+    }
+  }, [activeTab, selectedCompetitor]);
+
+  const showCompetitorPlaceholders = form.matchMode === "auto" && isLoading && competitors.length === 0;
 
   return (
     <main className="main-canvas main-canvas--results">
-      <div className="result-topbar">
-        <button type="button" className="export-btn" onClick={onExport}><Icon name="download" />导出对手分析报告</button>
-      </div>
-
       <CompanyOverview
         targetName={form.targetCompanyName}
         targetCompanyInfo={targetCompanyInfo}
@@ -1910,13 +2401,18 @@ function ResultsPage({
       <section className="competitor-section">
         <div className="section-title-row">
           <h2>竞争对手列表 <span>（{competitors.length}家）</span></h2>
-          {isLoading && finalizing && <span className="loading-chip"><ResultPendingText>正在保存完整结果</ResultPendingText></span>}
-          {scoreStatus === "loading" && <span className="loading-chip"><ResultPendingText>评分生成中</ResultPendingText></span>}
-          {scoreStatus === "error" && <span className="status-dot status-dot--error">评分失败</span>}
+          <div className="section-title-actions">
+            {isLoading && finalizing && <span className="loading-chip"><ResultPendingText>正在保存完整结果</ResultPendingText></span>}
+            {scoreStatus === "loading" && <span className="loading-chip"><ResultPendingText>评分生成中</ResultPendingText></span>}
+            {scoreStatus === "error" && <span className="status-dot status-dot--error">评分失败</span>}
+            <button type="button" className="export-btn section-export-btn" onClick={onExport} disabled={competitors.length === 0}>
+              <Icon name="download" />导出报告
+            </button>
+          </div>
         </div>
         {apiError && <p className="api-error api-error--inline">{apiError}</p>}
         {scoreStatus === "error" && scoreError && <p className="api-error api-error--inline">评分失败：{scoreError}</p>}
-        {competitors.length === 0 && isLoading && (
+        {competitors.length === 0 && isLoading && !showCompetitorPlaceholders && (
           <AnalysisLoadingCard
             title="竞争对手列表生成中"
             steps={[
@@ -1927,7 +2423,9 @@ function ResultsPage({
           />
         )}
         <div className="competitor-grid">
-          {displayCompetitors.map((item) => {
+          {showCompetitorPlaceholders ? Array.from({ length: COMPETITOR_PLACEHOLDER_COUNT }).map((_, index) => (
+            <CompetitorPlaceholderCard key={`competitor-placeholder-${index}`} />
+          )) : displayCompetitors.map((item) => {
             const scoreItem = getScoreItemByCompanyName(scoreByName, item.name);
             return (
               <CompetitorCard
@@ -1940,7 +2438,7 @@ function ResultsPage({
                 scoreStatus={scoreStatus}
                 detailError={competitorDetails[item.id]?.error || ""}
                 reportError={compareReports[item.id]?.error || ""}
-                isActive={selectedCompetitorId === item.id}
+                isActive={selectedCompetitor?.id === item.id}
                 onClick={() => onSelectCompetitor(item.id)}
               />
             );
@@ -1949,9 +2447,14 @@ function ResultsPage({
       </section>
 
       <DetailPanel
+        selectedCompetitor={selectedCompetitor}
+        selectedScoreItem={selectedScoreItem}
+        onOpenDrawer={openDetailDrawer}
+      />
+
+      <ResultDetailDrawer
+        open={detailDrawerOpen}
         targetName={form.targetCompanyName}
-        targetCompanyInfo={targetCompanyInfo}
-        targetDetail={targetDetail}
         selectedCompetitor={selectedCompetitor}
         selectedDetail={selectedDetail}
         selectedDetailStatus={selectedDetailEntry?.status || "idle"}
@@ -1959,8 +2462,8 @@ function ResultsPage({
         selectedReport={selectedReport}
         selectedScoreItem={selectedScoreItem}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        singleMode={singleMode}
+        onTabChange={setActiveTab}
+        onClose={closeDetailDrawer}
       />
     </main>
   );
@@ -2031,7 +2534,12 @@ export default function LegacyCompetitorAnalysisApp() {
   const applyRecordSnapshot = useCallback((record, routeState = {}) => {
     const snap = record?.stateSnapshot || {};
     const restoredForm = { ...createEmptyForm(), ...(snap.form || record.input || {}) };
-    const restoredCompetitors = Array.isArray(snap.competitors) ? snap.competitors : [];
+    const restoredState = filterRenderableCompetitorState(
+      Array.isArray(snap.competitors) ? snap.competitors : [],
+      snap.competitorDetails || {},
+      snap.compareReports || {}
+    );
+    const restoredCompetitors = restoredState.competitors;
     const requestedCompetitorId = routeState.selectedCompetitorId || snap.selectedCompetitorId || null;
     const restoredSelectedCompetitorId = restoredCompetitors.some((item) => item.id === requestedCompetitorId)
       ? requestedCompetitorId
@@ -2041,8 +2549,8 @@ export default function LegacyCompetitorAnalysisApp() {
     setTargetCompanyInfo(snap.targetCompanyInfo || null);
     setTargetDetail(snap.targetDetail || null);
     setCompetitors(restoredCompetitors);
-    setCompetitorDetails(snap.competitorDetails || {});
-    setCompareReports(snap.compareReports || {});
+    setCompetitorDetails(restoredState.competitorDetails);
+    setCompareReports(restoredState.compareReports);
     setScoreResult(snap.scoreResult || null);
     setQueryTime(snap.queryTime || record.queryTime || "");
     setSingleMode(Boolean(snap.singleMode || splitCompetitorNames(restoredForm.competitorCompanyName).length === 1));
@@ -2078,7 +2586,8 @@ export default function LegacyCompetitorAnalysisApp() {
       const { syncUrl = true, routeState = {} } = options;
       const normalizedRecord = normalizeHistoryRecord(record);
       applyRecordSnapshot(normalizedRecord, routeState);
-      setApiError(Array.isArray(normalizedRecord?.warnings) && normalizedRecord.warnings.length ? normalizedRecord.warnings.join("；") : "");
+      const visibleWarnings = getVisibleWarnings(normalizedRecord?.warnings);
+      setApiError(visibleWarnings.length ? visibleWarnings.join("；") : "");
       if (syncUrl && normalizedRecord?.id) {
         pushResultRoute(normalizedRecord.id, getRecordRouteOptions(normalizedRecord, routeState));
       }
@@ -2116,6 +2625,7 @@ export default function LegacyCompetitorAnalysisApp() {
     if (isLoading && runningResultId) {
       setHomeMatchMode(nextMode);
       setPhase("home");
+      setHomeResetSeed((value) => value + 1);
       if (syncUrl) {
         pushHomeRoute({ mode: nextMode });
       }
@@ -2442,6 +2952,22 @@ export default function LegacyCompetitorAnalysisApp() {
       setScoreStatus(nextCompetitors.length ? "loading" : "idle");
     };
 
+    const removeCompetitorFromResults = (competitorId) => {
+      if (!competitorId) return;
+      setCompetitors((prev) => prev.filter((item) => item.id !== competitorId));
+      setCompetitorDetails((prev) => {
+        const next = { ...prev };
+        delete next[competitorId];
+        return next;
+      });
+      setCompareReports((prev) => {
+        const next = { ...prev };
+        delete next[competitorId];
+        return next;
+      });
+      setSelectedCompetitorId((prev) => (prev === competitorId ? null : prev));
+    };
+
     const markPendingStagesAsError = (message) => {
       setTargetDetailStatus((prev) => (prev === "loading" ? "error" : prev));
       setTargetDetailError((prev) => prev || message);
@@ -2494,12 +3020,16 @@ export default function LegacyCompetitorAnalysisApp() {
       if (eventType === "competitor_detail_ready") {
         const competitorId = data.competitorId;
         if (!competitorId) return;
+        if (data.status !== "success") {
+          removeCompetitorFromResults(competitorId);
+          return;
+        }
         setCompetitorDetails((prev) => ({
           ...prev,
           [competitorId]: {
-            status: data.status === "success" ? "success" : "error",
-            data: data.status === "success" ? data.data || null : null,
-            error: data.status === "success" ? "" : data.error || "企业详情加载失败"
+            status: "success",
+            data: data.data || null,
+            error: ""
           }
         }));
         return;
@@ -2508,12 +3038,16 @@ export default function LegacyCompetitorAnalysisApp() {
       if (eventType === "compare_report_ready") {
         const competitorId = data.competitorId;
         if (!competitorId) return;
+        if (data.status !== "success") {
+          removeCompetitorFromResults(competitorId);
+          return;
+        }
         setCompareReports((prev) => ({
           ...prev,
           [competitorId]: {
-            status: data.status === "success" ? "success" : "error",
-            text: data.status === "success" ? data.text || "" : "",
-            error: data.status === "success" ? "" : data.error || "对比报告生成失败"
+            status: "success",
+            text: data.text || "",
+            error: ""
           }
         }));
         return;
@@ -2548,7 +3082,8 @@ export default function LegacyCompetitorAnalysisApp() {
         setRunningResultId((current) => (current === record.id ? "" : current));
         restoreHistory(record, { syncUrl: true });
         setHistoryItems((prev) => normalizeHistoryItems([record, ...prev.filter((item) => item.id !== record.id)]).slice(0, 200));
-        setApiError(Array.isArray(record.warnings) && record.warnings.length ? record.warnings.join("；") : "");
+        const visibleWarnings = getVisibleWarnings(record.warnings);
+        setApiError(visibleWarnings.length ? visibleWarnings.join("；") : "");
         setAnalysisMessage("分析完成");
         setFinalizing(false);
         setIsLoading(false);

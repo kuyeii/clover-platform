@@ -99,7 +99,7 @@ apps:
     module_path: modules/bid_generator
     route_path: /apps/bid-generator
     target_api_prefix: /api/v1/bid-generator
-    iframe_enabled: true
+    iframe_enabled: false
     iframe_url_env: BID_GENERATOR_URL
     permission_default: true
     legacy_health_check: /health

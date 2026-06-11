@@ -1,14 +1,14 @@
 import { HashRouter } from "react-router-dom";
 
-import LegacyContractReviewApp from "./legacy/App";
-import "./legacy/index.css";
-import "./legacy/legacy-review.css";
+import ContractReviewRuntime from "./runtime/App";
+import "./runtime/index.css";
+import "./runtime/runtime-review.css";
 
 export function ContractReviewPage() {
   return (
     <div className="legacy-app-viewport contract-review-legacy-viewport">
       <HashRouter>
-        <LegacyContractReviewApp />
+        <ContractReviewRuntime />
       </HashRouter>
     </div>
   );

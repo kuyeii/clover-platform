@@ -283,6 +283,9 @@ def _load_env_file_once() -> None:
         except Exception:
             _LEGACY_ENV_LOADED = True
             return
+        repo_root = get_api_settings().repo_root
+        load_dotenv(repo_root / ".env", override=False)
+        load_dotenv(repo_root / ".env.local", override=False)
         legacy_root = get_api_settings().repo_root / "legacy" / "company-competitors-analysis"
         load_dotenv(legacy_root / ".env", override=False)
         load_dotenv(legacy_root / ".env.local", override=False)
@@ -1450,7 +1453,6 @@ def build_company_profile_cache_response(company: Dict[str, str]) -> Dict[str, A
         ),
     }
 
-
 def _profile_for_storage(company: Any) -> tuple[Dict[str, str], str] | None:
     normalized_company = normalize_complete_company(company)
     if not normalized_company:
@@ -1569,20 +1571,28 @@ def run_company_name_validation_workflow(
     targetCompanyName: str = "",
     competitorCompanyName: str = "",
     cacheOnly: bool = False,
+    forceRefresh: bool = False,
     sourceQuery: str = "",
+    selectedCompany: Any = None,
     **_: Any,
 ) -> Dict[str, Any]:
     company_name = str(companyName or targetCompanyName or competitorCompanyName or "").strip()
     if not company_name:
         raise AppError("请先输入企业名称。", status_code=400, code="BAD_REQUEST")
 
-    cached_response = read_company_validation_query_cache(company_name)
-    if cached_response:
-        return cached_response
+    selected_complete_company = normalize_complete_company(selectedCompany)
+    if selected_complete_company:
+        write_company_candidate_to_query_cache(sourceQuery or company_name, selected_complete_company)
+        return build_company_profile_cache_response(selected_complete_company)
 
-    cached_company = read_company_profile_cache(company_name)
-    if cached_company:
-        return build_company_profile_cache_response(cached_company)
+    if not forceRefresh:
+        cached_response = read_company_validation_query_cache(company_name)
+        if cached_response:
+            return cached_response
+
+        cached_company = read_company_profile_cache(company_name)
+        if cached_company:
+            return build_company_profile_cache_response(cached_company)
 
     if cacheOnly:
         return build_company_cache_miss_response(company_name)
@@ -2108,6 +2118,25 @@ def hydrate_competitor_intros(
     return hydrated
 
 
+def filter_successful_competitors(
+    current_competitors: List[Dict[str, Any]],
+    current_competitor_details: Dict[str, Any],
+    warnings: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    filtered: List[Dict[str, Any]] = []
+    for item in current_competitors:
+        detail = current_competitor_details.get(item.get("id")) or {}
+        if detail.get("status") == "error":
+            logger.debug(
+                "Filtered competitor with failed detail: id=%s name=%s",
+                item.get("id"),
+                item.get("name"),
+            )
+            continue
+        filtered.append(item)
+    return filtered
+
+
 def build_record(
     *,
     currentForm: Dict[str, Any],
@@ -2281,6 +2310,9 @@ def run_full_analysis(
         )
         if target_detail_error:
             warnings.append(f"我方企业详情加载失败：{target_detail_error}")
+        current_competitors = filter_successful_competitors(current_competitors, current_competitor_details, warnings)
+        if not current_competitors:
+            raise AppError("竞争对手详情均加载失败，请稍后重试或更换竞争对手。")
         current_competitors = hydrate_competitor_intros(current_competitors, current_competitor_details)
 
         def load_compare_report(item: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
@@ -2306,6 +2338,24 @@ def run_full_analysis(
             for future in as_completed([executor.submit(load_compare_report, item) for item in current_competitors]):
                 key, value = future.result()
                 current_compare_reports[key] = value
+        failed_report_ids = {
+            competitor_id
+            for competitor_id, report in current_compare_reports.items()
+            if isinstance(report, dict) and report.get("status") == "error"
+        }
+        if failed_report_ids:
+            failed_names = [str(item.get("name") or item.get("id")) for item in current_competitors if item.get("id") in failed_report_ids]
+            if failed_names:
+                logger.debug("Filtered competitors with failed compare reports: %s", "、".join(failed_names))
+            current_competitors = [item for item in current_competitors if item.get("id") not in failed_report_ids]
+            current_competitor_details = {
+                key: value for key, value in current_competitor_details.items() if key not in failed_report_ids
+            }
+            current_compare_reports = {
+                key: value for key, value in current_compare_reports.items() if key not in failed_report_ids
+            }
+        if not current_competitors:
+            raise AppError("竞争对手对比报告均生成失败，请稍后重试或更换竞争对手。")
 
         current_score_result = None
         merged_report_text = "\n\n".join(
@@ -2535,8 +2585,6 @@ def run_full_analysis_stream(
         def emit_competitor_detail(competitor_id: str, detail: Dict[str, Any]) -> None:
             if detail.get("status") == "success":
                 safe_emit("competitor_detail_ready", {"competitorId": competitor_id, "status": "success", "data": detail.get("data") or {}})
-            else:
-                safe_emit("competitor_detail_ready", {"competitorId": competitor_id, "status": "error", "error": detail.get("error") or "企业详情加载失败"})
 
         current_target_detail, current_competitor_details, target_detail_error = load_analysis_company_details(
             target_name=target_name,
@@ -2547,6 +2595,12 @@ def run_full_analysis_stream(
         )
         if target_detail_error:
             warnings.append(f"我方企业详情加载失败：{target_detail_error}")
+        filtered_competitors = filter_successful_competitors(current_competitors, current_competitor_details, warnings)
+        if len(filtered_competitors) != len(current_competitors):
+            current_competitors = filtered_competitors
+            safe_emit("competitors_ready", current_competitors)
+        if not current_competitors:
+            raise AppError("竞争对手详情均加载失败，请稍后重试或更换竞争对手。")
         current_competitors = hydrate_competitor_intros(current_competitors, current_competitor_details)
 
         detail_stage_record = build_record(
@@ -2600,8 +2654,25 @@ def run_full_analysis_stream(
                 current_compare_reports[key] = value
                 if value.get("status") == "success":
                     safe_emit("compare_report_ready", {"competitorId": key, "status": "success", "text": value.get("text") or ""})
-                else:
-                    safe_emit("compare_report_ready", {"competitorId": key, "status": "error", "error": value.get("error") or "对比报告生成失败"})
+        failed_report_ids = {
+            competitor_id
+            for competitor_id, report in current_compare_reports.items()
+            if isinstance(report, dict) and report.get("status") == "error"
+        }
+        if failed_report_ids:
+            failed_names = [str(item.get("name") or item.get("id")) for item in current_competitors if item.get("id") in failed_report_ids]
+            if failed_names:
+                logger.debug("Filtered competitors with failed compare reports: %s", "、".join(failed_names))
+            current_competitors = [item for item in current_competitors if item.get("id") not in failed_report_ids]
+            current_competitor_details = {
+                key: value for key, value in current_competitor_details.items() if key not in failed_report_ids
+            }
+            current_compare_reports = {
+                key: value for key, value in current_compare_reports.items() if key not in failed_report_ids
+            }
+            safe_emit("competitors_ready", current_competitors)
+        if not current_competitors:
+            raise AppError("竞争对手对比报告均生成失败，请稍后重试或更换竞争对手。")
 
         report_stage_record = build_record(
             currentForm=current_form,

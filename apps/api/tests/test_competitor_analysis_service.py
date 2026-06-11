@@ -91,6 +91,21 @@ class CompetitorAnalysisServiceTests(unittest.TestCase):
 
         self.assertEqual(result, {"summary": "暂无近期动态", "items": []})
 
+    def test_filter_successful_competitors_drops_detail_errors(self) -> None:
+        warnings: list[str] = []
+
+        result = service.filter_successful_competitors(
+            [{"id": "a", "name": "正常企业"}, {"id": "b", "name": "失败企业"}],
+            {
+                "a": {"status": "success", "data": {"product": "正常"}},
+                "b": {"status": "error", "error": "PluginInvokeError"},
+            },
+            warnings,
+        )
+
+        self.assertEqual([item["id"] for item in result], ["a"])
+        self.assertEqual(warnings, [])
+
     def test_demo_history_record_is_filtered_from_rows(self) -> None:
         row = {"record_json": '{"id":"history-demo","mode":"demo"}'}
 
@@ -103,6 +118,72 @@ class CompetitorAnalysisServiceTests(unittest.TestCase):
             service.save_history_record(record)
 
         self.assertEqual(ctx.exception.code, "DEMO_HISTORY_DISABLED")
+
+    def test_company_name_validation_force_refresh_bypasses_cache(self) -> None:
+        calls: list[str] = []
+        original_read_query_cache = service.read_company_validation_query_cache
+        original_read_profile_cache = service.read_company_profile_cache
+        original_post_workflow = service.post_dify_workflow
+        original_write_cache = service.write_company_validation_cache
+        try:
+            service.read_company_validation_query_cache = lambda _name: {
+                "company": {"name": "缓存企业", "intro": "旧介绍", "business": "旧业务"},
+                "candidateItems": [],
+                "cacheHit": True,
+            }
+            service.read_company_profile_cache = lambda _name: None
+
+            def fake_post_workflow(**_kwargs: object) -> dict:
+                calls.append("workflow")
+                return {
+                    "data": {
+                        "outputs": {
+                            "text": '{"企业名称":"联网企业","企业介绍":"新介绍","主营业务":"新业务","搜索结果":"联网命中"}'
+                        }
+                    }
+                }
+
+            service.post_dify_workflow = fake_post_workflow
+            service.write_company_validation_cache = lambda _name, _response: calls.append("write_cache")
+
+            cached = service.run_company_name_validation_workflow(companyName="测试企业")
+            refreshed = service.run_company_name_validation_workflow(companyName="测试企业", forceRefresh=True)
+
+            self.assertEqual(cached["company"]["name"], "缓存企业")
+            self.assertEqual(refreshed["company"]["name"], "联网企业")
+            self.assertEqual(calls, ["workflow", "write_cache"])
+        finally:
+            service.read_company_validation_query_cache = original_read_query_cache
+            service.read_company_profile_cache = original_read_profile_cache
+            service.post_dify_workflow = original_post_workflow
+            service.write_company_validation_cache = original_write_cache
+
+    def test_selected_company_can_be_cached_under_full_company_name(self) -> None:
+        calls: list[tuple[str, str]] = []
+        workflow_calls: list[str] = []
+        original_read_validation_response = service.repository.read_validation_response
+        original_write_validation_cache = service.repository.write_company_validation_cache
+        original_post_workflow = service.post_dify_workflow
+        try:
+            service.repository.read_validation_response = lambda _name: {}
+            service.repository.write_company_validation_cache = (
+                lambda **kwargs: calls.append((kwargs["normalized_query"], kwargs["query"]))
+            )
+            service.post_dify_workflow = lambda **_kwargs: workflow_calls.append("workflow")
+
+            result = service.run_company_name_validation_workflow(
+                companyName="美国耐克公司",
+                sourceQuery="美国耐克公司",
+                selectedCompany={"name": "美国耐克公司", "intro": "耐克介绍", "business": "运动鞋服与体育用品研发销售"},
+            )
+
+            self.assertEqual(result["company"]["name"], "美国耐克公司")
+            self.assertEqual(calls, [("美国耐克公司", "美国耐克公司")])
+            self.assertEqual(workflow_calls, [])
+        finally:
+            service.repository.read_validation_response = original_read_validation_response
+            service.repository.write_company_validation_cache = original_write_validation_cache
+            service.post_dify_workflow = original_post_workflow
 
 
 if __name__ == "__main__":

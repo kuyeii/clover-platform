@@ -1,0 +1,354 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: Multi-Clause 工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.36@a45e8cc9bfc9e37ab58c3ee31248bc43792a6653fc011e2433129e2942fbbc27
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1773311356642-source-1773311420779-target
+      source: '1773311356642'
+      sourceHandle: source
+      target: '1773311420779'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 1773311420779-source-1773311534084-target
+      source: '1773311420779'
+      sourceHandle: source
+      target: '1773311534084'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1773311534084-source-1773311630293-target
+      source: '1773311534084'
+      sourceHandle: source
+      target: '1773311630293'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: review_side
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: review_side
+        - default: ''
+          hint: ''
+          label: contract_type_hint
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: contract_type_hint
+        - default: ''
+          hint: ''
+          label: clauses_json
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: clauses_json
+        - default: ''
+          hint: ''
+          label: contract_outline
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: contract_outline
+        - default: ''
+          hint: ''
+          label: clause_count
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: clause_count
+      height: 213
+      id: '1773311356642'
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.2
+          mode: chat
+          name: kimi-k2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: 315db781-ac05-43af-9e6f-ca3b2e8cc481
+          role: system
+          text: "你是一名合同审查中的“Missing / Multi-Clause 风险识别助手”。\n\n你的任务仅限于：基于输入的全量合同条款，识别以下两类风险：\n\
+            1. missing_clause：合同中本应有但未约定的关键内容\n2. multi_clause：需要结合两条及以上条款才能成立的联动风险\n\
+            \n你不是单条条款 anchored 风险识别器。单条条款本身直接触发的风险不应在本工作流输出。\n\n你必须严格遵守以下规则：\n\n1.\
+            \ 只输出 missing_clause 或 multi_clause 风险。\n2. 不得输出 anchored 风险；如果某个问题已能由单条条款本身直接成立，则不要输出。\n\
+            3. missing_clause 风险必须说明：\n   - 合同缺少了什么关键约定\n   - 为什么这种缺失会对审查视角一方造成不利后果\n\
+            4. multi_clause 风险必须说明：\n   - 哪些条款组合后形成了问题\n   - 这些条款如何联动产生不利后果\n5. factual_basis\
+            \ 必须具体：\n   - missing_clause：应明确“合同中未见什么约定”或“已存在哪些条款但缺少关键边界”\n   - multi_clause：应明确列出相关条款及其组合关系\n\
+            6. reasoning_basis 必须说明为什么这会造成具体履约、付款、责任、权属或争议处理上的不利后果。\n7. 不要使用“根据原文”“需要进一步人工审核”作为依据主体内容。\n\
+            8. 不做法条硬引用，不做最终修改建议定稿。\n9. 若无法确定是否属于 missing_clause 或 multi_clause，宁可不输出。\n\
+            10. 只输出 JSON，不要输出任何解释、markdown 或代码块。\n11. 你必须只输出 JSON。\n12. 遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）"
+        - id: cb286870-f465-491b-b560-e72aa215cfbc
+          role: user
+          text: "请基于以下合同全量条款，识别 missing_clause 和 multi_clause 风险。\n\n输入信息：\n- 审查视角：{{#1773311356642.review_side#}}\n\
+            - 合同类型：{{#1773311356642.contract_type_hint#}}\n- 合同结构概览：\n{{#1773311356642.contract_outline#}}\n\
+            - 条款总数：{{#1773311356642.clause_count#}}\n- 全量条款 JSON：\n{{#1773311356642.clauses_json#}}\n\
+            \n请仅输出 JSON，格式如下：\n\n{\n  \"risk_items\": [\n    {\n      \"risk_code\"\
+            : \"\",\n      \"risk_source_type\": \"missing_clause\",\n      \"risk_label\"\
+            : \"\",\n      \"dimension\": \"\",\n      \"risk_level_candidate\": \"\
+            medium\",\n      \"issue\": \"\",\n      \"evidence_text\": \"\",\n  \
+            \    \"main_text\": \"\",\n      \"factual_basis\": \"\",\n      \"reasoning_basis\"\
+            : \"\",\n      \"normative_basis_hint\": \"\",\n      \"related_clause_ids\"\
+            : [],\n      \"related_clause_uids\": [],\n      \"needs_human_review\"\
+            : true\n    }\n  ]\n}\n\n输出要求：\n1. risk_source_type 只能是：\n   - missing_clause\n\
+            \   - multi_clause\n2. 若没有明确的 missing_clause 或 multi_clause 风险，输出 {\"\
+            risk_items\": []}。\n3. 不要输出 anchored 风险。\n4. risk_code 使用稳定的英文 snake_case\
+            \ 风格，例如：\n   - liability_cap_missing\n   - acceptance_attachment_missing\n\
+            \   - invoice_payment_dependency_unclear\n   - acceptance_payment_linkage_overstrict\n\
+            \   - ip_and_confidentiality_boundary_unclear\n5. dimension 仅可从以下类别中选择最贴切的一项：\n\
+            \   - 主体资格与签约权限\n   - 服务范围与交付内容\n   - 服务期限、里程碑与验收标准\n   - 付款结算、发票与税费\n\
+            \   - 违约责任与赔偿机制\n   - 解除、终止与续约机制\n   - 保密、数据安全与合规\n   - 知识产权归属与使用权\n \
+            \  - 权责分配与责任限制\n   - 争议解决、适用法律与管辖\n6. issue 必须写成具体问题描述，不能只写“存在风险”。\n7.\
+            \ factual_basis：\n   - missing_clause：必须写清合同中缺少什么关键约定，或已有哪些条款但未配套关键边界\n\
+            \   - multi_clause：必须写清涉及哪些条款，以及这些条款怎样组合\n8. reasoning_basis 必须写清：\n \
+            \  - 为什么这会对 {{#1773311356642.review_side#}} 一方造成实际不利\n   - 至少写出一个具体后果，如付款受阻、责任扩大、边界不清、争议成本上升等\n\
+            9. normative_basis_hint 只能输出：\n   - legal_rule\n   - contract_logic_rule\n\
+            \   - deal_practice_rule\n10. 对于 multi_clause，related_clause_ids 或 related_clause_uids\
+            \ 必须非空。\n11. 对于 missing_clause，如无明确对应条款，可允许 related_clause_ids / related_clause_uids\
+            \ 为空。\n12. 不要输出任何 JSON 之外的内容。\n13. 你必须只输出 JSON。\n14. main_text里面写你认为是联动条款里面最需要被改动的一项条款内容，比如你再evidence\
+            \ text里面写了“条款 1：xxxxx，条款 2：xxxx”，如果你认为条款一是主要风险点，那么main_text里面就写条款一对应的原文内容，必须是原文内容，不能有任何改写！\n\
+            15. 审查立场必须完全站在{{#1773311356642.review_side#}}的立场上，保护{{#1773311356642.review_side#}}的利益，不利于对方的条款不用修改。\n\
+            16.遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）"
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: true
+        structured_output_enabled: true
+        title: LLM
+        type: llm
+        vision:
+          enabled: false
+      height: 117
+      id: '1773311420779'
+      position:
+        x: 385.05103897393826
+        y: 282
+      positionAbsolute:
+        x: 385.05103897393826
+        y: 282
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.2
+          mode: chat
+          name: kimi-k2.5
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: 4c04bd01-54e5-4dd1-9f40-f480a3828a40
+          role: system
+          text: "你是一名合同审查中的“Missing / Multi-Clause 风险定稿助手”。\n\n你的任务是：基于已经识别出的 missing_clause\
+            \ / multi_clause 风险候选、合同条款信息、事实依据和风险逻辑，输出适合最终展示和后续结构化处理的风险结果。\n\n你输出的依据必须尽量具体、可核对、可解释，优先顺序如下：\n\
+            1. 事实依据\n2. 风险逻辑\n3. 合同审查的一般规则\n4. 交易实践依据\n5. 只有在你较有把握时，才补充具体法律依据\n\n\
+            必须严格遵守以下规则：\n\n1. risk_source_type 只能保持为：\n   - missing_clause\n   - multi_clause\n\
+            2. 不得把 missing_clause / multi_clause 改写成 anchored。\n3. 最终依据必须由以下三层组成：\n\
+            \   - factual_basis：合同缺少什么、或哪些条款组合形成问题\n   - reasoning_basis：为什么这会形成风险\n\
+            \   - normative_basis：法律依据、合同审查一般规则或交易实践依据\n4. normative_basis 的 basis_type\
+            \ 只能是：\n   - legal_rule\n   - contract_logic_rule\n   - deal_practice_rule\n\
+            5. 只有在你对法律依据较有把握时，才可使用 legal_rule 并填写 citation_text；否则不得编造法条号。\n6. basis_title\
+            \ 必须简洁概括依据方向；basis_detail 必须解释为什么当前缺失或联动构成风险。\n7. suggestion_minimal 必须是最低必要修补方案，必须包含具体修改动作和至少一个要素，不得只写“建议补充”“建议完善”。\n\
+            8. suggestion_optimized 可以更偏向审查视角一方保护，但必须保持现实可谈判，不得无依据地给出具体比例、金额、期限。\n\
+            9. suggestion_basis 必须解释为什么这样修改能降低当前风险。\n10. 不要输出空泛模板句，如“当前文本不足以支撑稳定履约与争议处理”“需要进一步人工审核”作为主要依据。\n\
+            11. 若建议中涉及具体比例、金额、期限，而你没有可靠依据支持，应改写为“增加边界 / 设置上限 / 明确条件 / 列明标准”等具体但不拍数值的表达。\n\
+            12. 如果 LLM A 输出 {\"risk_items\": []}，你也必须输出 {\"risk_items\": []}。\n13.\
+            \ 只输出 JSON，不要输出任何解释、markdown 或代码块。\n14. 你必须只输出 JSON，不得输出任何推理过程或 <think>...</think>。你的输出必须以第一个字符\
+            \ “{” 开始，并以最后一个字符 “}” 结束。\n15. basis_minimal字段：如果有法条依据的，只需要写对应的法条就行了，不用描述其他内容。如果没有对应的法条的话，把依据用几句话简洁概括的写出来。\n\
+            16. 遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）"
+        - id: d137db50-a7f3-4196-94a1-92f186431875
+          role: user
+          text: "请基于以下 missing_clause / multi_clause 风险候选结果和合同条款信息，输出完整的风险结果。\n\n\
+            输入信息：\n- 审查视角：{{#1773311356642.review_side#}}\n- 合同类型：{{#1773311356642.contract_type_hint#}}\n\
+            - 合同结构概览：\n{{#1773311356642.contract_outline#}}\n- 全量条款 JSON：\n{{#1773311356642.clauses_json#}}\n\
+            \n风险候选：\n{{#1773311420779.text#}}\n\n请仅输出 JSON，格式如下：\n\n{\n  \"risk_items\"\
+            : [\n    {\n      \"risk_code\": \"\",\n      \"risk_source_type\": \"\
+            missing_clause\",\n      \"risk_label\": \"\",\n      \"dimension\": \"\
+            \",\n      \"risk_level\": \"medium\",\n      \"issue\": \"\",\n     \
+            \ \"evidence_text\": \"\",\n      \"main_text\": \"\",\n      \"factual_basis\"\
+            : \"\",\n      \"reasoning_basis\": \"\",\n      \"basis_minimal\": \"\
+            \",\n      \"normative_basis\": {\n        \"basis_type\": \"legal_rule\"\
+            ,\n        \"basis_title\": \"\",\n        \"basis_detail\": \"\",\n \
+            \       \"citation_text\": \"\"\n      },\n      \"suggestion_minimal\"\
+            : \"\",\n      \"suggestion_optimized\": \"\",\n      \"suggestion_basis\"\
+            : \"\",\n      \"related_clause_ids\": [],\n      \"related_clause_uids\"\
+            : [],\n      \"needs_human_review\": true\n    }\n  ]\n}\n\n输出要求：\n1.\
+            \ risk_source_type 只能是 missing_clause 或 multi_clause。\n2. 必须保留并具体化 LLM\
+            \ A 已识别出的风险类型，不要改写成 anchored。\n3. factual_basis：\n   - missing_clause：必须写清合同缺少什么关键约定，或已有哪些条款但缺少关键边界\n\
+            \   - multi_clause：必须写清哪些条款组合后形成问题\n4. reasoning_basis 必须写清风险如何在履约、验收、付款、责任、权属或争议处理中转化为具体不利后果。\n\
+            5. normative_basis：\n   - 如果你较有把握地知道明确法律依据，可以使用 legal_rule\n   - 如果没有足够把握，不得编造法条号，应使用\
+            \ contract_logic_rule 或 deal_practice_rule\n6. basis_title 应简洁概括依据方向，例如：\n\
+            \   - 责任边界应明确且可控制\n   - 验收与付款条件应形成可执行闭环\n   - 知识产权与保密边界应区分清楚\n   - 关键义务缺失会导致责任分配失衡\n\
+            7. basis_detail 必须说明该依据为何适用于当前缺失或联动问题，不能只复述 issue。\n8. suggestion_minimal\
+            \ 必须写成“动作 + 关键要素 + 目的”的形式。\n9. suggestion_optimized 必须在 minimal 基础上进一步向\
+            \ {{#1773311356642.review_side#}} 一方保护倾斜，但不要无依据地给出具体数字。\n10. suggestion_basis\
+            \ 必须解释：\n    - 为什么这些修改能够降低当前风险\n    - 具体改善了哪一个边界、标准、责任分配或交易闭环\n11. 对于\
+            \ multi_clause，related_clause_ids / related_clause_uids 应保留并具体化。\n12.\
+            \ 如果 LLM A 输出 {\"risk_items\": []}，你也必须输出 {\"risk_items\": []}。\n13. 不要输出任何\
+            \ JSON 之外的内容。\n14. 你必须只输出 JSON，不得输出任何推理过程或 <think>...</think>。你的输出必须以第一个字符\
+            \ “{” 开始，并以最后一个字符 “}” 结束。\n15. main_text里面写你认为是联动条款里面最需要被改动的一项条款内容，比如你再evidence\
+            \ text里面写了“条款 1：xxxxx，条款 2：xxxx”，如果你认为条款一是主要风险点，那么main_text里面就写条款一对应的原文内容，必须是原文内容，不能有任何改写！\n\
+            16. basis_minimal字段：如果有法条依据的，只需要写对应的法条就行了，不用描述其他内容。如果没有对应的法条的话，把依据用几句话简洁概括的写出来。\n\
+            17.遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）\n18. 审查条款的时候，必须完全站在{{#1773311356642.review_side#}}的立场上审查条款，保护{{#1773311356642.review_side#}}的利益，不利于对方的条款不用修改。"
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        structured_output_enabled: true
+        title: LLM 2
+        type: llm
+        vision:
+          enabled: false
+      height: 117
+      id: '1773311534084'
+      position:
+        x: 687.0678339896808
+        y: 282
+      positionAbsolute:
+        x: 687.0678339896808
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1773311534084'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 输出
+        type: end
+      height: 88
+      id: '1773311630293'
+      position:
+        x: 982.9829870086874
+        y: 282
+      positionAbsolute:
+        x: 982.9829870086874
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -92.85979863594628
+      y: -4.998911842281132
+      zoom: 0.9834823976487871
+  rag_pipeline_variables: []

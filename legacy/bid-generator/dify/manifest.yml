@@ -20,7 +20,15 @@ model_policy:
   default_profile: bid-standard-chat
   workflow_overrides:
     diagram-generator: diagram-chat
+    diagram-generator-mermaid: diagram-chat
     doc-analysis: doc-analysis-chat
+  node_overrides:
+    structure-generator:
+      LLM大纲润色: bid-fast-json-chat
+    diagram-generator:
+      LLM 规划布局: bid-fast-json-chat
+    diagram-generator-mermaid:
+      LLM 规划布局: bid-fast-json-chat
   rewrite:
     enabled: true
     target: workflows.generated
@@ -130,6 +138,22 @@ workflows:
         - backend
     datasets: []
 
+  - id: diagram-generator-mermaid
+    name: ProEngine_Diagram_Generator_Mermaid
+    description: 生成 Mermaid 图表源码，后端导出阶段统一渲染为 PNG 写入 DOCX。
+    dsl: ./workflows/ProEngine_Diagram_Generator_Mermaid.yml
+    status: deployed
+    required: false
+    expected_llm_nodes:
+      - LLM 规划布局
+      - LLM Mermaid 渲染
+    runtime:
+      api_key_env: DIFY_WORKFLOW_DIAGRAM_GENERATOR_MERMAID
+      response_mode: blocking
+      caller:
+        - backend
+    datasets: []
+
   - id: doc-analysis
     name: ProEngine_DocAnalysis
     description: 执行文档分析工作流。
@@ -167,6 +191,7 @@ env:
     - DIFY_WORKFLOW_CONTENT_REWRITE
     - DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER
     - DIFY_WORKFLOW_DIAGRAM_GENERATOR
+    - DIFY_WORKFLOW_DIAGRAM_GENERATOR_MERMAID
     - DIFY_WORKFLOW_DOC_ANALYSIS
     - DIFY_BID_BASE_ID
     - DIFY_DATASET_API_KEY

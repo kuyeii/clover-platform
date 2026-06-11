@@ -487,7 +487,7 @@ export function AttachmentAnchorCanvas({
                                     className={clsx(
                                         'pointer-events-auto absolute inset-0 rounded-lg border text-left transition-colors',
                                         range.active
-                                            ? 'border-brand-200 bg-brand-50 shadow-[0_0_0_1px_rgba(56,189,248,0.16)]'
+                                            ? 'border-brand-500/70 bg-brand-50/35 shadow-[0_0_0_1px_rgba(56,189,248,0.16)] hover:bg-brand-50/45'
                                             : 'border-gray-300/80 bg-gray-300/25 hover:bg-gray-300/45',
                                     )}
                                     aria-label={`选中 ${range.label}`}

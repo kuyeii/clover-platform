@@ -10,7 +10,10 @@ import time
 import sys
 import ast
 import hashlib
-from datetime import datetime
+import shutil
+import subprocess
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 import re
@@ -30,6 +33,7 @@ except ImportError:
 
 from .task_manager import task_manager
 from .outline_word_normalize import normalize_outline_word_budget_dict
+from .bidder_pipt import BidderInfoRequiredError, merge_bidder_pipt_context, validate_required_bidder_info
 from .content_placeholder_resolve import find_illegal_pipt_bidder_placeholders, resolve_body_placeholders
 from .writing_hint_builder import compose_runtime_writing_hint
 from .database import ImageRegistry, KnowledgeImageAsset, SessionLocal, ProjectRecord
@@ -46,6 +50,14 @@ from .docanalysis_protocol import (
 
 logger = logging.getLogger(__name__)
 
+
+def _unresolved_placeholder_tokens(replace_report: list[dict[str, Any]]) -> list[str]:
+    return [
+        str(item.get("placeholder") or "")
+        for item in (replace_report or [])
+        if isinstance(item, dict) and item.get("status") == "miss" and item.get("placeholder")
+    ]
+
 router = APIRouter()
 _BID_ATTACH_STAGE_PREFIX = "__bid_attachments__"
 _ANALYSIS_V2_STAGE_PREFIX = "__analysis_v2__"
@@ -54,9 +66,29 @@ PRO_ENGINE_ROOT = Path(__file__).resolve().parents[3]
 DIAGRAM_ARTIFACT_DIR = Path(
     os.environ.get("DIAGRAM_ARTIFACT_DIR", str(PRO_ENGINE_ROOT / "data" / "diagram_artifacts"))
 )
+_MERMAID_PUPPETEER_CONFIG = PRO_ENGINE_ROOT / "tools" / "puppeteer.no-sandbox.json"
 
 # SVG 图表生成默认关闭，需显式配置 ENABLE_DIAGRAM_GENERATION=true。
-DIAGRAM_GENERATION_ENABLED = (os.environ.get("ENABLE_DIAGRAM_GENERATION", "false").strip().lower() == "true")
+DIAGRAM_GENERATOR_MODE = os.environ.get("DIAGRAM_GENERATOR_MODE", "svg").strip().lower()
+
+
+def _diagram_generation_enabled() -> bool:
+    """运行时读取图表开关，避免任务模块导入早于环境变量加载导致误判。"""
+    return os.environ.get("ENABLE_DIAGRAM_GENERATION", "false").strip().lower() == "true"
+
+
+def _get_diagram_generator_mode() -> str:
+    """返回当前图表工作流模式：svg 使用原工作流，mermaid 使用 Mermaid 专用工作流。"""
+    mode = os.environ.get("DIAGRAM_GENERATOR_MODE", DIAGRAM_GENERATOR_MODE).strip().lower()
+    return "mermaid" if mode in {"mermaid", "mmd"} else "svg"
+
+
+def _get_diagram_workflow_name() -> str:
+    return "diagram_generator_mermaid" if _get_diagram_generator_mode() == "mermaid" else "diagram_generator"
+
+
+def _get_diagram_workflow_key(_r) -> str:
+    return _r._get_workflow_key(_get_diagram_workflow_name())
 
 
 def _push_task_event(task_id: str, event: str, payload: dict) -> None:
@@ -162,11 +194,136 @@ def _persist_diagram_artifact(project_id: str, section_id: str, svg: str) -> dic
     }
 
 
+def _persist_mermaid_artifact(project_id: str, section_id: str, mermaid: str) -> dict[str, Any]:
+    """将 Mermaid 源码落为 artifact，导出阶段再渲染为 PNG。"""
+    raw_mermaid = str(mermaid or "").strip()
+    if not raw_mermaid:
+        raise ValueError("mermaid 不能为空")
+    seed = f"{project_id}\n{section_id}\n{raw_mermaid}".encode("utf-8", errors="ignore")
+    diagram_id = hashlib.sha256(seed).hexdigest()[:24]
+    project_dir = DIAGRAM_ARTIFACT_DIR / re.sub(r"[^a-zA-Z0-9_.-]+", "_", project_id or "default")
+    project_dir.mkdir(parents=True, exist_ok=True)
+    path = project_dir / f"{diagram_id}.mmd"
+    if not path.exists():
+        path.write_text(raw_mermaid, encoding="utf-8")
+    return {
+        "diagram_id": diagram_id,
+        "mermaid_length": len(raw_mermaid),
+        "mermaid_url": f"/api/diagram-artifacts/{diagram_id}.mmd?project_id={project_id}",
+    }
+
+
 def _build_diagram_reference_tag(diagram: dict[str, Any]) -> str:
     did = str(diagram.get("diagram_id") or "").strip()
     title = str(diagram.get("title") or "架构图").replace('"', "&quot;")
     dtype = str(diagram.get("type") or "architecture").replace('"', "&quot;")
     return f'<diagram data-diagram-id="{did}" type="{dtype}" title="{title}"></diagram>'
+
+
+def _escape_svg_text(text: str) -> str:
+    return (
+        str(text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _mermaid_to_fallback_svg(mermaid: str, title: str = "数据流图") -> str:
+    """
+    Mermaid artifact 的轻量预览兜底。
+    前端编辑器只消费 SVG；当图表工作流返回 .mmd 时，后端提供可读 SVG，DOCX 导出仍走 mmdc 渲染。
+    """
+    lines = [line.strip() for line in str(mermaid or "").splitlines() if line.strip()]
+    body_lines = [line for line in lines if not re.match(r"^(?:flowchart|graph)\s+", line, flags=re.IGNORECASE)]
+    if not body_lines:
+        body_lines = ["Mermaid 图表源码已生成"]
+    body_lines = body_lines[:18]
+    width = 1120
+    row_h = 30
+    height = max(180, 92 + len(body_lines) * row_h)
+    escaped_title = _escape_svg_text(title or "数据流图")
+    rows = []
+    for idx, line in enumerate(body_lines):
+        y = 88 + idx * row_h
+        rows.append(
+            f'<text x="40" y="{y}" font-size="16" fill="#334155" font-family="monospace">{_escape_svg_text(line[:118])}</text>'
+        )
+    footer_y = height - 28
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+        '<rect width="100%" height="100%" rx="16" fill="#f8fafc"/>'
+        '<rect x="24" y="22" width="1072" height="44" rx="10" fill="#e0f2fe" stroke="#bae6fd"/>'
+        f'<text x="40" y="50" font-size="20" font-weight="700" fill="#0369a1" font-family="Arial, sans-serif">{escaped_title}</text>'
+        f'{"".join(rows)}'
+        f'<text x="40" y="{footer_y}" font-size="13" fill="#64748b" font-family="Arial, sans-serif">Mermaid 源码预览；导出 DOCX 时会渲染为正式图片。</text>'
+        '</svg>'
+    )
+
+
+def _find_mmdc_command() -> list[str] | None:
+    """查找本地 Mermaid CLI；不隐式安装依赖。"""
+    candidates: list[Path] = []
+    if sys.platform == "win32":
+        candidates.extend([
+            PRO_ENGINE_ROOT / "node_modules" / ".bin" / "mmdc.cmd",
+            PRO_ENGINE_ROOT / "tools" / "node_modules" / ".bin" / "mmdc.cmd",
+        ])
+    else:
+        candidates.extend([
+            PRO_ENGINE_ROOT / "node_modules" / ".bin" / "mmdc",
+            PRO_ENGINE_ROOT / "tools" / "node_modules" / ".bin" / "mmdc",
+        ])
+    for candidate in candidates:
+        if candidate.is_file():
+            return [str(candidate)]
+    found = shutil.which("mmdc")
+    return [found] if found else None
+
+
+def _render_mermaid_to_svg_file(mermaid_path: Path, svg_path: Path) -> bool:
+    """将 .mmd 渲染为同名 .svg，失败时由调用方走预览兜底。"""
+    command = _find_mmdc_command()
+    if not command:
+        logger.warning("Mermaid CLI(mmdc) 未安装，使用 SVG 预览兜底: %s", mermaid_path.name)
+        return False
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="proengine_mmdc_") as tmp_dir:
+        tmp_svg = Path(tmp_dir) / f"{mermaid_path.stem}.svg"
+        parts = [
+            *command,
+            "-i",
+            str(mermaid_path),
+            "-o",
+            str(tmp_svg),
+            "-b",
+            "white",
+            "-w",
+            os.environ.get("MERMAID_RENDER_WIDTH", "1400"),
+            "-H",
+            os.environ.get("MERMAID_RENDER_HEIGHT", "1050"),
+        ]
+        if _MERMAID_PUPPETEER_CONFIG.is_file():
+            parts.extend(["-p", str(_MERMAID_PUPPETEER_CONFIG)])
+        try:
+            env = os.environ.copy()
+            env.setdefault("PUPPETEER_CACHE_DIR", str(PRO_ENGINE_ROOT / "node_modules" / ".cache" / "puppeteer"))
+            result = subprocess.run(parts, capture_output=True, text=True, timeout=120, env=env)
+            if result.returncode != 0:
+                err = (result.stderr or result.stdout or "").strip()
+                logger.warning("Mermaid SVG 渲染失败: %s", err[:1000])
+                return False
+            if not tmp_svg.exists() or tmp_svg.stat().st_size <= 0:
+                return False
+            svg_text = tmp_svg.read_text(encoding="utf-8").strip()
+            if not svg_text.lower().startswith("<svg"):
+                return False
+            svg_path.write_text(svg_text, encoding="utf-8")
+            return True
+        except Exception as exc:
+            logger.warning("Mermaid SVG 渲染异常: %s", exc)
+            return False
 
 
 def _build_diagram_task_result(
@@ -200,6 +357,41 @@ def _build_diagram_task_result(
     return result_payload
 
 
+def _build_diagram_skip_payload(
+    *,
+    workflow_name: str,
+    enable_diagrams: bool,
+    need_diagram: bool,
+    diagram_brief: str,
+    max_diagrams: int,
+    diagram_key: str,
+) -> Optional[dict[str, Any]]:
+    """生成可观测的图表跳过原因，避免把配置/规划问题误判成工作流失败。"""
+    reasons: list[str] = []
+    if workflow_name != "content_writer":
+        reasons.append(f"workflow_name={workflow_name}")
+    if not _diagram_generation_enabled():
+        reasons.append("ENABLE_DIAGRAM_GENERATION=false")
+    if not enable_diagrams:
+        reasons.append("enable_diagrams=false")
+    if not need_diagram:
+        reasons.append("need_diagram=false")
+    if not str(diagram_brief or "").strip():
+        reasons.append("diagram_brief=empty")
+    if max_diagrams <= 0:
+        reasons.append(f"max_diagrams={max_diagrams}")
+    if enable_diagrams and need_diagram and str(diagram_brief or "").strip() and max_diagrams > 0 and not diagram_key:
+        reasons.append(f"{_get_diagram_workflow_name()}_key_missing")
+    if not reasons:
+        return None
+    return {
+        "code": "diagram_skipped",
+        "mode": _get_diagram_generator_mode(),
+        "workflow": _get_diagram_workflow_name(),
+        "reasons": reasons,
+    }
+
+
 async def _run_diagram_request(
     task_id: str,
     request: dict,
@@ -224,7 +416,7 @@ async def _run_diagram_request(
         analysis_context=analysis_context,
     )
 
-    enable_diagrams = bool(request.get("enable_diagrams", False) and DIAGRAM_GENERATION_ENABLED)
+    enable_diagrams = bool(request.get("enable_diagrams", False) and _diagram_generation_enabled())
     max_diagrams = int(request.get("max_diagrams", 0) or 0) if enable_diagrams else 0
     need_diagram = bool(request.get("need_diagram", False))
     diagram_brief = str(request.get("diagram_brief", "") or "")
@@ -264,9 +456,26 @@ async def _run_diagram_request(
     if diagrams_generated:
         diagram_html_blocks = [_build_diagram_reference_tag(d) for d in diagrams_generated]
         content = content + "\n" + "\n".join(diagram_html_blocks)
-    content, _, replace_report = resolve_body_placeholders(
-        content, replace_map_seed, request_mapping_flat
-    )
+    db = SessionLocal()
+    try:
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map_seed,
+            request_mapping_flat,
+            db_session=db,
+            audit_source="task.diagram_section",
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map_seed,
+            request_mapping_flat,
+            audit_source="task.diagram_section",
+        )
+    finally:
+        db.close()
     req_for_result = {**request, "replace_report": replace_report}
     return _build_diagram_task_result(req_for_result, content, diagrams_generated, diagram_error)
 
@@ -435,6 +644,29 @@ def _build_group_search_query(group_title: str, children: list[dict], max_terms:
     return " ".join(compact).strip() or str(group_title or "").strip() or "招标技术方案"
 
 
+def _format_dify_runtime_error(exc: Exception) -> str:
+    """将 Dify/模型供应商底层错误转成可操作文案，避免只暴露 Python 异常串。"""
+    message = str(exc or "").strip()
+    lower = message.lower()
+    if "dashscope.aliyuncs.com" in lower and ("nameresolutionerror" in lower or "failed to resolve" in lower):
+        return (
+            "Dify 模型供应商 DashScope DNS 解析失败：dashscope.aliyuncs.com 无法解析。"
+            "请在 Dify API/Worker 运行环境检查 DNS、代理或出网策略；标书后端已成功调用 Dify，但模型节点不可用。"
+        )
+    if "[models]" in lower and "server unavailable" in lower:
+        return (
+            "Dify 模型节点不可用（[models] Server Unavailable）。"
+            "请检查 Dify 模型供应商配置、API Key、DNS/代理与出网策略。"
+            + (f" 原始错误：{message}" if message else "")
+        )
+    if "name or service not known" in lower or "failed to resolve" in lower:
+        return (
+            "Dify 工作流网络解析失败。请检查 DIFY_API_URL 或 Dify 运行环境的 DNS/代理配置。"
+            + (f" 原始错误：{message}" if message else "")
+        )
+    return message or "Dify 工作流调用失败"
+
+
 async def _collect_workflow_outputs(
     task_id: str,
     dify_key: str,
@@ -453,7 +685,7 @@ async def _collect_workflow_outputs(
             if chunk.get("dify_task_id"):
                 task_manager.set_dify_task_id(task_id, chunk["dify_task_id"])
             if chunk.get("__error__"):
-                raise RuntimeError(str(chunk.get("error") or "Dify 工作流返回错误事件"))
+                raise RuntimeError(_format_dify_runtime_error(RuntimeError(str(chunk.get("error") or "Dify 工作流返回错误事件"))))
             if chunk.get("__stage__"):
                 workflow_run_id = str(chunk.get("workflow_run_id") or workflow_run_id or "")
                 task_manager.update_stage(task_id, chunk["__stage__"])
@@ -478,7 +710,7 @@ async def _collect_workflow_outputs(
                 task_manager.update_stage(task_id, "📥 正在回收远端完成结果")
                 got_finished = True
         except Exception as fb_err:
-            logger.warning("[Task %s] 内容工作流 fallback GET 失败: %s", task_id, fb_err)
+            logger.warning("[Task %s] 内容工作流 fallback GET 失败: %s", task_id, _format_dify_runtime_error(fb_err))
     if not got_finished:
         raise RuntimeError("内容工作流异常中断（未收到 finished 事件）")
     return outputs
@@ -569,20 +801,22 @@ def _finalize_single_content_result(
         or ""
     )
     content = re.sub(r"<think>.*?</think>", "", str(raw_content or ""), flags=re.DOTALL).strip()
-    content = _clean_markdown_artifacts(content)
-    content = normalize_generated_markdown(content, section_title)
-    if strip_structural_numbering:
-        content = _strip_response_section_numbering(content)
+    content = _finalize_generated_body(
+        content,
+        section_title,
+        strip_structural_numbering=strip_structural_numbering,
+    )
 
     feedback = outputs.get("feedback") or ""
     if feedback:
         fb_clean = str(feedback).strip()
         if fb_clean and len(fb_clean) > 10 and content.startswith(fb_clean):
             content = content[len(fb_clean):].strip()
-            content = _clean_markdown_artifacts(content)
-            content = normalize_generated_markdown(content, section_title)
-            if strip_structural_numbering:
-                content = _strip_response_section_numbering(content)
+            content = _finalize_generated_body(
+                content,
+                section_title,
+                strip_structural_numbering=strip_structural_numbering,
+            )
 
     raw_score = outputs.get("quality_score")
     quality_score = None
@@ -593,9 +827,31 @@ def _finalize_single_content_result(
             quality_score = None
 
     replace_map: dict[str, str] = {}
-    content, _, replace_report = resolve_body_placeholders(content, replace_map, request_mapping_flat)
+    db = SessionLocal()
+    try:
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map,
+            request_mapping_flat,
+            db_session=db,
+            audit_source="task.content_result",
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        content, _, replace_report = resolve_body_placeholders(
+            content,
+            replace_map,
+            request_mapping_flat,
+            audit_source="task.content_result",
+        )
+    finally:
+        db.close()
     content, referenced_images = _normalize_referenced_images(content)
     placeholder_issues = sorted(find_illegal_pipt_bidder_placeholders(content))
+    unresolved_placeholders = _unresolved_placeholder_tokens(replace_report)
+    if unresolved_placeholders:
+        placeholder_issues.extend(unresolved_placeholders)
     return {
         "content": content,
         "word_count": _count_visible_chars(content),
@@ -705,6 +961,115 @@ def _parse_group_content_results(
         "failed_sections": failed_sections,
         "parse_error": parse_error,
     }
+
+
+async def _repair_group_failed_sections(
+    *,
+    task_id: str,
+    _r,
+    children: list[dict],
+    failed_sections: list[dict],
+    request: dict,
+    request_mapping_flat: dict[str, str],
+    group_placeholder_hint: str,
+    group_outline_slice: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """批量正文漏回个别子章节时，使用单章节工作流补偿生成。"""
+    if not failed_sections:
+        return [], []
+
+    failed_ids = [str(row.get("section_id") or "").strip() for row in failed_sections if row.get("section_id")]
+    failed_id_set = {sid for sid in failed_ids if sid}
+    if not failed_id_set:
+        return [], failed_sections
+
+    child_by_id = {child["section_id"]: child for child in children}
+    repaired: list[dict[str, Any]] = []
+    still_failed: list[dict[str, Any]] = []
+    for failed in failed_sections:
+        section_id = str(failed.get("section_id") or "").strip()
+        child = child_by_id.get(section_id)
+        if not child:
+            still_failed.append(failed)
+            continue
+
+        workflow_name = _r._resolve_content_workflow_name(child.get("generation_strategy", "general"))
+        dify_key = _r._get_workflow_key(workflow_name)
+        if not dify_key:
+            still_failed.append({
+                **failed,
+                "error": f"{workflow_name} 工作流 API Key 未配置，无法补生成",
+            })
+            continue
+
+        task_manager.update_stage(task_id, f"🩹 子章节补生成中：{child['section_title']}")
+        repair_writing_hint = compose_runtime_writing_hint(
+            str(child.get("writing_hint") or ""),
+            child["section_title"],
+            int(child.get("expected_words") or 0),
+            str(child.get("keywords") or ""),
+            section_outline_slice=str(child.get("section_outline_slice") or group_outline_slice),
+            analysis_context=str(child.get("analysis_context") or ""),
+        )
+        inputs: dict[str, Any] = {
+            "section_title": child["section_title"],
+            "writing_hint": repair_writing_hint,
+            "keywords": child["keywords"] if str(child.get("keywords") or "").strip() else child["section_title"],
+            "expected_words": child["expected_words"],
+            "project_summary": request.get("project_summary", ""),
+            "global_outline": group_outline_slice,
+            "placeholder_hint": group_placeholder_hint,
+        }
+        if workflow_name == "content_writer":
+            inputs["requires_search"] = "true" if bool(child.get("requires_search", False)) else "false"
+            inputs["image_map_hint"] = request.get("image_map_hint", "")
+
+        try:
+            outputs = await _collect_workflow_outputs(
+                task_id,
+                dify_key,
+                inputs,
+                _r=_r,
+                initial_stage=f"🩹 子章节补生成中：{child['section_title']}",
+            )
+            payload = _finalize_single_content_result(
+                child["section_title"],
+                outputs,
+                request_mapping_flat,
+                strip_structural_numbering=workflow_name == "response_content_writer",
+            )
+            placeholder_issues = payload.get("placeholder_issues") or []
+            if placeholder_issues:
+                still_failed.append({
+                    **failed,
+                    "error": "补生成结果占位符格式异常且无法可靠还原: "
+                    + "、".join(str(item) for item in placeholder_issues[:5]),
+                })
+                continue
+            diagram_specs = outputs.get("diagram_specs") or outputs.get("diagram_spec") or outputs.get("diagram")
+            if diagram_specs:
+                payload["diagram_specs"] = diagram_specs
+            payload.update({
+                "section_id": section_id,
+                "section_title": child["section_title"],
+                "repaired": True,
+                "repair_source": "single_content_writer",
+            })
+            repaired.append(payload)
+            task_manager.update_stage(task_id, f"✅ 子章节补生成完成：{child['section_title']}")
+        except Exception as exc:
+            still_failed.append({
+                **failed,
+                "error": "批量正文缺失且补生成失败: " + _format_dify_runtime_error(exc),
+            })
+            logger.warning(
+                "[Task %s] H2 子章节补生成失败: section=%s; error=%s",
+                task_id,
+                child["section_title"],
+                _format_dify_runtime_error(exc),
+            )
+
+    return repaired, still_failed
 
 
 def _parse_group_review_result(outputs: dict[str, Any]) -> dict[str, Any]:
@@ -1428,6 +1793,83 @@ def _persist_project_runtime(
         db.close()
 
 
+def _persist_content_result_to_project(
+    project_id: str,
+    section_id: str,
+    payload: dict[str, Any],
+    *,
+    status: str = "done",
+    error: str = "",
+) -> None:
+    """将正文任务结果幂等写回项目，避免前端轮询中断导致 generatedContent 停在 idle。"""
+    if not project_id or not section_id:
+        return
+    db = SessionLocal()
+    try:
+        record = db.query(ProjectRecord).filter(ProjectRecord.id == project_id).first()
+        if not record:
+            return
+        data = json.loads(record.data or "{}")
+        generated = data.get("generatedContent")
+        if not isinstance(generated, dict):
+            generated = {}
+        existing = generated.get(section_id) if isinstance(generated.get(section_id), dict) else {}
+        if status == "done":
+            content = str(payload.get("content") or "")
+            next_state = {
+                **existing,
+                "status": "done",
+                "content": content,
+                "wordCount": int(payload.get("word_count") or payload.get("wordCount") or _count_visible_chars(content)),
+                "qualityScore": payload.get("quality_score"),
+                "feedback": payload.get("feedback"),
+                "diagramError": payload.get("diagram_error"),
+                "previousContent": None,
+                "previousWordCount": None,
+            }
+            next_state.pop("error", None)
+            next_state.pop("stage", None)
+            generated[section_id] = next_state
+        else:
+            generated[section_id] = {
+                **existing,
+                "status": "error",
+                "content": str(existing.get("content") or ""),
+                "wordCount": int(existing.get("wordCount") or existing.get("word_count") or 0),
+                "error": error or "生成失败",
+                "stage": None,
+            }
+        data["generatedContent"] = generated
+        record.data = json.dumps(data, ensure_ascii=False)
+        record.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("[%s] 持久化正文结果失败: section=%s; error=%s", project_id, section_id, exc)
+    finally:
+        db.close()
+
+
+def _persist_group_content_result_to_project(
+    project_id: str,
+    sections: list[dict[str, Any]],
+    failed_sections: list[dict[str, Any]],
+) -> None:
+    """批量正文任务结束时写回所有成功/失败子章节。"""
+    for row in sections or []:
+        section_id = str(row.get("section_id") or row.get("sectionId") or "").strip()
+        _persist_content_result_to_project(project_id, section_id, row, status="done")
+    for row in failed_sections or []:
+        section_id = str(row.get("section_id") or row.get("sectionId") or "").strip()
+        _persist_content_result_to_project(
+            project_id,
+            section_id,
+            row,
+            status="error",
+            error=str(row.get("error") or "分组生成失败"),
+        )
+
+
 def _task_status_to_runtime_state(status: str) -> str:
     return {
         "running": "running",
@@ -1752,6 +2194,42 @@ def _extract_svg_from_candidate(raw: Any) -> str:
     return ""
 
 
+def _extract_mermaid_from_candidate(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return ""
+        fence = re.search(r"```mermaid\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
+        if fence:
+            return fence.group(1).strip()
+        parsed = _try_parse_jsonish(text)
+        if parsed is not None and parsed is not raw:
+            return _extract_mermaid_from_candidate(parsed)
+        first_line = text.splitlines()[0].strip().lower() if text.splitlines() else ""
+        if first_line.startswith(("graph ", "flowchart ", "sequenceDiagram".lower(), "classDiagram".lower(), "stateDiagram".lower(), "erDiagram".lower(), "journey", "gantt", "pie ")):
+            return text
+        return ""
+    if isinstance(raw, dict):
+        preferred_keys = ("mermaid", "mermaid_source", "mmd", "code", "content", "result", "text", "output", "structured_output")
+        for key in preferred_keys:
+            mermaid = _extract_mermaid_from_candidate(raw.get(key))
+            if mermaid:
+                return mermaid
+        for value in raw.values():
+            mermaid = _extract_mermaid_from_candidate(value)
+            if mermaid:
+                return mermaid
+        return ""
+    if isinstance(raw, list):
+        for item in raw:
+            mermaid = _extract_mermaid_from_candidate(item)
+            if mermaid:
+                return mermaid
+    return ""
+
+
 def _extract_diagram_svg_output(outputs: dict[str, Any]) -> str:
     if not isinstance(outputs, dict):
         return ""
@@ -1763,6 +2241,20 @@ def _extract_diagram_svg_output(outputs: dict[str, Any]) -> str:
         svg = _extract_svg_from_candidate(value)
         if svg:
             return svg
+    return ""
+
+
+def _extract_diagram_mermaid_output(outputs: dict[str, Any]) -> str:
+    if not isinstance(outputs, dict):
+        return ""
+    for key in ("mermaid", "mermaid_source", "mmd", "code", "result", "text", "output", "structured_output"):
+        mermaid = _extract_mermaid_from_candidate(outputs.get(key))
+        if mermaid:
+            return mermaid
+    for value in outputs.values():
+        mermaid = _extract_mermaid_from_candidate(value)
+        if mermaid:
+            return mermaid
     return ""
 
 
@@ -1851,7 +2343,7 @@ def _build_diagram_error_payload(exc: Exception, section_title: str) -> dict[str
         if status_code == 401:
             payload["code"] = "diagram_auth_failed"
             payload["message"] = (
-                f"图表工作流鉴权失败（401）。请检查 DIFY_WORKFLOW_DIAGRAM_GENERATOR 是否对应当前 Dify 应用的有效 API Key。"
+                f"图表工作流鉴权失败（401）。请检查 {_get_diagram_workflow_name()} 对应的 Dify API Key 是否有效。"
             )
         elif status_code == 404:
             payload["code"] = "diagram_endpoint_not_found"
@@ -1866,10 +2358,10 @@ def _build_diagram_error_payload(exc: Exception, section_title: str) -> dict[str
         return payload
     if isinstance(exc, httpx.RequestError):
         payload["code"] = "diagram_request_error"
-        payload["message"] = f"图表工作流请求失败：{_shrink_error_text(str(exc))}"
+        payload["message"] = f"图表工作流请求失败：{_shrink_error_text(_format_dify_runtime_error(exc))}"
         payload["section_title"] = title
         return payload
-    payload["message"] = f"图表工作流异常：{_shrink_error_text(str(exc))}"
+    payload["message"] = f"图表工作流异常：{_shrink_error_text(_format_dify_runtime_error(exc))}"
     payload["section_title"] = title
     return payload
 
@@ -1941,6 +2433,7 @@ async def _execute_diagram_for_section(
         }
         out: dict[str, Any] = {}
         svg_content = ""
+        mermaid_content = ""
         workflow_run_id = ""
         async for chunk in _r._call_dify_workflow_stream(diagram_key, diagram_inputs):
             _ensure_task_running(task_id)
@@ -1953,6 +2446,7 @@ async def _execute_diagram_for_section(
                 if chunk.get("__finished__"):
                     out = chunk.get("outputs", {})
                     svg_content = _extract_diagram_svg_output(out)
+                    mermaid_content = "" if svg_content else _extract_diagram_mermaid_output(out)
                     break
         if not svg_content and workflow_run_id:
             try:
@@ -1968,8 +2462,11 @@ async def _execute_diagram_for_section(
                 if isinstance(fb_outputs, dict):
                     out = fb_outputs
                     svg_content = _extract_diagram_svg_output(out)
+                    mermaid_content = "" if svg_content else _extract_diagram_mermaid_output(out)
                     if svg_content:
                         logger.info("[Task %s] 图表 SVG 通过 workflow_run fallback 获取: run_id=%s", task_id, workflow_run_id)
+                    elif mermaid_content:
+                        logger.info("[Task %s] 图表 Mermaid 通过 workflow_run fallback 获取: run_id=%s", task_id, workflow_run_id)
             except Exception as e:
                 logger.warning("[Task %s] 图表 workflow_run fallback 失败: %s", task_id, e)
         if svg_content:
@@ -1982,6 +2479,11 @@ async def _execute_diagram_for_section(
                     "svg_length": len(svg_content),
                     "section_title": (section_title or "").strip() or "未命名章节",
                 }
+                if isinstance(out, dict):
+                    for field in ("quality_report", "layout_plan", "semantic_plan"):
+                        value = str(out.get(field) or "").strip()
+                        if value:
+                            error_payload[field] = _shrink_error_text(value, limit=800)
                 logger.warning(
                     "[Task %s] 图表工作流返回降级模板: section=%s; output_keys=%s; svg_len=%s",
                     task_id,
@@ -2012,15 +2514,36 @@ async def _execute_diagram_for_section(
                 True,
                 None,
             )
+        if mermaid_content:
+            output_keys = list(out.keys()) if isinstance(out, dict) else []
+            logger.info(
+                "[Task %s] 图表 Mermaid 生成完成: section=%s; output_keys=%s; mmd_len=%s",
+                task_id,
+                (section_title or "").strip() or "<unknown>",
+                output_keys,
+                len(mermaid_content),
+            )
+            artifact = _persist_mermaid_artifact(project_id, section_title, mermaid_content.strip())
+            return (
+                [{
+                    "title": (section_title or "架构图")[:120],
+                    "type": diagram_type_hint,
+                    "diagram_id": artifact["diagram_id"],
+                    "mermaid_url": artifact["mermaid_url"],
+                    "mermaid_length": artifact["mermaid_length"],
+                }],
+                True,
+                None,
+            )
         output_keys = list(out.keys()) if isinstance(out, dict) else []
         error_payload = {
-            "code": "diagram_svg_missing",
-            "message": "图表工作流已完成，但未返回可识别的 SVG 输出。",
+            "code": "diagram_output_missing",
+            "message": "图表工作流已完成，但未返回可识别的 SVG 或 Mermaid 输出。",
             "output_keys": output_keys,
             "section_title": (section_title or "").strip() or "未命名章节",
         }
         logger.warning(
-            "[Task %s] 图表工作流完成但未返回 SVG: section=%s; output_keys=%s",
+            "[Task %s] 图表工作流完成但未返回 SVG/Mermaid: section=%s; output_keys=%s",
             task_id,
             (section_title or "").strip() or "<unknown>",
             output_keys,
@@ -2077,6 +2600,15 @@ def _strip_response_section_numbering(text: str) -> str:
     return out
 
 
+def _finalize_generated_body(content: str, section_title: str, *, strip_structural_numbering: bool = False) -> str:
+    """正文保存前只做确定性格式清理，不删除疑似标题行。"""
+    body = _clean_markdown_artifacts(content)
+    body = normalize_generated_markdown(body, section_title)
+    if strip_structural_numbering:
+        body = _strip_response_section_numbering(body)
+    return body.strip()
+
+
 def _get_deps():
     """延迟导入 routes.py 中的依赖，避免循环引用"""
     from . import routes as _r
@@ -2101,7 +2633,7 @@ async def start_outline_task(request: dict):
     use_knowledge = request.get("use_knowledge", True)
     analysis_context = request.get("analysis_context", "")
     expected_total_words = request.get("expected_total_words", 0)
-    enable_diagrams = bool(request.get("enable_diagrams", False) and DIAGRAM_GENERATION_ENABLED)
+    enable_diagrams = bool(request.get("enable_diagrams", False) and _diagram_generation_enabled())
     max_diagrams = int(request.get("max_diagrams", 0) if enable_diagrams else 0)
     scoring_details_json = request.get("scoring_details_json", "")
     structure_heading_seed_json = request.get("structure_heading_seed_json", "")
@@ -2594,7 +3126,7 @@ async def start_outline_task(request: dict):
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except Exception as e:
             logger.error(f"[Task {task_id}] 大纲后台任务失败: {e}", exc_info=True)
-            task_manager.set_error(task_id, str(e))
+            task_manager.set_error(task_id, _format_dify_runtime_error(e))
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
 
     import asyncio
@@ -2673,28 +3205,47 @@ async def start_extract_task(
             text_for_dify = loc_text_for_dify
             mapping_table = {}
             entity_count = 0
+            placeholder_manifest = {}
+            placeholder_policy = {}
             if enable_desensitize:
                 task_manager.update_stage(task_id, "隐私脱敏处理中")
+                db = None
                 try:
                     engine = _r.get_engine()
+                    db = SessionLocal()
                     profile_config = _r.load_profile_config(desensitize_profile)
                     target_entities = profile_config.get("target_entities", ["name", "phone", "email", "id_number"])
                     method = profile_config.get("method", "mask")
                     desen_result = await asyncio.to_thread(
                         engine.desensitize,
-                        text=raw_document[:300000],
+                        text=text_for_dify[:300000],
                         target_entities=target_entities,
                         method=method,
+                        placeholder_protocol="strong",
+                        db_session=db,
                         llm_mode=os.environ.get('PIPT_LLM_MODE_EXTRACT', 'verify_only'),
+                        audit_context={
+                            "source": "task.extract",
+                            "project_id": project_id or cache_id,
+                            "task_id": task_id,
+                        },
                     )
                     text_for_dify = desen_result.desensitized_text
                     mapping_table = getattr(desen_result, "mapping_table", {}) or {}
                     entity_count = getattr(desen_result, "entity_count", 0) or 0
+                    placeholder_manifest = getattr(desen_result, "placeholder_manifest", {}) or {}
+                    placeholder_policy = getattr(desen_result, "placeholder_policy", {}) or {}
                     task_manager.update_stage(task_id, f"脱敏完成，识别 {entity_count} 处实体")
                 except Exception as e:
                     logger.warning(f"脱敏失败: {e}")
-                    text_for_dify = raw_document[:300000]
+                    text_for_dify = text_for_dify[:300000]
                     task_manager.update_stage(task_id, "脱敏跳过（使用原文）")
+                finally:
+                    if db is not None:
+                        try:
+                            db.close()
+                        except Exception:
+                            pass
             else:
                 task_manager.update_stage(task_id, "跳过脱敏")
 
@@ -2703,6 +3254,8 @@ async def start_extract_task(
             task_manager.set_result(task_id, {
                 "bid_type": "tech", "project_summary": "", "requirements": [],
                 "analysis_report": [], "mapping_table": mapping_table,
+                "placeholder_manifest": placeholder_manifest,
+                "placeholder_policy": placeholder_policy,
                 "entity_count": entity_count, "image_map": raw_image_map,
                 "required_attachments": [], "scoring_table_template": [],
                 "raw_document": text_for_dify, "pdf_url": pdf_url,
@@ -2730,6 +3283,11 @@ async def start_extract_task(
 @router.post("/tasks/start-content", summary="发起内容生成后台任务（blocking）")
 async def start_content_task(request: dict):
     """将章节内容生成放入后台任务（Dify blocking 模式），立即返回 task_id。"""
+    try:
+        validate_required_bidder_info(request.get("bidder_info", {}) or {})
+    except BidderInfoRequiredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     _r = _get_deps()
     generation_strategy = str(request.get("generation_strategy", "general") or "general").strip()
     workflow_name = _r._resolve_content_workflow_name(generation_strategy)
@@ -2774,7 +3332,7 @@ async def start_content_task(request: dict):
         # 注：decoupling_instruction 已在 DSL system prompt 中内嵌，无需额外传递
 
     # 图表结构化入参（来自大纲）
-    enable_diagrams = bool(request.get("enable_diagrams", False) and DIAGRAM_GENERATION_ENABLED)
+    enable_diagrams = bool(request.get("enable_diagrams", False) and _diagram_generation_enabled())
     max_diagrams = int(request.get("max_diagrams", 0) or 0) if enable_diagrams else 0
     need_diagram = bool(request.get("need_diagram", False) and enable_diagrams)
     diagram_brief = str(request.get("diagram_brief", "") or "") if enable_diagrams else ""
@@ -2786,6 +3344,21 @@ async def start_content_task(request: dict):
     request_mapping_flat = request.get("mapping_table", {}) or {}
     if not isinstance(request_mapping_flat, dict):
         request_mapping_flat = {}
+    db = SessionLocal()
+    try:
+        request_mapping_flat, merged_placeholder_hint, _bidder_context = merge_bidder_pipt_context(
+            mapping_table=request_mapping_flat,
+            placeholder_hint=request.get("placeholder_hint", ""),
+            bidder_info=request.get("bidder_info", {}) or {},
+            db=db,
+        )
+        db.commit()
+        inputs["placeholder_hint"] = merged_placeholder_hint
+    except Exception:
+        db.rollback()
+        logger.warning("投标人信息 PIPT 归一化失败，正文任务使用请求原始占位符上下文", exc_info=True)
+    finally:
+        db.close()
 
     task_id = task_manager.create_task("content", project_id, workflow_name=workflow_name)
     _persist_project_runtime(
@@ -2811,7 +3384,31 @@ async def start_content_task(request: dict):
                 and bool(diagram_brief.strip())
                 and max_diagrams > 0
             )
-            diagram_key = _r._get_workflow_key("diagram_generator") if wants_diagram else ""
+            diagram_key = _get_diagram_workflow_key(_r) if wants_diagram else ""
+            can_defer_diagram = bool(wants_diagram and diagram_key)
+            should_report_diagram_skip = (
+                workflow_name == "content_writer"
+                and bool(request.get("enable_diagrams", False))
+                and bool(request.get("need_diagram", False))
+            )
+            diagram_skip = None
+            if should_report_diagram_skip and not can_defer_diagram:
+                diagram_skip = _build_diagram_skip_payload(
+                    workflow_name=workflow_name,
+                    enable_diagrams=enable_diagrams,
+                    need_diagram=need_diagram,
+                    diagram_brief=diagram_brief,
+                    max_diagrams=max_diagrams,
+                    diagram_key=diagram_key,
+                )
+            if diagram_skip:
+                logger.info(
+                    "[Task %s] 图表生成未进入独立任务: section=%s; mode=%s; reasons=%s",
+                    task_id,
+                    (section_title or "").strip() or "<unknown>",
+                    diagram_skip.get("mode"),
+                    ", ".join(diagram_skip.get("reasons") or []),
+                )
 
             # 仅在模型输出后做占位符还原（不在发送给外部模型前复原）
             replace_map: dict[str, str] = {}
@@ -2858,10 +3455,11 @@ async def start_content_task(request: dict):
             # 去除 <think>...</think> 标签（完整字符串，无跨 chunk 问题）
             import re
             content = re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL).strip()
-            content = _clean_markdown_artifacts(content)
-            content = normalize_generated_markdown(content, section_title)
-            if strip_structural_numbering:
-                content = _strip_response_section_numbering(content)
+            content = _finalize_generated_body(
+                content,
+                section_title,
+                strip_structural_numbering=strip_structural_numbering,
+            )
 
             feedback = outputs.get("feedback") or ""
             diagram_specs = (
@@ -2877,10 +3475,11 @@ async def start_content_task(request: dict):
                 if fb_clean and len(fb_clean) > 10 and content.startswith(fb_clean):
                     logger.info(f"[Task {task_id}] 检测到 content 混入 feedback（{len(fb_clean)} 字符），已清除")
                     content = content[len(fb_clean):].strip()
-                    content = _clean_markdown_artifacts(content)
-                    content = normalize_generated_markdown(content, section_title)
-                    if strip_structural_numbering:
-                        content = _strip_response_section_numbering(content)
+                    content = _finalize_generated_body(
+                        content,
+                        section_title,
+                        strip_structural_numbering=strip_structural_numbering,
+                    )
 
             # 提取质量评分
             raw_score = outputs.get("quality_score")
@@ -2892,25 +3491,75 @@ async def start_content_task(request: dict):
                     pass
 
             # 输出侧占位符：模型正文中残留的 {{__PIPT__}}/{{__BIDDER__}} 与入参侧同一套解析
-            content, replace_map, replace_report = resolve_body_placeholders(
-                content, replace_map, request_mapping_flat
-            )
+            db = SessionLocal()
+            try:
+                content, replace_map, replace_report = resolve_body_placeholders(
+                    content,
+                    replace_map,
+                    request_mapping_flat,
+                    db_session=db,
+                    audit_source="task.start_content",
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                content, replace_map, replace_report = resolve_body_placeholders(
+                    content,
+                    replace_map,
+                    request_mapping_flat,
+                    audit_source="task.start_content",
+                )
+            finally:
+                db.close()
             content, referenced_images = _normalize_referenced_images(content)
             placeholder_issues = sorted(find_illegal_pipt_bidder_placeholders(content))
+            unresolved_placeholders = _unresolved_placeholder_tokens(replace_report)
+            if unresolved_placeholders:
+                placeholder_issues.extend(unresolved_placeholders)
             if placeholder_issues:
                 raise RuntimeError("占位符格式异常且无法可靠还原")
             word_count = _count_visible_chars(content)
 
-            # 第一阶段：正文先回传；若 defer_diagram 则本任务不再跑图表，由独立 start-diagram 衔接
-            if wants_diagram and defer_diagram:
+            diagrams_generated: list[dict[str, Any]] = []
+            diagram_error = None
+            if can_defer_diagram and not defer_diagram:
+                diagrams_generated, diagram_slot_reserved, diagram_error = await _execute_diagram_for_section(
+                    task_id,
+                    project_id,
+                    _r,
+                    diagram_key,
+                    enable_diagrams,
+                    need_diagram,
+                    diagram_brief,
+                    max_diagrams,
+                    diagram_type_hint,
+                    section_title,
+                    writing_hint,
+                    raw_keywords,
+                    raw_global_outline,
+                    content,
+                    diagram_specs,
+                )
+                if not diagrams_generated and diagram_slot_reserved:
+                    await task_manager.release_diagram_slot(project_id)
+                if diagrams_generated:
+                    diagram_html_blocks = [_build_diagram_reference_tag(d) for d in diagrams_generated]
+                    content = content + "\n" + "\n".join(diagram_html_blocks)
+                    word_count = _count_visible_chars(content)
+
+            # 正文默认内联执行图表；只有显式 defer_diagram=true 时才交给独立图表任务。
+            if can_defer_diagram and defer_diagram:
                 task_manager.update_stage(task_id, "✅ 正文已生成（图表将在独立任务中生成）")
-            elif not wants_diagram:
+            elif not can_defer_diagram:
                 task_manager.update_stage(task_id, "✅ 正文已生成")
             else:
-                task_manager.update_stage(task_id, "✅ 正文已生成（图表将在独立任务中生成）")
-            task_manager.set_partial_result(task_id, {
+                task_manager.update_stage(
+                    task_id,
+                    f"✅ 正文与图表已生成（{len(diagrams_generated)} 张）" if diagrams_generated else "✅ 正文已生成",
+                )
+            partial_payload = {
                 "partial": True,
-                "phase": "text_ready",
+                "phase": "diagram_ready" if diagrams_generated else "text_ready",
                 "section_id": section_id,
                 "content": content,
                 "word_count": word_count,
@@ -2918,8 +3567,13 @@ async def start_content_task(request: dict):
                 "feedback": feedback or None,
                 "replace_report": replace_report,
                 "referenced_images": referenced_images,
-                "diagrams_count": 0,
-            })
+                "diagrams_count": len(diagrams_generated),
+            }
+            if diagram_skip:
+                partial_payload["diagram_skip"] = diagram_skip
+            if diagram_error:
+                partial_payload["diagram_error"] = diagram_error
+            task_manager.set_partial_result(task_id, partial_payload)
 
             done_payload: dict = {
                 "done": True,
@@ -2930,26 +3584,34 @@ async def start_content_task(request: dict):
                 "feedback": feedback or None,
                 "replace_report": replace_report,
                 "referenced_images": referenced_images,
-                "diagrams_count": 0,
+                "diagrams_count": len(diagrams_generated),
             }
-            if wants_diagram:
-                done_payload["diagram_deferred"] = True
-                done_payload["diagram_request"] = {
-                    "section_id": section_id,
-                    "section_title": section_title,
-                    "base_content": content,
-                    "writing_hint": writing_hint,
-                    "keywords": raw_keywords,
-                    "global_outline": raw_global_outline,
-                    "diagram_brief": diagram_brief,
-                    "diagram_type_hint": diagram_type_hint,
-                    "diagram_specs": diagram_specs,
-                    "quality_score": quality_score,
-                    "feedback": feedback,
-                    "replace_report": replace_report,
-                }
-                if diagram_specs:
+            if diagram_skip:
+                done_payload["diagram_skip"] = diagram_skip
+            if diagram_error:
+                done_payload["diagram_error"] = diagram_error
+            if can_defer_diagram:
+                if defer_diagram:
+                    done_payload["diagram_deferred"] = True
+                    done_payload["diagram_request"] = {
+                        "section_id": section_id,
+                        "section_title": section_title,
+                        "base_content": content,
+                        "writing_hint": writing_hint,
+                        "keywords": raw_keywords,
+                        "global_outline": raw_global_outline,
+                        "diagram_brief": diagram_brief,
+                        "diagram_type_hint": diagram_type_hint,
+                        "diagram_specs": diagram_specs,
+                        "quality_score": quality_score,
+                        "feedback": feedback,
+                        "replace_report": replace_report,
+                    }
+                    if diagram_specs:
+                        done_payload["diagram_specs"] = diagram_specs
+                elif diagram_specs:
                     done_payload["diagram_specs"] = diagram_specs
+            _persist_content_result_to_project(project_id, section_id, done_payload, status="done")
             task_manager.set_result(task_id, done_payload)
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except asyncio.CancelledError:
@@ -2963,7 +3625,14 @@ async def start_content_task(request: dict):
             if project_id:
                 await task_manager.release_diagram_slot(project_id)
             logger.error(f"[Task {task_id}] 内容生成后台任务失败: {e}", exc_info=True)
-            task_manager.set_error(task_id, str(e))
+            _persist_content_result_to_project(
+                project_id,
+                section_id,
+                {},
+                status="error",
+                error=_format_dify_runtime_error(e),
+            )
+            task_manager.set_error(task_id, _format_dify_runtime_error(e))
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
 
     import asyncio
@@ -2974,6 +3643,11 @@ async def start_content_task(request: dict):
 
 @router.post("/tasks/start-content-rewrite", summary="发起单章节重生成后台任务")
 async def start_content_rewrite_task(request: dict):
+    try:
+        validate_required_bidder_info(request.get("bidder_info", {}) or {})
+    except BidderInfoRequiredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     _r = _get_deps()
     dify_key = _r._get_workflow_key("content_rewrite")
     if not dify_key:
@@ -3002,6 +3676,21 @@ async def start_content_rewrite_task(request: dict):
     request_mapping_flat = request.get("mapping_table", {}) or {}
     if not isinstance(request_mapping_flat, dict):
         request_mapping_flat = {}
+    db = SessionLocal()
+    try:
+        request_mapping_flat, rewrite_placeholder_hint, _bidder_context = merge_bidder_pipt_context(
+            mapping_table=request_mapping_flat,
+            placeholder_hint=request.get("placeholder_hint", ""),
+            bidder_info=request.get("bidder_info", {}) or {},
+            db=db,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("投标人信息 PIPT 归一化失败，重生成任务使用请求原始占位符上下文", exc_info=True)
+        rewrite_placeholder_hint = request.get("placeholder_hint", "")
+    finally:
+        db.close()
     strip_structural_numbering = str(request.get("generation_strategy", "general") or "general").strip() == "response_special"
 
     async def _run():
@@ -3016,7 +3705,7 @@ async def start_content_rewrite_task(request: dict):
                 "global_outline": request.get("global_outline", ""),
                 "section_outline_slice": request.get("section_outline_slice", ""),
                 "analysis_context": request.get("analysis_context", ""),
-                "placeholder_hint": request.get("placeholder_hint", ""),
+                "placeholder_hint": rewrite_placeholder_hint,
             }
             outputs = await _collect_workflow_outputs(
                 task_id,
@@ -3049,7 +3738,7 @@ async def start_content_rewrite_task(request: dict):
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except Exception as e:
             logger.error(f"[Task {task_id}] 单章节重生成任务失败: {e}", exc_info=True)
-            task_manager.set_error(task_id, str(e))
+            task_manager.set_error(task_id, _format_dify_runtime_error(e))
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
 
     import asyncio
@@ -3064,6 +3753,11 @@ async def start_content_group_task(request: dict):
     按 H2 分组批量生成其下子章节。
     content_group_writer 未配置或批量结果校验失败时直接失败，避免静默退化为慢速逐章生成。
     """
+    try:
+        validate_required_bidder_info(request.get("bidder_info", {}) or {})
+    except BidderInfoRequiredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     _r = _get_deps()
     project_id = str(request.get("project_id", "") or "").strip()
     await _ensure_project_slot(project_id, "content")
@@ -3077,6 +3771,21 @@ async def start_content_group_task(request: dict):
     request_mapping_flat = request.get("mapping_table", {}) or {}
     if not isinstance(request_mapping_flat, dict):
         request_mapping_flat = {}
+    db = SessionLocal()
+    try:
+        request_mapping_flat, group_placeholder_hint, _bidder_context = merge_bidder_pipt_context(
+            mapping_table=request_mapping_flat,
+            placeholder_hint=request.get("placeholder_hint", ""),
+            bidder_info=request.get("bidder_info", {}) or {},
+            db=db,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("投标人信息 PIPT 归一化失败，分组正文任务使用请求原始占位符上下文", exc_info=True)
+        group_placeholder_hint = request.get("placeholder_hint", "")
+    finally:
+        db.close()
 
     group_key = _r._get_workflow_key("content_group_writer")
     if not group_key:
@@ -3099,9 +3808,9 @@ async def start_content_group_task(request: dict):
                 max_len=2600,
             )
             group_search_query = _build_group_search_query(group_title, children)
-            enable_diagrams = bool(request.get("enable_diagrams", False) and DIAGRAM_GENERATION_ENABLED)
+            enable_diagrams = bool(request.get("enable_diagrams", False) and _diagram_generation_enabled())
             max_diagrams = int(request.get("max_diagrams", 0) or 0) if enable_diagrams else 0
-            diagram_key = _r._get_workflow_key("diagram_generator") if enable_diagrams and max_diagrams > 0 else ""
+            diagram_key = _get_diagram_workflow_key(_r) if enable_diagrams and max_diagrams > 0 else ""
             results: list[dict] = []
             failed_sections: list[dict] = []
 
@@ -3111,7 +3820,7 @@ async def start_content_group_task(request: dict):
                 "expected_total_words": sum(max(0, int(child["expected_words"] or 0)) for child in children),
                 "project_summary": request.get("project_summary", ""),
                 "global_outline": group_outline_slice,
-                "placeholder_hint": request.get("placeholder_hint", ""),
+                "placeholder_hint": group_placeholder_hint,
                 "requires_search": "true" if bool(request.get("requires_search", False)) else "false",
                 "group_analysis_context": shared_analysis_context,
                 "search_query": group_search_query,
@@ -3150,6 +3859,25 @@ async def start_content_group_task(request: dict):
                 else:
                     task_manager.update_stage(task_id, "⚠️ 批量结果无可用正文，已标记章节失败")
 
+            repaired_sections, failed_sections = await _repair_group_failed_sections(
+                task_id=task_id,
+                _r=_r,
+                children=children,
+                failed_sections=failed_sections,
+                request=request,
+                request_mapping_flat=request_mapping_flat,
+                group_placeholder_hint=group_placeholder_hint,
+                group_outline_slice=group_outline_slice,
+            )
+            if repaired_sections:
+                repaired_ids = {str(row.get("section_id") or "") for row in repaired_sections}
+                results = [row for row in results if str(row.get("section_id") or "") not in repaired_ids]
+                results.extend(repaired_sections)
+                task_manager.update_stage(
+                    task_id,
+                    f"🩹 已补生成缺失子章节（{len(repaired_sections)} 个）",
+                )
+
             child_map = {child["section_id"]: child for child in children}
             ordered_results = sorted(
                 results,
@@ -3162,22 +3890,54 @@ async def start_content_group_task(request: dict):
                 if not child:
                     continue
                 content = str(row.get("content") or "")
-                if enable_diagrams and child.get("need_diagram") and str(child.get("diagram_brief") or "").strip():
-                    row["diagram_deferred"] = True
-                    row["diagram_request"] = {
-                        "section_id": row["section_id"],
-                        "section_title": str(child.get("section_title") or ""),
-                        "base_content": content,
-                        "writing_hint": str(child.get("writing_hint") or ""),
-                        "keywords": str(child.get("keywords") or ""),
-                        "global_outline": group_outline_slice,
-                        "diagram_brief": str(child.get("diagram_brief") or ""),
-                        "diagram_type_hint": str(child.get("diagram_type_hint") or "architecture"),
-                        "diagram_specs": row.get("diagram_specs") or row.get("diagram_spec"),
-                        "quality_score": row.get("quality_score"),
-                        "feedback": row.get("feedback"),
-                        "replace_report": row.get("replace_report") or [],
-                    }
+                child_need_diagram = bool(child.get("need_diagram"))
+                child_diagram_brief = str(child.get("diagram_brief") or "").strip()
+                child_wants_diagram = enable_diagrams and child_need_diagram and bool(child_diagram_brief) and max_diagrams > 0
+                child_can_generate_diagram = bool(child_wants_diagram and diagram_key)
+                child_should_report_diagram_skip = (
+                    bool(request.get("enable_diagrams", False))
+                    and child_need_diagram
+                )
+                child_diagram_skip = None
+                if child_should_report_diagram_skip and not child_can_generate_diagram:
+                    child_diagram_skip = _build_diagram_skip_payload(
+                        workflow_name="content_writer",
+                        enable_diagrams=enable_diagrams,
+                        need_diagram=child_need_diagram,
+                        diagram_brief=child_diagram_brief,
+                        max_diagrams=max_diagrams,
+                        diagram_key=diagram_key if child_wants_diagram else "",
+                    )
+                diagrams_generated: list[dict[str, Any]] = []
+                if child_can_generate_diagram:
+                    diagram_specs = row.get("diagram_specs") or row.get("diagram_spec")
+                    diagrams_generated, diagram_slot_reserved, diagram_error = await _execute_diagram_for_section(
+                        task_id,
+                        project_id,
+                        _r,
+                        diagram_key,
+                        enable_diagrams,
+                        child_need_diagram,
+                        child_diagram_brief,
+                        max_diagrams,
+                        str(child.get("diagram_type_hint") or "architecture"),
+                        str(child.get("section_title") or ""),
+                        str(child.get("writing_hint") or ""),
+                        str(child.get("keywords") or ""),
+                        group_outline_slice,
+                        content,
+                        diagram_specs,
+                    )
+                    if not diagrams_generated and diagram_slot_reserved:
+                        await task_manager.release_diagram_slot(project_id)
+                    if diagram_error:
+                        row["diagram_error"] = diagram_error
+                    if diagrams_generated:
+                        content = content + "\n" + "\n".join(_build_diagram_reference_tag(d) for d in diagrams_generated)
+                        row["content"] = content
+                        row["word_count"] = _count_visible_chars(content)
+                if child_diagram_skip:
+                    row["diagram_skip"] = child_diagram_skip
                 final_by_id[row["section_id"]] = row
                 task_manager.append_partial_event(task_id, {
                     "partial": True,
@@ -3189,10 +3949,9 @@ async def start_content_group_task(request: dict):
                     "quality_score": row.get("quality_score"),
                     "feedback": row.get("feedback"),
                     "replace_report": row.get("replace_report") or [],
-                    "diagrams_count": 0,
-                    "diagram_deferred": bool(row.get("diagram_deferred")),
-                    "diagram_request": row.get("diagram_request"),
+                    "diagrams_count": len(diagrams_generated),
                     "diagram_error": row.get("diagram_error"),
+                    "diagram_skip": row.get("diagram_skip"),
                     "done_count": done_count,
                     "total_count": len(children),
                 })
@@ -3211,6 +3970,7 @@ async def start_content_group_task(request: dict):
                 "failed_count": len(failed_sections),
                 "partial_success": bool(results) and bool(failed_sections),
             })
+            _persist_group_content_result_to_project(project_id, results, failed_sections)
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except asyncio.CancelledError:
             await _best_effort_stop_dify_by_task_id(task_id)
@@ -3219,7 +3979,7 @@ async def start_content_group_task(request: dict):
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except Exception as e:
             logger.error(f"[Task {task_id}] H2 批量正文任务失败: {e}", exc_info=True)
-            task_manager.set_error(task_id, str(e))
+            task_manager.set_error(task_id, _format_dify_runtime_error(e))
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
 
     import asyncio
@@ -3284,7 +4044,7 @@ async def start_group_review_task(request: dict):
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except Exception as e:
             logger.error(f"[Task {task_id}] H2 分组评估任务失败: {e}", exc_info=True)
-            task_manager.set_error(task_id, str(e))
+            task_manager.set_error(task_id, _format_dify_runtime_error(e))
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
 
     import asyncio
@@ -3303,7 +4063,7 @@ async def start_diagram_task(request: dict):
     project_id = str(request.get("project_id", "") or "").strip()
     section_id = request.get("section_id", "")
     base_content = str(request.get("base_content", "") or "")
-    if not DIAGRAM_GENERATION_ENABLED:
+    if not _diagram_generation_enabled():
         task_id = task_manager.create_task("diagram", project_id)
         _persist_project_runtime(
             project_id,
@@ -3326,13 +4086,13 @@ async def start_diagram_task(request: dict):
         return {"task_id": task_id, "section_id": section_id}
 
     _r = _get_deps()
-    diagram_key = _r._get_workflow_key("diagram_generator")
+    diagram_key = _get_diagram_workflow_key(_r)
     if not diagram_key:
-        raise HTTPException(status_code=500, detail="图表生成工作流 API Key 未配置")
+        raise HTTPException(status_code=500, detail=f"{_get_diagram_workflow_name()} 工作流 API Key 未配置")
 
     await _ensure_project_slot(project_id, "diagram")
     section_title = request.get("section_title", "")
-    enable_diagrams = bool(request.get("enable_diagrams", False) and DIAGRAM_GENERATION_ENABLED)
+    enable_diagrams = bool(request.get("enable_diagrams", False) and _diagram_generation_enabled())
 
     task_id = task_manager.create_task("diagram", project_id)
     _persist_project_runtime(
@@ -3396,7 +4156,7 @@ async def start_diagram_batch_task(request: dict):
     if not diagram_requests:
         raise HTTPException(status_code=400, detail="diagram_requests 不能为空")
 
-    if not DIAGRAM_GENERATION_ENABLED:
+    if not _diagram_generation_enabled():
         task_id = task_manager.create_task("diagram", project_id)
         sections = []
         for item in diagram_requests:
@@ -3419,9 +4179,9 @@ async def start_diagram_batch_task(request: dict):
         return {"task_id": task_id, "count": len(sections)}
 
     _r = _get_deps()
-    diagram_key = _r._get_workflow_key("diagram_generator")
+    diagram_key = _get_diagram_workflow_key(_r)
     if not diagram_key:
-        raise HTTPException(status_code=500, detail="图表生成工作流 API Key 未配置")
+        raise HTTPException(status_code=500, detail=f"{_get_diagram_workflow_name()} 工作流 API Key 未配置")
 
     await _ensure_project_slot(project_id, "diagram")
     task_id = task_manager.create_task("diagram", project_id)
@@ -3675,10 +4435,48 @@ async def get_diagram_artifact(diagram_id: str, project_id: str = Query(default=
             path = candidate
             break
     if not path.exists():
-        raise HTTPException(status_code=404, detail="图表 artifact 不存在")
+        mermaid_path = DIAGRAM_ARTIFACT_DIR / project / f"{safe_id}.mmd"
+        if not mermaid_path.exists():
+            for candidate in DIAGRAM_ARTIFACT_DIR.glob(f"*/{safe_id}.mmd"):
+                mermaid_path = candidate
+                break
+        if not mermaid_path.exists():
+            raise HTTPException(status_code=404, detail="图表 artifact 不存在")
+        rendered_svg_path = mermaid_path.with_suffix(".svg")
+        if rendered_svg_path.exists() or _render_mermaid_to_svg_file(mermaid_path, rendered_svg_path):
+            return StreamingResponse(
+                iter([rendered_svg_path.read_text(encoding="utf-8")]),
+                media_type="image/svg+xml",
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+        mermaid = mermaid_path.read_text(encoding="utf-8")
+        svg = _mermaid_to_fallback_svg(mermaid, title="Mermaid 数据流图")
+        return StreamingResponse(
+            iter([svg]),
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
     return StreamingResponse(
         iter([path.read_text(encoding="utf-8")]),
         media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get("/diagram-artifacts/{diagram_id}.mmd", summary="获取 Mermaid 图表 artifact")
+async def get_mermaid_diagram_artifact(diagram_id: str, project_id: str = Query(default="")):
+    safe_id = _safe_diagram_artifact_id(diagram_id)
+    project = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(project_id or "default"))
+    path = DIAGRAM_ARTIFACT_DIR / project / f"{safe_id}.mmd"
+    if not path.exists():
+        for candidate in DIAGRAM_ARTIFACT_DIR.glob(f"*/{safe_id}.mmd"):
+            path = candidate
+            break
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Mermaid 图表 artifact 不存在")
+    return StreamingResponse(
+        iter([path.read_text(encoding="utf-8")]),
+        media_type="text/plain; charset=utf-8",
         headers={"Cache-Control": "public, max-age=86400"},
     )
 

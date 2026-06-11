@@ -8,12 +8,102 @@ pipt-lite 脱敏引擎
 """
 
 import logging
+import hashlib
 import re
+import threading
 from typing import Optional
 
 from .schemas import EntityItem, DesensitizeResponse
+from .pipt_protocol import (
+    build_placeholder_manifest,
+    build_placeholder_policy,
+    make_strong_pipt_token,
+    make_stable_strong_pipt_token,
+)
+from .recognition_rules import apply_entity_rules
 
 logger = logging.getLogger(__name__)
+_ENTITY_REGISTRY_LOCK = threading.RLock()
+
+DEFAULT_TARGET_ENTITIES = ["name", "phone", "id_number", "email", "addr", "bank", "car_id", "ip", "org", "credit_code"]
+FALLBACK_IDENTIFY_INFO_TO_CHINESE = {
+    "name": "姓名",
+    "phone": "手机号",
+    "id_number": "身份证号",
+    "email": "邮箱",
+    "addr": "地址",
+    "bank": "银行卡号",
+    "car_id": "车牌号",
+    "ip": "IP 地址",
+    "org": "机构名称",
+    "credit_code": "统一社会信用代码",
+}
+FALLBACK_REGEX_PATTERNS = {
+    "phone": r"(?<!\d)1[3-9]\d{9}(?!\d)",
+    "email": r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+    "id_number": r"(?<![0-9A-Za-z])\d{17}[\dXx](?![0-9A-Za-z])",
+    "ip": r"(?<!\d)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d)",
+    "car_id": r"[\u4e00-\u9fa5][A-Z][A-Z0-9]{5,6}",
+    "bank": r"(?<!\d)(?:\d[ -]?){16,19}(?!\d)",
+    "org": r"[\u4e00-\u9fa5A-Za-z0-9（）()]{4,80}(?:有限公司|股份有限公司|有限责任公司|集团|公司|银行|大学|学院|医院|委员会|管理局|事务所|协会|研究院|设计院)",
+    "credit_code": r"(?<![0-9A-Z])(?:[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10})(?![0-9A-Z])",
+}
+
+
+def _fallback_mask_email(email: str, desensitize_symbol: str) -> str:
+    local, _, domain = str(email or "").partition("@")
+    if not domain:
+        return _fallback_default_mask(email, desensitize_symbol)
+    keep = local[: max(1, min(3, len(local)))]
+    return f"{keep}{desensitize_symbol * max(1, len(local) - len(keep))}@{domain}"
+
+
+def _fallback_mask_phone(phone_number: str, desensitize_symbol: str) -> str:
+    value = str(phone_number or "")
+    if len(value) < 8:
+        return _fallback_default_mask(value, desensitize_symbol)
+    return value[:-8] + desensitize_symbol * 4 + value[-4:]
+
+
+def _fallback_mask_id(id_number: str, desensitize_symbol: str) -> str:
+    value = str(id_number or "")
+    if len(value) != 18:
+        return _fallback_default_mask(value, desensitize_symbol)
+    return value[:3] + desensitize_symbol * 11 + value[14:16] + desensitize_symbol * 2
+
+
+def _fallback_mask_ip(ip_address: str, desensitize_symbol: str) -> str:
+    parts = str(ip_address or "").split(".")
+    if len(parts) != 4:
+        return _fallback_default_mask(ip_address, desensitize_symbol)
+    return f"{parts[0]}.{desensitize_symbol * 3}.{desensitize_symbol * 3}.{desensitize_symbol * 3}"
+
+
+def _fallback_mask_car(car_id: str, desensitize_symbol: str) -> str:
+    value = str(car_id or "")
+    if len(value) < 5:
+        return _fallback_default_mask(value, desensitize_symbol)
+    return value[:-5] + desensitize_symbol * 5
+
+
+def _fallback_mask_name(name: str, desensitize_symbol: str) -> str:
+    value = str(name or "")
+    if len(value) <= 1:
+        return desensitize_symbol * len(value)
+    if len(value) == 4:
+        return value[:2] + desensitize_symbol * 2
+    return value[0] + desensitize_symbol * (len(value) - 1)
+
+
+def _fallback_default_mask(record: str, desensitize_symbol: str) -> str:
+    return desensitize_symbol * len(str(record or ""))
+
+
+def _fallback_mask_keep_tail(record: str, desensitize_symbol: str, keep: int = 4) -> str:
+    value = str(record or "")
+    if len(value) <= keep:
+        return _fallback_default_mask(value, desensitize_symbol)
+    return desensitize_symbol * (len(value) - keep) + value[-keep:]
 
 
 class DesensitizeEngine:
@@ -27,26 +117,51 @@ class DesensitizeEngine:
 
     def __init__(self):
         """初始化正则规则和 mask 方法"""
-        # 延迟导入，保持兼容性
-        from app.extension.celery_task.pipt_task.assets.constant import (
-            phone_regex, email_regex, id_number_regex,
-            ip_regex, car_id_regex, bank_regex, org_regex,
-            IDENTIFY_INFO_TO_CHINESE,
-        )
-        from app.extension.celery_task.pipt_task.desensitize.mask.mask_method import (
-            mask_name, mask_phone, mask_id, mask_email,
-            mask_ip, mask_car, mask_bank, default_mask,
-        )
+        regex_sources = dict(FALLBACK_REGEX_PATTERNS)
+        identify_info_to_chinese = dict(FALLBACK_IDENTIFY_INFO_TO_CHINESE)
+        try:
+            # 延迟导入，优先复用 legacy PIPT 规则；缺失时使用本地 fallback，保证网关可独立运行。
+            from app.extension.celery_task.pipt_task.assets.constant import (
+                phone_regex, email_regex, id_number_regex,
+                ip_regex, car_id_regex, bank_regex,
+                IDENTIFY_INFO_TO_CHINESE,
+            )
+
+            regex_sources.update({
+                "phone": phone_regex,
+                "email": email_regex,
+                "id_number": id_number_regex,
+                "ip": ip_regex,
+                "car_id": car_id_regex,
+                "bank": bank_regex,
+            })
+            identify_info_to_chinese.update(IDENTIFY_INFO_TO_CHINESE)
+        except Exception as exc:
+            logger.warning("legacy PIPT 正则 assets 不可用，使用 api_lite 内置规则: %s", exc)
+
+        try:
+            from app.extension.celery_task.pipt_task.desensitize.mask.mask_method import (
+                mask_name, mask_phone, mask_id, mask_email,
+                mask_ip, mask_car, mask_bank, default_mask,
+            )
+        except Exception as exc:
+            logger.warning("legacy PIPT mask 方法不可用，使用 api_lite 内置 mask: %s", exc)
+            mask_name = _fallback_mask_name
+            mask_phone = _fallback_mask_phone
+            mask_id = _fallback_mask_id
+            mask_email = _fallback_mask_email
+            mask_ip = _fallback_mask_ip
+            mask_car = _fallback_mask_car
+            mask_bank = _fallback_mask_keep_tail
+            default_mask = _fallback_default_mask
 
         # 正则规则映射：实体类型 → 编译后的正则
+        # org 必须走 NER/角色行规则；legacy org_regex 过宽，会把“合作单位包括嘉兴银行”这类上下文吞进实体。
+        regex_sources.pop("org", None)
         self.regex_patterns = {
-            "phone": re.compile(phone_regex),
-            "email": re.compile(email_regex),
-            "id_number": re.compile(id_number_regex),
-            "ip": re.compile(ip_regex),
-            "car_id": re.compile(car_id_regex),
-            "bank": re.compile(bank_regex),
-            "org": re.compile(org_regex),
+            entity_type: re.compile(pattern)
+            for entity_type, pattern in regex_sources.items()
+            if pattern
         }
 
         # mask 方法映射：实体类型 → mask 函数
@@ -58,10 +173,11 @@ class DesensitizeEngine:
             "ip": mask_ip,
             "car_id": mask_car,
             "bank": mask_bank,
+            "credit_code": _fallback_mask_keep_tail,
         }
         self.default_mask = default_mask
 
-        self.entity_names = IDENTIFY_INFO_TO_CHINESE
+        self.entity_names = identify_info_to_chinese
 
         # NER 模型（可选，需要模型文件）
         self._ner_model = None
@@ -134,6 +250,7 @@ class DesensitizeEngine:
         # full 模式：完全由 LLM 承担识别，跳过 NER
         if llm_enabled and llm_mode == "full":
             entities = self._full_llm_recognize(text, target_entities)
+            entities = apply_entity_rules(text, entities)
             entities = self._deduplicate_entities(entities)
             logger.info(f"[full] 识别完成: {len(entities)} 个实体")
             return entities
@@ -149,6 +266,9 @@ class DesensitizeEngine:
                     entity_type=entity_type,
                     start=match.start(),
                     end=match.end(),
+                    source="regex",
+                    confidence=0.98,
+                    reason=f"{entity_type}_regex",
                 ))
 
         # NER 模型识别（姓名、地址、机构）
@@ -158,10 +278,15 @@ class DesensitizeEngine:
             if self._ner_model is not None:
                 try:
                     ner_entities = self._ner_recognize(text, ner_types)
+                    ner_entities = self._verify_org_entities_by_ner_consistency(ner_entities, ner_types)
                     entities.extend(ner_entities)
                 except Exception as e:
                     logger.warning(f"NER 模型识别出错: {e}")
 
+        before_rules = len(entities)
+        entities = apply_entity_rules(text, entities)
+        if len(entities) != before_rules:
+            logger.info("PIPT 本地规则过滤: %s -> %s", before_rules, len(entities))
         entities = self._deduplicate_entities(entities)
 
         if not llm_enabled:
@@ -170,6 +295,7 @@ class DesensitizeEngine:
 
         # Phase 1：LLM 校验 NER 候选（verify_only / augment 共用）
         entities = self._verify_entities_with_llm(text, entities)
+        entities = apply_entity_rules(text, entities)
 
         # Phase 2 & 3：augment 模式下主动挖掘 + 二次核验
         if llm_mode == "augment":
@@ -177,6 +303,7 @@ class DesensitizeEngine:
             if extra:
                 extra = self._verify_extra_entities(text, extra)
                 all_entities = entities + extra
+                all_entities = apply_entity_rules(text, all_entities)
                 entities = self._deduplicate_entities(all_entities)
                 logger.info(f"[augment] Phase2 挖掘到 {len(extra)} 个额外实体，合并后共 {len(entities)} 个")
 
@@ -452,6 +579,9 @@ class DesensitizeEngine:
                     entity_type=ent_type,
                     start=abs_start,
                     end=abs_start + len(ent_text),
+                    source="llm",
+                    confidence=0.72,
+                    reason="llm_augment",
                 ))
                 known_texts.add(ent_text)  # 防跨块重复
 
@@ -552,6 +682,9 @@ class DesensitizeEngine:
                 entity_type=ent.entity_type,
                 start=ent.start,
                 end=ent.start + len(t),
+                source=ent.source or "llm",
+                confidence=ent.confidence or 0.7,
+                reason=ent.reason or "full_mode_quality_filter",
             ))
         return self._deduplicate_entities(out)
 
@@ -643,6 +776,9 @@ class DesensitizeEngine:
                     entity_type=ent_type,
                     start=abs_start,
                     end=abs_start + len(ent_text),
+                    source="llm",
+                    confidence=0.68,
+                    reason="llm_full",
                 ))
                 seen_texts.add(ent_text)
 
@@ -704,66 +840,138 @@ class DesensitizeEngine:
                 if not chunk_text.strip():
                     continue
                     
-                tokens = self._ner_model["tok"](chunk_text)
-                ner_results = self._ner_model["ner"](tokens)
-
-                # 解析 NER 结果
-                for item in ner_results:
-                    if len(item) >= 2:
-                        entity_text = item[0] if isinstance(item[0], str) else str(item[0])
-                        ner_label = item[1] if isinstance(item[1], str) else str(item[1])
-
-                        mapped_type = ner_type_map.get(ner_label)
+                for entity_text, mapped_type, ner_label in self._raw_ner_items(chunk_text, ner_type_map):
+                    if not mapped_type:
+                        continue
                         
-                        # org 类型过滤策略：当 LLM 开启且放宽模式时跳过后缀/长度校验，决策权交给 LLM
-                        if mapped_type == "org":
-                            import os
-                            llm_enabled = os.environ.get("PIPT_LLM_VERIFY_ENABLED", "false").lower() == "true"
-                            ner_relaxed = os.environ.get("PIPT_LLM_NER_RELAXED", "false").lower() == "true"
-                            if not (llm_enabled and ner_relaxed):
-                                # 保守模式：仍做后缀/长度过滤
-                                if entity_text in SPECIAL_ORG_ABBR:
-                                    pass  # 白名单内直接放行
-                                else:
-                                    if not entity_text.endswith(VALID_ORG_SUFFIXES):
-                                        continue
-                                    if len(entity_text) <= 3:
-                                        continue
+                    # org 类型过滤策略：当 LLM 开启且放宽模式时跳过后缀/长度校验，决策权交给 LLM。
+                    # 之后仍会做多模板 NER 自一致性校验，避免原句上下文造成的机构长片段误报。
+                    if mapped_type == "org":
+                        import os
+                        llm_enabled = os.environ.get("PIPT_LLM_VERIFY_ENABLED", "false").lower() == "true"
+                        ner_relaxed = os.environ.get("PIPT_LLM_NER_RELAXED", "false").lower() == "true"
+                        if not (llm_enabled and ner_relaxed):
+                            # 保守模式：仍做后缀/长度过滤
+                            if entity_text in SPECIAL_ORG_ABBR:
+                                pass  # 白名单内直接放行
+                            else:
+                                if not entity_text.endswith(VALID_ORG_SUFFIXES):
+                                    continue
+                                if len(entity_text) <= 3:
+                                    continue
 
-                        if mapped_type and mapped_type in target_types:
-                            # 查找该实体在这个 chunk 中的相对位置
-                            chunk_start = chunk_text.find(entity_text)
-                            if chunk_start >= 0:
-                                # 计算在原始大文本中的绝对位置
-                                abs_start = i + chunk_start
-                                entities.append(EntityItem(
-                                    text=entity_text,
-                                    entity_type=mapped_type,
-                                    start=abs_start,
-                                    end=abs_start + len(entity_text),
-                                ))
+                    if mapped_type in target_types:
+                        # 查找该实体在这个 chunk 中的相对位置
+                        chunk_start = chunk_text.find(entity_text)
+                        if chunk_start >= 0:
+                            # 计算在原始大文本中的绝对位置
+                            abs_start = i + chunk_start
+                            entities.append(EntityItem(
+                                text=entity_text,
+                                entity_type=mapped_type,
+                                start=abs_start,
+                                end=abs_start + len(entity_text),
+                                source="ner",
+                                confidence=0.82,
+                                reason=f"hanlp_{ner_label}",
+                            ))
         except Exception as e:
             logger.warning(f"NER 解析错误: {e}")
 
         return entities
 
-    def _deduplicate_entities(self, entities: list[EntityItem]) -> list[EntityItem]:
-        """去除重叠的实体（保留较长的那个）"""
-        if len(entities) <= 1:
+    def _raw_ner_items(self, text: str, ner_type_map: dict[str, str]) -> list[tuple[str, str, str]]:
+        if self._ner_model is None or not str(text or "").strip():
+            return []
+        tokens = self._ner_model["tok"](text)
+        ner_results = self._ner_model["ner"](tokens)
+        items: list[tuple[str, str, str]] = []
+        for item in ner_results:
+            if len(item) < 2:
+                continue
+            entity_text = item[0] if isinstance(item[0], str) else str(item[0])
+            ner_label = item[1] if isinstance(item[1], str) else str(item[1])
+            mapped_type = ner_type_map.get(ner_label, "")
+            if entity_text:
+                items.append((entity_text, mapped_type, ner_label))
+        return items
+
+    def _verify_org_entities_by_ner_consistency(
+        self,
+        entities: list[EntityItem],
+        target_types: set[str],
+    ) -> list[EntityItem]:
+        """用多条中性句重跑 NER，过滤依赖原句上下文才成立的机构误识别。"""
+        if "org" not in target_types or self._ner_model is None:
             return entities
 
-        # 按起始位置排序
-        sorted_entities = sorted(entities, key=lambda e: (e.start, -(e.end - e.start)))
-
-        result = [sorted_entities[0]]
-        for entity in sorted_entities[1:]:
-            last = result[-1]
-            # 如果当前实体和上一个有重叠，跳过较短的
-            if entity.start < last.end:
+        ner_type_map = {
+            "ORGANIZATION": "org",
+            "ORG": "org",
+        }
+        templates = (
+            "本项目涉及{org}。",
+            "{org}参与了项目论证。",
+            "相关单位包括{org}。",
+        )
+        verified: list[EntityItem] = []
+        cache: dict[str, bool] = {}
+        for entity in entities:
+            if entity.entity_type != "org" or entity.source != "ner":
+                verified.append(entity)
                 continue
-            result.append(entity)
+            candidate = str(entity.text or "").strip()
+            if candidate not in cache:
+                hits = 0
+                for template in templates:
+                    sentence = template.format(org=candidate)
+                    try:
+                        raw_items = self._raw_ner_items(sentence, ner_type_map)
+                    except Exception as exc:
+                        logger.debug("机构 NER 自一致性校验失败，保留候选: %s", exc)
+                        hits = len(templates)
+                        break
+                    if any(text_value == candidate and mapped_type == "org" for text_value, mapped_type, _label in raw_items):
+                        hits += 1
+                cache[candidate] = hits >= 2
+            if cache[candidate]:
+                entity.reason = f"{entity.reason}|org_ner_consistency"
+                verified.append(entity)
+            else:
+                logger.info("PIPT 机构 NER 自一致性过滤: %s", candidate)
+        return verified
 
-        return result
+    def _deduplicate_entities(self, entities: list[EntityItem]) -> list[EntityItem]:
+        """去除无效或重叠实体，避免短实体覆盖长实体导致错映射。"""
+        if len(entities) <= 1:
+            return [
+                entity for entity in entities
+                if entity.text and entity.start >= 0 and entity.end > entity.start
+            ]
+
+        valid_entities = [
+            entity for entity in entities
+            if entity.text and entity.start >= 0 and entity.end > entity.start
+        ]
+        if len(valid_entities) <= 1:
+            return valid_entities
+
+        # 长实体优先保留；再按位置输出，避免同一区间内短词被误替换。
+        by_priority = sorted(valid_entities, key=lambda e: (-(e.end - e.start), e.start, e.entity_type))
+        selected: list[EntityItem] = []
+        occupied: list[tuple[int, int]] = []
+        seen = set()
+        for entity in by_priority:
+            key = (entity.start, entity.end, entity.entity_type, entity.text)
+            if key in seen:
+                continue
+            seen.add(key)
+            if any(entity.start < end and entity.end > start for start, end in occupied):
+                continue
+            selected.append(entity)
+            occupied.append((entity.start, entity.end))
+
+        return sorted(selected, key=lambda e: (e.start, e.end))
 
     def desensitize(
         self,
@@ -771,8 +979,10 @@ class DesensitizeEngine:
         target_entities: list[str],
         method: str = "mask",
         placeholder_format: str = "{{__PIPT_{type}_{index}__}}",
+        placeholder_protocol: str = "legacy",
         db_session=None,
         llm_mode: Optional[str] = None,
+        audit_context: Optional[dict] = None,
     ) -> DesensitizeResponse:
         """
         Args:
@@ -782,28 +992,106 @@ class DesensitizeEngine:
         # 识别实体（透传 llm_mode 覆盖）
         entities = self.recognize(text, target_entities, llm_mode_override=llm_mode)
 
+        audit_context = audit_context or {}
+        audit_source = str(audit_context.get("source") or "engine.desensitize")
+        audit_session_id = audit_context.get("session_id")
+        audit_project_id = audit_context.get("project_id")
+        audit_task_id = audit_context.get("task_id")
+
         if not entities:
+            if db_session is not None:
+                from app.api_lite.database import add_pipt_audit_log
+                add_pipt_audit_log(
+                    db_session,
+                    operation="recognize",
+                    status="empty",
+                    source=audit_source,
+                    session_id=audit_session_id,
+                    project_id=audit_project_id,
+                    task_id=audit_task_id,
+                    text=text,
+                    details={
+                        "entity_count": 0,
+                        "target_entities": target_entities,
+                        "method": method,
+                        "llm_mode": llm_mode or "",
+                    },
+                )
             return DesensitizeResponse(
                 desensitized_text=text,
                 mapping_table={},
                 entities=[],
                 entity_count=0,
+                placeholder_manifest={},
+                placeholder_policy=build_placeholder_policy(),
             )
 
         # 按位置从后往前替换（避免位置偏移）
         sorted_entities = sorted(entities, key=lambda e: e.start, reverse=True)
         mapping_table = {}
+        manifest_entity_types: dict[str, str] = {}
+        manifest_entity_contexts: dict[str, dict[str, str]] = {}
         result_text = text
+        text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        stateless_placeholders: dict[str, str] = {}
+        stateless_legacy_indices: dict[str, int] = {}
 
         # 预加载 EntityRegistry 依赖（仅在有 db_session 时）
         if db_session is not None:
-            from app.api_lite.database import EntityRegistry, FernetEncryptor, make_entity_key
+            from app.api_lite.database import EntityRegistry, FernetEncryptor, add_pipt_audit_log, make_entity_key
             from sqlalchemy import func as _func
+            from sqlalchemy import text as _sql_text
             enc = FernetEncryptor.get()
+            add_pipt_audit_log(
+                db_session,
+                operation="recognize",
+                status="success",
+                source=audit_source,
+                session_id=audit_session_id,
+                project_id=audit_project_id,
+                task_id=audit_task_id,
+                text=text,
+                details={
+                    "entity_count": len(entities),
+                    "target_entities": target_entities,
+                    "method": method,
+                    "llm_mode": llm_mode or "",
+                },
+            )
 
         for entity in sorted_entities:
             original = entity.text
             entity_type = entity.entity_type
+            current_slice = text[entity.start:entity.end]
+            if current_slice != original:
+                logger.warning(
+                    "跳过位置不一致的 PIPT 实体: type=%s start=%s end=%s expected_len=%s actual_len=%s",
+                    entity_type,
+                    entity.start,
+                    entity.end,
+                    len(original),
+                    len(current_slice),
+                )
+                if db_session is not None:
+                    add_pipt_audit_log(
+                        db_session,
+                        operation="desensitize",
+                        status="skipped",
+                        source=audit_source,
+                        session_id=audit_session_id,
+                        project_id=audit_project_id,
+                        task_id=audit_task_id,
+                        entity_type=entity_type,
+                        original_text=original,
+                        text=text,
+                        details={
+                            "reason": "span_text_mismatch",
+                            "start": entity.start,
+                            "end": entity.end,
+                            "actual_hash": hashlib.sha256(current_slice.encode("utf-8")).hexdigest() if current_slice else "",
+                        },
+                    )
+                continue
 
             # ── 占位符分配 ────────────────────────────────────────────────────
             if db_session is not None:
@@ -817,28 +1105,61 @@ class DesensitizeEngine:
                     # 命中：复用已有占位符，更新引用计数
                     placeholder = row.placeholder
                     row.hit_count = (row.hit_count or 0) + 1
+                    registry_status = "reuse"
                     db_session.flush()
                 else:
-                    # 未命中：分配新全局序号
-                    max_idx = db_session.query(_func.max(EntityRegistry.global_index)).filter(
-                        EntityRegistry.entity_type == entity_type
-                    ).scalar() or 0
-                    next_idx = max_idx + 1
-                    placeholder = placeholder_format.replace("{type}", entity_type).replace("{index}", str(next_idx))
-                    row = EntityRegistry(
-                        entity_key=ekey,
-                        entity_type=entity_type,
-                        original_text_enc=enc.encrypt(original),
-                        placeholder=placeholder,
-                        global_index=next_idx,
-                    )
-                    db_session.add(row)
+                    # 未命中：分配新全局序号。同进程内加锁，避免并发请求抢同一类型序号。
+                    with _ENTITY_REGISTRY_LOCK:
+                        # PostgreSQL 事务级锁兜底多进程部署，防止同类型实体并发抢号。
+                        db_session.execute(
+                            _sql_text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+                            {"lock_key": f"bid_generator.entity_registry.{entity_type}"},
+                        )
+                        max_idx = db_session.query(_func.max(EntityRegistry.global_index)).filter(
+                            EntityRegistry.entity_type == entity_type
+                        ).scalar() or 0
+                        next_idx = max_idx + 1
+                        placeholder = placeholder_format.replace("{type}", entity_type).replace("{index}", str(next_idx))
+                        strong_placeholder = make_stable_strong_pipt_token(ekey, entity_type, text_hash=text_hash)
+                        row = EntityRegistry(
+                            entity_key=ekey,
+                            entity_type=entity_type,
+                            original_text_enc=enc.encrypt(original),
+                            placeholder=placeholder,
+                            strong_placeholder=strong_placeholder,
+                            global_index=next_idx,
+                        )
+                        db_session.add(row)
+                        registry_status = "create"
+                        db_session.flush()
+                strong_placeholder = (
+                    row.strong_placeholder
+                    or make_stable_strong_pipt_token(ekey, entity_type, text_hash=text_hash)
+                )
+                if not row.strong_placeholder:
+                    row.strong_placeholder = strong_placeholder
                     db_session.flush()
+                if str(placeholder_protocol or "").strip().lower() == "strong":
+                    placeholder = strong_placeholder
             else:
-                # 降级：内存计数器（向后兼容）
-                counter = self._placeholder_counter.get(entity_type, 0) + 1
-                self._placeholder_counter[entity_type] = counter
-                placeholder = placeholder_format.replace("{type}", entity_type).replace("{index}", str(counter))
+                ekey = hashlib.sha256(f"{original}|{entity_type}".encode("utf-8")).hexdigest()
+                if str(placeholder_protocol or "").strip().lower() == "strong":
+                    placeholder = stateless_placeholders.get(ekey)
+                    if not placeholder:
+                        placeholder = make_stable_strong_pipt_token(
+                            ekey,
+                            entity_type,
+                            text_hash=text_hash,
+                            salt=str(audit_session_id or audit_project_id or audit_task_id or ""),
+                        )
+                        stateless_placeholders[ekey] = placeholder
+                else:
+                    counter = stateless_legacy_indices.get(ekey)
+                    if counter is None:
+                        counter = self._placeholder_counter.get(entity_type, 0) + 1
+                        self._placeholder_counter[entity_type] = counter
+                        stateless_legacy_indices[ekey] = counter
+                    placeholder = placeholder_format.replace("{type}", entity_type).replace("{index}", str(counter))
 
             # ── 替换执行 ──────────────────────────────────────────────────────
             if method == "mask":
@@ -854,7 +1175,43 @@ class DesensitizeEngine:
 
             # 始终以占位符作为 mapping_table 的 key（mask 模式也记录，用于还原）
             mapping_table[placeholder] = original
+            manifest_entity_types[placeholder] = entity_type
+            context_start = max(0, int(entity.start) - 80)
+            context_end = min(len(text), int(entity.end) + 80)
+            source_context = text[context_start:context_end].strip()
+            source_context_with_token = (
+                text[context_start:entity.start]
+                + placeholder
+                + text[entity.end:context_end]
+            ).strip()
+            manifest_entity_contexts[placeholder] = {
+                "original": original,
+                "source_context": source_context,
+                "source_context_with_token": source_context_with_token,
+            }
             result_text = result_text[:entity.start] + replacement + result_text[entity.end:]
+            if db_session is not None:
+                add_pipt_audit_log(
+                    db_session,
+                    operation="desensitize",
+                    status="success",
+                    source=audit_source,
+                    session_id=audit_session_id,
+                    project_id=audit_project_id,
+                    task_id=audit_task_id,
+                    placeholder=placeholder,
+                    entity_type=entity_type,
+                    original_text=original,
+                    text=text,
+                    details={
+                        "registry_status": registry_status,
+                        "method": method,
+                        "placeholder_protocol": str(placeholder_protocol or "legacy"),
+                        "start": entity.start,
+                        "end": entity.end,
+                        "replacement_len": len(replacement),
+                    },
+                )
 
         if db_session is not None:
             try:
@@ -868,6 +1225,12 @@ class DesensitizeEngine:
             mapping_table=mapping_table,
             entities=entities,
             entity_count=len(entities),
+            placeholder_manifest=build_placeholder_manifest(
+                mapping_table,
+                manifest_entity_types,
+                manifest_entity_contexts,
+            ),
+            placeholder_policy=build_placeholder_policy(),
         )
 
 

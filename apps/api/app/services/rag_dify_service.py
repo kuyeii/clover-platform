@@ -157,6 +157,21 @@ def get_default_dataset_id() -> str:
     return _env_value(_config_env_names("dataset", field="default_dataset_id_env") + ["DIFY_DEFAULT_DATASET_ID"])
 
 
+def get_raw_dataset_id() -> str:
+    return _env_value(
+        _config_env_names("dataset", field="raw_dataset_id_env") + ["DIFY_RAW_DATASET_ID", "RAG_RAW_DATASET_ID"],
+        get_default_dataset_id(),
+    )
+
+
+def get_desensitized_dataset_id() -> str:
+    return _env_value(
+        _config_env_names("dataset", field="desensitized_dataset_id_env")
+        + ["DIFY_DESENSITIZED_DATASET_ID", "RAG_DESENSITIZED_DATASET_ID"],
+        get_default_dataset_id(),
+    )
+
+
 def _build_chat_payload(
     settings: RagChatSettings,
     *,

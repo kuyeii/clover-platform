@@ -12,6 +12,7 @@ from app.api import (
     health,
     modules,
     patent_disclosure,
+    pipt_gateway,
     rag_proxy,
     runtime,
     users,
@@ -25,6 +26,7 @@ router.include_router(auth.router, tags=["portal-auth"])
 router.include_router(users.router, tags=["portal-users"])
 router.include_router(app_usage.router, tags=["portal-app-usage"])
 router.include_router(feedback.router, tags=["portal-feedback"])
+router.include_router(pipt_gateway.router, tags=["pipt-gateway"])
 
 api_router = APIRouter()
 api_router.include_router(router)

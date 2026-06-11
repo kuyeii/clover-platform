@@ -39,6 +39,10 @@ workflows:
       diagram_generation_enabled_env: ENABLE_DIAGRAM_GENERATION
       max_diagram_running_tasks_env: MAX_DIAGRAM_RUNNING_TASKS
       diagram_artifact_dir_env: DIAGRAM_ARTIFACT_DIR
+      diagram_generator_mode_env: DIAGRAM_GENERATOR_MODE
+      mermaid_render_scale_env: MERMAID_RENDER_SCALE
+      mermaid_render_width_env: MERMAID_RENDER_WIDTH
+      mermaid_render_height_env: MERMAID_RENDER_HEIGHT
     managed:
       structure_generator:
         api_key_env: DIFY_WORKFLOW_STRUCTURE_GENERATOR
@@ -52,6 +56,8 @@ workflows:
         api_key_env: DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER
       diagram_generator:
         api_key_env: DIFY_WORKFLOW_DIAGRAM_GENERATOR
+      diagram_generator_mermaid:
+        api_key_env: DIFY_WORKFLOW_DIAGRAM_GENERATOR_MERMAID
       doc_analysis:
         api_key_env: DIFY_WORKFLOW_DOC_ANALYSIS
     legacy:
@@ -79,6 +85,15 @@ workflows:
       api_base_url_env: DIFY_API_BASE_URL
       api_key_env: DIFY_DATASET_API_KEY
       default_dataset_id_env: DIFY_DEFAULT_DATASET_ID
+      raw_dataset_id_env: DIFY_RAW_DATASET_ID
+      desensitized_dataset_id_env: DIFY_DESENSITIZED_DATASET_ID
+      # 仅供后续 Dify 知识库自动初始化使用；运行时文档同步不直接传入这些模型，
+      # 避免目标 Dify 环境未初始化模型凭据时创建文档失败。
+      initialization:
+        embedding_model: text-embedding-v4
+        embedding_model_provider: langgenius/tongyi/tongyi
+        reranking_model_name: qwen3-rerank
+        reranking_provider_name: langgenius/tongyi/tongyi
   competitor_analysis:
     default:
       url_env: WORKFLOW_URL

@@ -60,6 +60,8 @@ services:
       PATENT_DISCLOSURE_CNIPA_TIMEOUT_SECONDS: ${PATENT_DISCLOSURE_CNIPA_TIMEOUT_SECONDS:-300}
       PATENT_DISCLOSURE_CNIPA_MAX_RESULTS: ${PATENT_DISCLOSURE_CNIPA_MAX_RESULTS:-20}
       PATENT_DISCLOSURE_TOOL_TIMEOUT_SECONDS: ${PATENT_DISCLOSURE_TOOL_TIMEOUT_SECONDS:-300}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

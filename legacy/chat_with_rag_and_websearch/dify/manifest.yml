@@ -55,6 +55,11 @@ datasets:
     required: false
     local_source: data
     description: 后端知识库管理接口默认操作的 Dify Dataset。
+    initialization:
+      embedding_model: text-embedding-v4
+      embedding_model_provider: langgenius/tongyi/tongyi
+      reranking_model_name: qwen3-rerank
+      reranking_provider_name: langgenius/tongyi/tongyi
 
 env:
   required:
@@ -81,3 +86,4 @@ validation:
 notes:
   - 旧目录 dify_workflows_dsl 暂时保留，当前 manifest 以 dify/workflows 为新规范入口。
   - DSL 中存在检索/rerank 模型配置，当前 rewrite 工具只改写 LLM 节点，不处理 rerank 模型。
+  - 知识库文档同步路径默认使用目标 Dataset 现有模型配置；上述 initialization 模型仅供后续自动初始化 Dify Dataset 时写入。

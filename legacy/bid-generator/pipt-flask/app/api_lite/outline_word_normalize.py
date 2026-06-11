@@ -2,8 +2,8 @@
 大纲字数归一化：将模型返回的 wordCount 与用户「预期技术方案总字数」对齐。
 
 注意：
-- 一级章节与二级章节预算相互独立，不做父子覆盖。
-- 仅对一级章节总和做归一化，使其更贴近用户输入的总字数目标。
+- 正文生成按最终可写叶子节点的 wordCount 执行，因此归一化必须落到叶子节点。
+- 父章节 wordCount 只作为汇总展示值，由子节点合计回填。
 """
 
 from __future__ import annotations
@@ -63,6 +63,59 @@ def _rebalance_model_leaves(leaves: List[Any], target_total: int, min_leaf: int)
         cur += 1
 
 
+def _dict_word_count(obj: dict) -> int:
+    return int(obj.get("wordCount") or obj.get("word_count") or 0)
+
+
+def _model_word_count(obj: Any) -> int:
+    return int(getattr(obj, "wordCount", 0) or 0)
+
+
+def _collect_dict_budget_units(sections: List[dict]) -> List[dict]:
+    """
+    收集实际正文生成单元：
+    - 有 children 的 H2：children 是正文叶子；
+    - 无 children 的 H2：该 H2 自身是正文单元，如“响应情况”。
+    """
+    units: List[dict] = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        children = [child for child in (section.get("children") or []) if isinstance(child, dict)]
+        if children:
+            units.extend(children)
+        else:
+            units.append(section)
+    return units
+
+
+def _collect_model_budget_units(sections: List[Any]) -> List[Any]:
+    units: List[Any] = []
+    for section in sections:
+        children = list(getattr(section, "children", None) or [])
+        if children:
+            units.extend(children)
+        else:
+            units.append(section)
+    return units
+
+
+def _sync_dict_parent_word_counts(sections: List[dict]) -> None:
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        children = [child for child in (section.get("children") or []) if isinstance(child, dict)]
+        if children:
+            section["wordCount"] = sum(_dict_word_count(child) for child in children)
+
+
+def _sync_model_parent_word_counts(sections: List[Any]) -> None:
+    for section in sections:
+        children = list(getattr(section, "children", None) or [])
+        if children:
+            section.wordCount = sum(_model_word_count(child) for child in children)
+
+
 def normalize_outline_word_budget_dict(sections: List[dict], target_total: int, *, min_leaf: int = 80) -> None:
     """
     就地修改 dict 结构的大纲（与 task_routes._build_sections_list 输出一致）。
@@ -74,16 +127,18 @@ def normalize_outline_word_budget_dict(sections: List[dict], target_total: int, 
     if target_total <= 0:
         return
 
-    # 仅按一级章节归一化，保留二级预算不变
-    top_sections = [s for s in sections if isinstance(s, dict)]
-    if not top_sections:
+    budget_units = _collect_dict_budget_units(sections)
+    if not budget_units:
         return
 
-    weights = [float(max(1, int(s.get("wordCount") or s.get("word_count") or 0))) for s in top_sections]
+    feasible_min = max(0, int(min_leaf)) * len(budget_units)
+    effective_min_leaf = int(min_leaf) if feasible_min <= target_total else 0
+    weights = [float(max(1, _dict_word_count(s))) for s in budget_units]
     amounts = _distribute_proportional(target_total, weights)
-    for s, amt in zip(top_sections, amounts):
-        s["wordCount"] = max(min_leaf, int(amt))
-    _rebalance_dict_leaves(top_sections, target_total, min_leaf)
+    for s, amt in zip(budget_units, amounts):
+        s["wordCount"] = max(effective_min_leaf, int(amt))
+    _rebalance_dict_leaves(budget_units, target_total, effective_min_leaf)
+    _sync_dict_parent_word_counts(sections)
 
 
 def _collect_model_top_sections(sections: List[Any]) -> List[Any]:
@@ -101,7 +156,7 @@ def normalize_outline_word_budget_models(sections: List[Any], target_total: int,
     """
     就地修改 Pydantic OutlineSection 列表（generate_outline 同步接口）。
     target_total <= 0 时不做修改（保留模型原始预算）。
-    仅对一级章节做总量归一化，二级/三级预算不做回卷覆盖。
+    按最终正文叶子节点做总量归一化，并将父章节 wordCount 回填为子节点合计。
     """
     if not sections:
         return
@@ -109,12 +164,15 @@ def normalize_outline_word_budget_models(sections: List[Any], target_total: int,
     if target_total <= 0:
         return
 
-    tops = _collect_model_top_sections(sections)
-    if not tops:
+    budget_units = _collect_model_budget_units(_collect_model_top_sections(sections))
+    if not budget_units:
         return
 
-    weights = [float(max(1, int(getattr(x, "wordCount", 0) or 0))) for x in tops]
+    feasible_min = max(0, int(min_leaf)) * len(budget_units)
+    effective_min_leaf = int(min_leaf) if feasible_min <= target_total else 0
+    weights = [float(max(1, _model_word_count(x))) for x in budget_units]
     amounts = _distribute_proportional(target_total, weights)
-    for x, amt in zip(tops, amounts):
-        x.wordCount = max(min_leaf, int(amt))
-    _rebalance_model_leaves(tops, target_total, min_leaf)
+    for x, amt in zip(budget_units, amounts):
+        x.wordCount = max(effective_min_leaf, int(amt))
+    _rebalance_model_leaves(budget_units, target_total, effective_min_leaf)
+    _sync_model_parent_word_counts(sections)

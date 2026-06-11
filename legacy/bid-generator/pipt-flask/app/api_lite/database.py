@@ -5,15 +5,18 @@ pipt-lite 数据库模块
 """
 
 import hashlib
+import json
 import logging
 import os
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 from pathlib import Path
 from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, Index, Integer, String, Text, create_engine, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 _log = logging.getLogger(__name__)
@@ -183,9 +186,99 @@ class EntityRegistry(Base):
     original_text_enc = Column(String, nullable=False, doc="Fernet 加密后的原始明文")
     placeholder = Column(String, unique=True, nullable=False,
                          doc="{{__PIPT_org_1__}}，全局唯一")
+    strong_placeholder = Column(String, unique=True, nullable=True,
+                                doc="@@PIPT:v1:e000001:kxxxxxxxx@@，新协议强 token")
     global_index = Column(Integer, nullable=False, doc="同 entity_type 下的全局序号")
     first_seen_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
     hit_count = Column(Integer, nullable=False, server_default="1", default=1, doc="被引用次数，供审计")
+
+
+class PiptAuditLog(Base):
+    """PIPT 脱敏识别与回映射审计日志；details 只放上下文和计数，原文仅保留 SHA256。"""
+    __tablename__ = "pipt_audit_logs"
+    __table_args__ = (
+        Index("idx_bid_pipt_audit_logs_operation", "operation"),
+        Index("idx_bid_pipt_audit_logs_status", "status"),
+        Index("idx_bid_pipt_audit_logs_project_id", "project_id"),
+        Index("idx_bid_pipt_audit_logs_session_id", "session_id"),
+        Index("idx_bid_pipt_audit_logs_placeholder", "placeholder"),
+        Index("idx_bid_pipt_audit_logs_created_at", "created_at"),
+        {"schema": SCHEMA_NAME},
+    )
+
+    id = Column(String, primary_key=True, default=lambda: uuid.uuid4().hex)
+    operation = Column(String, nullable=False, doc="recognize / desensitize / restore / resolve")
+    status = Column(String, nullable=False, doc="success / miss / ambiguous / skipped / error")
+    source = Column(String, nullable=False, server_default="", default="", doc="调用来源或链路名称")
+    session_id = Column(String, nullable=True)
+    project_id = Column(String, nullable=True)
+    task_id = Column(String, nullable=True)
+    placeholder = Column(String, nullable=True)
+    entity_type = Column(String, nullable=True)
+    original_hash = Column(String, nullable=True, doc="原文 SHA256，避免审计表泄露明文")
+    text_hash = Column(String, nullable=True, doc="输入或输出文本 SHA256")
+    details = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), default=_utc_now)
+
+
+def hash_audit_text(value: Any) -> str:
+    """生成审计用 SHA256；空值返回空串，避免把敏感原文写入日志。"""
+    text_value = str(value or "")
+    if not text_value:
+        return ""
+    return hashlib.sha256(text_value.encode("utf-8")).hexdigest()
+
+
+def _safe_json_value(value: Any) -> dict[str, Any]:
+    try:
+        json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False, default=str)
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def add_pipt_audit_log(
+    db_session: Any,
+    *,
+    operation: str,
+    status: str,
+    source: str = "",
+    session_id: str | None = None,
+    project_id: str | None = None,
+    task_id: str | None = None,
+    placeholder: str | None = None,
+    entity_type: str | None = None,
+    original_text: Any = None,
+    text: Any = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """
+    写入 PIPT 审计日志。
+    入参中的 original_text/text 仅用于计算 hash，不落明文；调用方可在 details 放非敏感计数和来源。
+    审计使用独立短事务，避免日志表异常污染脱敏映射主事务。
+    """
+    _ = db_session
+    audit_db = SessionLocal()
+    try:
+        audit_db.add(PiptAuditLog(
+            operation=str(operation or "unknown")[:100],
+            status=str(status or "unknown")[:100],
+            source=str(source or "")[:200],
+            session_id=session_id or None,
+            project_id=project_id or None,
+            task_id=task_id or None,
+            placeholder=placeholder or None,
+            entity_type=entity_type or None,
+            original_hash=hash_audit_text(original_text) or None,
+            text_hash=hash_audit_text(text) or None,
+            details=_safe_json_value(details or {}),
+        ))
+        audit_db.commit()
+    except Exception as exc:
+        audit_db.rollback()
+        _log.warning("PIPT 审计日志写入失败: %s", exc)
+    finally:
+        audit_db.close()
 
 
 class ImageRegistry(Base):

@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     FileText, ChevronDown, ChevronRight,
-    AlertTriangle, PanelRightOpen, PanelRightClose, Loader2, Download, RefreshCw, CheckCircle2, RotateCcw
+    AlertTriangle, Loader2, Download, RefreshCw, CheckCircle2, RotateCcw
 } from 'lucide-react';
 import clsx from 'clsx';
 import remarkGfm from 'remark-gfm';
 import type { Project, AnalysisNode } from '../../services/projectService';
 import { projectService } from '../../services/projectService';
-import { ProtectedIframe } from '../ProtectedIframe';
 import { ProtectedMarkdown } from '../ProtectedMarkdown';
+import { ResizablePdfPreviewPane } from '../ResizablePdfPreviewPane';
 
 function TreeNode({ node, depth, activeId, onAnchorClick, extractingIds, selectedIds, onToggleSelect, virtualFilledIds, isLocked: isLockedByParent = false }: {
     node: AnalysisNode;
@@ -1244,38 +1244,11 @@ export default function RequirementsReview({ project, isLocked, onBusyChange }: 
 
                 {/* ── 右：PDF 常驻侧边栏 ── */}
                 {project.pdfUrl && (
-                    <div className={`flex shrink-0 border-l border-gray-200 transition-all duration-200 ${showPdf ? 'w-[46%] min-w-[360px] max-w-[620px]' : 'w-8'}`}>
-                        {/* 左边：常驻纵排按钮条 */}
-                        <button
-                            onClick={() => setShowPdf(!showPdf)}
-                            className="w-8 shrink-0 bg-gray-50 hover:bg-brand-50 border-r border-gray-200 flex flex-col items-center justify-center gap-2 transition-colors group"
-                            title={showPdf ? '收起原文' : '展开查看原始招标文件'}
-                        >
-                            {showPdf
-                                ? <PanelRightClose className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
-                                : <PanelRightOpen className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
-                            }
-                            <span
-                                className="text-xs text-gray-400 group-hover:text-brand-600"
-                                style={{ writingMode: 'vertical-rl', letterSpacing: '0.05em' }}
-                            >
-                                招标文件原文
-                            </span>
-                        </button>
-                        {/* 右侧：PDF iframe */}
-                        {showPdf && (
-                            <div className="flex-1 bg-gray-100 flex flex-col min-w-0">
-                                <div className="px-3 py-2 bg-white border-b border-gray-200 shrink-0">
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">原始招标文件</p>
-                                </div>
-                                <ProtectedIframe
-                                    src={`${project.pdfUrl}#pagemode=none`}
-                                    className="flex-1 w-full border-0"
-                                    title="招标文件预览"
-                                />
-                            </div>
-                        )}
-                    </div>
+                    <ResizablePdfPreviewPane
+                        pdfUrl={project.pdfUrl}
+                        open={showPdf}
+                        onOpenChange={setShowPdf}
+                    />
                 )}
             </div>
 

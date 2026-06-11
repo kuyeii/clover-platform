@@ -3,10 +3,53 @@
  * 数据结构与后端接口对齐，联调时只需替换此文件的实现
  */
 
-import api from './api';
-import { bidGeneratorFetch } from './apiBase';
 import { extractCoreWritingIntent } from './writingHintService';
 import { DiagramServiceError, diagramService, type DiagramRequest, type DiagramSectionResult } from './diagramService';
+import {
+    buildScoringTable as buildScoringTableApi,
+    batchUpsertProjects as batchUpsertProjectsApi,
+    createProject as createProjectApi,
+    deleteProject as deleteProjectApi,
+    deleteProjectCaches as deleteProjectCachesApi,
+    extractBidAttachment as extractBidAttachmentApi,
+    extractBidAttachmentByBlocks as extractBidAttachmentByBlocksApi,
+    extractBidAttachmentDocxByBlocks as extractBidAttachmentDocxByBlocksApi,
+    extractRequirements as extractRequirementsApi,
+    exportScoringTable as exportScoringTableApi,
+    exportReport as exportReportApi,
+    fetchAnalyzeNodeResponse,
+    fetchTaskProgressResponse,
+    fillScoringRow as fillScoringRowApi,
+    fetchAnalysisFramework as fetchAnalysisFrameworkApi,
+    fetchKnowledgeDocuments as fetchKnowledgeDocumentsApi,
+    fetchProjectDocBlocks as fetchProjectDocBlocksApi,
+    fetchSourceDocx as fetchSourceDocxApi,
+    fetchWorkflowStatus as fetchWorkflowStatusApi,
+    forgeDocument as forgeDocumentApi,
+    generateAttachment as generateAttachmentApi,
+    generateBlueprint as generateBlueprintApi,
+    generateContent as generateContentApi,
+    generateOutline as generateOutlineApi,
+    getProject as getProjectApi,
+    getTaskStatus as getTaskStatusApi,
+    listProjects as listProjectsApi,
+    loadAnalysisReport as loadAnalysisReportApi,
+    patchProject as patchProjectApi,
+    reExtractRequirements as reExtractRequirementsApi,
+    rebuildLocator as rebuildLocatorApi,
+    saveAnalysisReport as saveAnalysisReportApi,
+    saveBlobToDisk,
+    startAnalyzeTask as startAnalyzeTaskApi,
+    startContentGroupTask,
+    startContentRewriteTask,
+    startContentTask,
+    startExtractTask as startExtractTaskApi,
+    startGroupReviewTask,
+    startOutlineTask as startOutlineTaskApi,
+    cancelTask as cancelTaskApi,
+    testBidAttachmentLocators as testBidAttachmentLocatorsApi,
+    updateProject as updateProjectApi,
+} from '../../services/bidGeneratorApi';
 
 const DIAGRAM_GENERATION_ENABLED = String(import.meta.env.VITE_ENABLE_DIAGRAM_GENERATION || '').toLowerCase() === 'true';
 const _diagramMaxFromEnv = Number(import.meta.env.VITE_MAX_DIAGRAMS || 3);
@@ -39,6 +82,28 @@ export interface GroupReviewState {
     error?: string;
     stage?: string;
     updatedAt?: string;
+}
+
+type PlaceholderManifest = Record<string, Record<string, string>>;
+type PlaceholderPolicy = Record<string, unknown>;
+
+function buildPlaceholderContextRows(
+    tokens: string[],
+    manifest: PlaceholderManifest = {},
+): Array<Record<string, string>> {
+    return tokens.slice(0, 80).map((token) => {
+        const meta = manifest[token] || {};
+        const sourceContext = String(meta.source_context || '').trim();
+        const tokenContext = String(meta.source_context_with_token || '').trim();
+        const row: Record<string, string> = {
+            token,
+            entity_type: String(meta.entity_type || ''),
+            role: String(meta.role || ''),
+        };
+        if (sourceContext) row.source_context = sourceContext;
+        if (tokenContext) row.source_context_with_token = tokenContext;
+        return row;
+    });
 }
 
 export interface ProjectBusyMeta {
@@ -753,9 +818,19 @@ type ContentGenerationResult = {
     qualityScore?: number;
     feedback?: string;
     replaceReport?: { placeholder: string; original: string }[];
+    placeholderWarning?: PlaceholderWarning;
     diagramError?: string;
     diagramUpdate?: boolean;
     diagramRequest?: DiagramRequest;
+};
+
+export type PlaceholderWarning = {
+    code?: string;
+    message?: string;
+    illegal_count?: number;
+    unresolved_count?: number;
+    has_illegal_placeholder?: boolean;
+    has_unresolved_placeholder?: boolean;
 };
 
 type BatchGenerationUnit =
@@ -809,8 +884,25 @@ function normalizeDiagramSectionResult(row: DiagramSectionResult): ContentGenera
         qualityScore: row.quality_score,
         feedback: row.feedback,
         replaceReport: row.replace_report || [],
+        placeholderWarning: normalizePlaceholderWarning((row as any).placeholder_warning ?? (row as any).placeholderWarning),
         diagramError: extractDiagramErrorMessage(row.diagram_error),
         diagramUpdate: true,
+    };
+}
+
+function normalizePlaceholderWarning(value: unknown): PlaceholderWarning | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const raw = value as Record<string, unknown>;
+    const message = String(raw.message || '').trim() || '模型生成发生错误，请手动修改异常文本或重新生成。';
+    const illegalCount = Number(raw.illegal_count ?? raw.illegalCount ?? 0);
+    const unresolvedCount = Number(raw.unresolved_count ?? raw.unresolvedCount ?? 0);
+    return {
+        code: String(raw.code || 'placeholder_restore_warning'),
+        message,
+        illegal_count: Number.isFinite(illegalCount) ? illegalCount : 0,
+        unresolved_count: Number.isFinite(unresolvedCount) ? unresolvedCount : 0,
+        has_illegal_placeholder: Boolean(raw.has_illegal_placeholder ?? raw.hasIllegalPlaceholder),
+        has_unresolved_placeholder: Boolean(raw.has_unresolved_placeholder ?? raw.hasUnresolvedPlaceholder),
     };
 }
 
@@ -891,6 +983,7 @@ async function runDiagramBatchQueue(
                 qualityScore: req.quality_score,
                 feedback: req.feedback,
                 replaceReport: req.replace_report || [],
+                placeholderWarning: normalizePlaceholderWarning((req as any).placeholder_warning ?? (req as any).placeholderWarning),
                 diagramError: message,
                 diagramUpdate: true,
             });
@@ -1001,12 +1094,13 @@ async function runDiagramBatchQueue(
 /** 将 replace_report 中的占位符替换为原文（流式展示与落盘时与后端脱敏结果对齐） */
 export function applyPlaceholderReportToContent(
     text: string,
-    report?: { placeholder: string; original: string }[],
+    report?: { placeholder: string; original: string; status?: string }[],
 ): string {
     if (!text || !report?.length) return text;
     let out = text;
     for (const row of report) {
         if (!row?.placeholder) continue;
+        if (row.status && row.status !== 'success') continue;
         let original = String(row.original ?? '').trim();
         if (original.startsWith('**') && original.endsWith('**') && original.length > 4) {
             original = original.slice(2, -2).trim();
@@ -1027,6 +1121,16 @@ function extractDiagramErrorMessage(raw: any): string | undefined {
         return text || undefined;
     }
     return undefined;
+}
+
+function extractDiagramSkipMessage(raw: any): string | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const reasons = Array.isArray(raw.reasons)
+        ? raw.reasons.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : [];
+    if (!reasons.length) return undefined;
+    const workflow = String(raw.workflow || 'diagram_generator').trim();
+    return `图表未生成：${workflow} 跳过（${reasons.join('；')}）`;
 }
 
 // ─── 自评评分表行 ────────────────────────────────────────
@@ -1109,6 +1213,15 @@ export interface DocBlocksResponse {
     snapshotOnly: boolean;
 }
 
+export interface KnowledgeDocumentInfo {
+    id: string;
+    name: string;
+    size: string;
+    uploadTime: string;
+    status: 'success' | 'indexing' | 'failed';
+    chunks: number;
+}
+
 export interface Project {
     id: string;
     name: string;                        // 项目名（通常取自招标文件名）
@@ -1131,6 +1244,8 @@ export interface Project {
     outline?: OutlineSection[];          // AI 生成的大纲（含一级+二级标题）
     // ── 脱敏相关（绝不上传至外部服务）────────────────
     mappingTable?: Record<string, string>; // { '{{__PIPT_name_1__}}': '张三' }
+    placeholderManifest?: PlaceholderManifest; // 安全占位符说明，不含敏感明文
+    placeholderPolicy?: PlaceholderPolicy;     // 外部模型占位符保留策略
     imageMap?: Record<string, string | { abs_path: string; preview_url: string; description?: string }>;  // 图片映射表
     // 旧格式：{ '{{IMG_0001}}': '/abs/path' }
     // 新格式：{ '{{IMG_0001}}': {abs_path, preview_url, description} }
@@ -1154,6 +1269,7 @@ export interface Project {
         qualityScore?: number;
         feedback?: string;
         diagramError?: string;
+        placeholderWarning?: PlaceholderWarning;
         error?: string;
         stage?: string;         // 当前工作流阶段，重连时恢复展示
         previousContent?: string;
@@ -1171,6 +1287,127 @@ export interface Project {
         originalVersionId?: string; // 首次生成版本 ID，用于一键复原
         lockedVersionId?: string;   // 章节锁定版本（导出优先使用）
     }>;
+}
+
+function toBidProjectRecord(project: Project) {
+    return {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        data: project as unknown as Record<string, unknown>,
+    };
+}
+
+function toProjectDataPayload(project: Project): Record<string, unknown> {
+    return project as unknown as Record<string, unknown>;
+}
+
+function toLegacyProject(record: { id?: string; name?: string; status?: string; data?: Record<string, unknown>; created_at?: string; updated_at?: string }): Project {
+    const data = (record.data || {}) as Partial<Project>;
+    const now = new Date().toISOString();
+    return {
+        ...data,
+        id: String(data.id || record.id || ''),
+        name: String(data.name || record.name || '未命名标书项目'),
+        bidFileName: String(data.bidFileName || data.name || record.name || '未命名标书项目'),
+        status: (data.status || record.status || 'uploading') as ProjectStatus,
+        createdAt: String(data.createdAt || record.created_at || now),
+        updatedAt: String(data.updatedAt || record.updated_at || now),
+    } as Project;
+}
+
+function toAnalysisNodeList(nodes: unknown[] | undefined): AnalysisNode[] {
+    if (!Array.isArray(nodes)) return [];
+    return nodes.map((node: any) => ({
+        id: String(node?.id || ''),
+        label: String(node?.label || node?.title || ''),
+        content: String(node?.content || ''),
+        parentId: node?.parentId ? String(node.parentId) : undefined,
+        extractionPrompt: node?.extractionPrompt ? String(node.extractionPrompt) : undefined,
+        numbered: node?.numbered === true,
+        children: Array.isArray(node?.children) ? toAnalysisNodeList(node.children) : undefined,
+    })).filter((node) => node.id);
+}
+
+function toRequirementItems(items: unknown[] | undefined): RequirementItem[] {
+    if (!Array.isArray(items)) return [];
+    return items.map((item: any, index: number) => ({
+        id: String(item?.id || `req_${index + 1}`),
+        type: item?.type === 'biz' || item?.type === 'score' ? item.type : 'tech',
+        content: String(item?.content || ''),
+        points: typeof item?.points === 'number' ? item.points : undefined,
+    })).filter((item) => item.content);
+}
+
+function toAttachmentRequirements(items: unknown[] | undefined): AttachmentRequirement[] | undefined {
+    if (!Array.isArray(items) || items.length === 0) return undefined;
+    return items.map((item: any, index) => ({
+        id: String(item?.id || `attachment_${index + 1}`),
+        name: String(item?.name || item?.attachment_name || `附件${index + 1}`),
+        description: String(item?.description || item?.attachment_desc || ''),
+        type: String(item?.type || item?.attachment_type || 'generic'),
+    }));
+}
+
+function toKnowledgeDocumentInfoList(items: unknown[] | undefined): KnowledgeDocumentInfo[] {
+    if (!Array.isArray(items)) return [];
+    return items.map((item: any) => ({
+        id: String(item?.id || ''),
+        name: String(item?.name || ''),
+        size: String(item?.size || ''),
+        uploadTime: String(item?.uploadTime || item?.upload_time || ''),
+        status: (String(item?.status || 'indexing') as KnowledgeDocumentInfo['status']),
+        chunks: Number(item?.chunks || 0),
+    })).filter((item) => item.id && item.name);
+}
+
+function toOutlineSections(sections: unknown[] | undefined): OutlineSection[] {
+    if (!Array.isArray(sections)) return [];
+    return sections.map((section: any) => ({
+        id: String(section?.id || ''),
+        title: String(section?.title || ''),
+        wordCount: Number(section?.wordCount ?? section?.word_count ?? 0),
+        writingHint: String(section?.writingHint ?? section?.writing_hint ?? ''),
+        keywords: Array.isArray(section?.keywords) ? section.keywords.map((item: unknown) => String(item)) : [],
+        relatedAnalysisIds: Array.isArray(section?.relatedAnalysisIds) ? section.relatedAnalysisIds.map((item: unknown) => String(item)) : undefined,
+        needDiagram: Boolean(section?.needDiagram ?? section?.need_diagram ?? false),
+        diagramBrief: String(section?.diagramBrief ?? section?.diagram_brief ?? ''),
+        headingLevel: Number(section?.headingLevel ?? section?.heading_level ?? 2),
+        generationStrategy: String(section?.generationStrategy ?? section?.generation_strategy ?? 'general'),
+        generatesFromSelf: Boolean(section?.generatesFromSelf ?? section?.generates_from_self ?? false),
+        children: Array.isArray(section?.children)
+            ? section.children.map((child: any) => ({
+                id: String(child?.id || ''),
+                title: String(child?.title || ''),
+                wordCount: Number(child?.wordCount ?? child?.word_count ?? 0),
+                writingHint: String(child?.writingHint ?? child?.writing_hint ?? ''),
+                keywords: Array.isArray(child?.keywords) ? child.keywords.map((item: unknown) => String(item)) : [],
+                relatedAnalysisIds: Array.isArray(child?.relatedAnalysisIds) ? child.relatedAnalysisIds.map((item: unknown) => String(item)) : undefined,
+                needDiagram: Boolean(child?.needDiagram ?? child?.need_diagram ?? false),
+                diagramBrief: String(child?.diagramBrief ?? child?.diagram_brief ?? ''),
+                headingLevel: Number(child?.headingLevel ?? child?.heading_level ?? 2),
+                generationStrategy: String(child?.generationStrategy ?? child?.generation_strategy ?? 'general'),
+                generatesFromSelf: Boolean(child?.generatesFromSelf ?? child?.generates_from_self ?? false),
+                children: Array.isArray(child?.children)
+                    ? child.children.map((grandChild: any) => ({
+                        id: String(grandChild?.id || ''),
+                        title: String(grandChild?.title || ''),
+                    })).filter((grandChild: any) => grandChild.id)
+                    : undefined,
+            })).filter((child: any) => child.id)
+            : [],
+    })).filter((section) => section.id);
+}
+
+function toBidderInfoRecord(value: BidderInfo | undefined): Record<string, unknown> | undefined {
+    if (!value) return undefined;
+    return {
+        orgName: value.orgName,
+        legalRep: value.legalRep,
+        projectLead: value.projectLead,
+        phone: value.phone,
+        docDate: value.docDate,
+    };
 }
 
 function normalizeLocator(value: string): string {
@@ -1657,6 +1894,15 @@ function pickLegacyActiveVersion(state: NonNullable<Project['generatedContent']>
     content: string;
     wordCount: number;
 } {
+    if (Array.isArray(state?.versions) && state.versions.length > 0) {
+        const active = state.versions.find((item) => item.id === state.activeVersionId);
+        if (active) {
+            return {
+                content: String(active.content || ''),
+                wordCount: Number(active.wordCount || 0),
+            };
+        }
+    }
     if (typeof state?.content === 'string' && state.content.trim()) {
         return {
             content: state.content,
@@ -1666,8 +1912,7 @@ function pickLegacyActiveVersion(state: NonNullable<Project['generatedContent']>
     if (!Array.isArray(state?.versions) || state.versions.length === 0) {
         return { content: '', wordCount: 0 };
     }
-    const active = state.versions.find((item) => item.id === state.activeVersionId);
-    const fallback = active || state.versions[state.versions.length - 1];
+    const fallback = state.versions[state.versions.length - 1];
     return {
         content: String(fallback?.content || ''),
         wordCount: Number(fallback?.wordCount || 0),
@@ -1695,8 +1940,66 @@ function normalizeGeneratedContentState(
     };
 }
 
+function coerceOutlineWordCount(item: any, fallback = 0): number {
+    const raw = item?.wordCount ?? item?.word_count ?? item?.expectedWordCount ?? item?.expected_word_count ?? fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
+function normalizeOutlineWordFields(outline?: OutlineSection[] | null): OutlineSection[] | undefined {
+    if (!Array.isArray(outline)) return outline || undefined;
+    return outline.map((section: any) => ({
+        ...section,
+        wordCount: coerceOutlineWordCount(section, 0),
+        children: Array.isArray(section.children)
+            ? section.children.map((child: any) => ({
+                ...child,
+                wordCount: coerceOutlineWordCount(child, 0),
+                children: Array.isArray(child.children)
+                    ? child.children.map((leaf: any) => ({
+                        ...leaf,
+                        wordCount: coerceOutlineWordCount(leaf, 0),
+                    }))
+                    : child.children,
+            }))
+            : section.children,
+    }));
+}
+
+function buildPrivacyPlaceholderHint(
+    mappingTable: Record<string, string> = {},
+    manifest: PlaceholderManifest = {},
+): string {
+    const tokens = Object.keys(manifest || {}).length ? Object.keys(manifest) : Object.keys(mappingTable || {});
+    if (!tokens.length) return '';
+    const sample = tokens.slice(0, 8).join('、');
+    const suffix = tokens.length > 8 ? ' ...' : '';
+    const contextRows = buildPlaceholderContextRows(tokens, manifest);
+    return [
+        `文中含 ${tokens.length} 个本地脱敏占位符，统一使用 @@PIPT:v1:e000001:kxxxxxxxx@@ 强 token 样式，兼容历史 {{__PIPT_类型_序号__}} 格式。`,
+        `这些 token 只代表安全语义，不包含真实敏感值；输出必须逐字原样保留，禁止改写、缩写、翻译、拆分或重新编号。`,
+        `可以参考 PIPT_TOKEN_CONTEXT_JSON 理解每个 token 的实体类型和上下文；引用时必须输出 token 本身。`,
+        `PIPT_ALLOWED_PLACEHOLDERS_JSON:${JSON.stringify(tokens)}`,
+        `PIPT_TOKEN_CONTEXT_JSON:${JSON.stringify(contextRows)}`,
+        `当前 token 示例：${sample}${suffix}`,
+    ].join('\n');
+}
+
+function buildContentPlaceholderContext(project?: Project) {
+    const mappingTable = project?.mappingTable || {};
+    const privacyHint = buildPrivacyPlaceholderHint(mappingTable, project?.placeholderManifest || {});
+    return {
+        mappingTable,
+        bidderMappingTable: {},
+        placeholderHint: privacyHint,
+    };
+}
+
 function normalizeProjectCachedData(project: Project): Project {
-    if (!project?.generatedContent) return project;
+    const outline = normalizeOutlineWordFields(project?.outline);
+    if (!project?.generatedContent) {
+        return outline === project?.outline ? project : { ...project, outline };
+    }
     const generatedContent = Object.fromEntries(
         Object.entries(project.generatedContent).map(([blockId, state]) => [
             blockId,
@@ -1705,6 +2008,7 @@ function normalizeProjectCachedData(project: Project): Project {
     );
     return {
         ...project,
+        outline,
         generatedContent,
     };
 }
@@ -1797,26 +2101,17 @@ function mapExtractStageProgress(stage: string): { step: number; label: string; 
 /** 整项目快照同步（仅用于创建/迁移场景） */
 function syncProjectSnapshotToServer(project: Project): void {
     enqueueWrite(async () => {
-        const payload = { id: project.id, name: project.name, status: project.status, data: project };
-        let resp = await bidGeneratorFetch(`/projects/${project.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        if (!resp.ok) {
-            // PUT 失败（项目不存在）→ 尝试 POST 创建
-            resp = await bidGeneratorFetch(`/projects`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+        let proj: any;
+        try {
+            proj = await createProjectApi(toProjectDataPayload(project) as any);
+        } catch {
+            proj = await updateProjectCompat(project.id, {
+                name: project.name,
+                status: project.status,
+                data: toProjectDataPayload(project),
             });
         }
-        if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`);
-        }
-        const body: any = await resp.json().catch(() => null);
-        const proj = (body?.data || body) as Project | undefined;
-        if (proj?.id) applyServerProjectToLocal(proj);
+        if (proj?.id) applyServerProjectToLocal(normalizeProjectFromServer((proj?.data || proj) as Project));
     }, '[sync] 后端同步失败:');
 }
 
@@ -1827,22 +2122,13 @@ function syncProjectPatchToServer(
     fallbackMeta?: { name?: string; status?: string },
 ): void {
     enqueueWrite(async () => {
-        const body = {
-            name: fallbackMeta?.name,
-            status: fallbackMeta?.status,
-            data_patch: patch,
-        };
-        const resp = await bidGeneratorFetch(`/projects/${projectId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`);
-        }
-        const result: any = await resp.json().catch(() => null);
-        const proj = (result?.data || result) as Project | undefined;
-        if (proj?.id) applyServerProjectToLocal(proj);
+        const proj = await patchProjectApi(
+            projectId,
+            patch as unknown as any,
+            fallbackMeta?.status,
+            fallbackMeta?.name,
+        );
+        if (proj?.id) applyServerProjectToLocal(normalizeProjectFromServer((proj?.data || proj) as Project));
     }, '[sync] 项目 patch 失败:');
 }
 
@@ -1852,10 +2138,12 @@ function deleteProjectFromServer(id: string): void {
         // 1) 删除 SQLite 项目记录（project_routes.py），短重试应对瞬时锁冲突
         let projectDeleteOk = false;
         for (let i = 0; i < 3; i += 1) {
-            const pr = await bidGeneratorFetch(`/projects/${id}`, { method: 'DELETE' });
-            if (pr.ok || pr.status === 404) {
+            try {
+                await deleteProjectApi(id);
                 projectDeleteOk = true;
                 break;
+            } catch {
+                // ignore and retry
             }
             if (i < 2) {
                 await new Promise(resolve => setTimeout(resolve, 250 * (i + 1)));
@@ -1864,9 +2152,12 @@ function deleteProjectFromServer(id: string): void {
         if (!projectDeleteOk) throw new Error('project delete failed after retries');
 
         // 2) 删除文件/内存缓存（routes.py）
-        const cr = await bidGeneratorFetch(`/projects/${id}/caches`, { method: 'DELETE' });
-        if (!cr.ok && cr.status !== 404) {
-            throw new Error(`cache delete HTTP ${cr.status}`);
+        try {
+            await deleteProjectCachesApi(id);
+        } catch (error) {
+            if (!(error instanceof Error)) {
+                throw error;
+            }
         }
         // 删除后回读一次后端，确保本地缓存与后端最终一致
         const serverProjects = await fetchServerProjects({ waitForWrites: false });
@@ -1899,9 +2190,7 @@ async function fetchServerProjects(options?: { waitForWrites?: boolean }): Promi
         if (options?.waitForWrites !== false) {
             await writeQueue;
         }
-        const resp = await bidGeneratorFetch(`/projects`);
-        if (!resp.ok) return null;
-        const rows: any[] = await resp.json();
+        const rows: any[] = await listProjectsApi();
         return rows.map((sp: any) => normalizeProjectFromServer((sp?.data || sp) as Project));
     } catch {
         return null;
@@ -1911,9 +2200,7 @@ async function fetchServerProjects(options?: { waitForWrites?: boolean }): Promi
 async function fetchServerProject(id: string): Promise<Project | null> {
     try {
         await writeQueue;
-        const resp = await bidGeneratorFetch(`/projects/${encodeURIComponent(id)}`);
-        if (!resp.ok) return null;
-        const row: any = await resp.json();
+        const row: any = await getProjectApi(id);
         return normalizeProjectFromServer((row?.data || row) as Project);
     } catch {
         return null;
@@ -1977,15 +2264,18 @@ async function migrateToServer(): Promise<{ created: number; updated: number } |
     try {
         const all = loadAll();
         if (!all.length) return null;
-        const payload = all.map(p => ({ id: p.id, name: p.name, status: p.status, data: p }));
-        const resp = await bidGeneratorFetch(`/projects/batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        if (resp.ok) return await resp.json();
+        const payload = all.map(p => ({ id: p.id, name: p.name, status: p.status, data: p })) as any[];
+        const result = await batchUpsertProjectsApi(payload);
+        return {
+            created: Number(result.created || 0),
+            updated: Number(result.updated || 0),
+        };
     } catch { /* 静默 */ }
     return null;
+}
+
+async function updateProjectCompat(projectId: string, patch: { name?: string; status?: string; data?: Record<string, unknown> }) {
+    return updateProjectApi(projectId, patch as any);
 }
 
 // ────────────────────── Service API ──────────────────────
@@ -2079,19 +2369,13 @@ export const projectService = {
         let lastError: Error | null = null;
         for (let i = 0; i < 3; i += 1) {
             try {
-                const resp = await bidGeneratorFetch(`/projects/${id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: Object.prototype.hasOwnProperty.call(patch, 'name') ? updated.name : undefined,
-                        status: Object.prototype.hasOwnProperty.call(patch, 'status') ? updated.status : undefined,
-                        data_patch: patch,
-                    }),
-                });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const body: any = await resp.json().catch(() => null);
-                const proj = (body?.data || body) as Project | undefined;
-                if (proj?.id) applyServerProjectToLocal(proj);
+                const proj = await patchProjectApi(
+                    id,
+                    patch as Record<string, unknown>,
+                    Object.prototype.hasOwnProperty.call(patch, 'status') ? updated.status : undefined,
+                    Object.prototype.hasOwnProperty.call(patch, 'name') ? updated.name : undefined,
+                );
+                if (proj?.id) applyServerProjectToLocal(toLegacyProject(proj));
                 return updated;
             } catch (err) {
                 lastError = err as Error;
@@ -2116,12 +2400,7 @@ export const projectService = {
 
     /** 查询任务状态（后端标准状态机） */
     async getTaskStatus(taskId: string, projectId?: string): Promise<any> {
-        const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        const resp = await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/status${qs}`);
-        if (!resp.ok) {
-            throw new Error(`任务状态查询失败: ${resp.status}`);
-        }
-        const data = await resp.json().catch(() => ({} as any));
+        const data = await getTaskStatusApi(taskId, projectId);
         if (!data?.state && data?.status) {
             data.state = normalizeRuntimeState(data.status);
         }
@@ -2277,8 +2556,7 @@ export const projectService = {
 
     /** 打开通用任务进度 SSE（outline/extract/content 等） */
     async openTaskProgressStream(taskId: string, projectId: string, signal?: AbortSignal): Promise<Response> {
-        const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        return bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/progress${qs}`, { signal });
+        return fetchTaskProgressResponse(taskId, projectId, signal);
     },
 
     /**
@@ -2334,74 +2612,59 @@ export const projectService = {
             return 'auto';
         })();
 
-        const body = {
-            project_id: projectId,
-            requirements,
-            bid_type: bidType,
-            use_knowledge: true,
-            analysis_context: analysisContext,
-            scoring_details_json: scoringDetailsJson,
-            structure_heading_seed_json: structureHeadingSeedJson,
-            technical_h2_bindings_json: technicalH2BindingsJson,
-            technical_targets_json: technicalTargetsJson,
-            outline_batch_strategy: outlineBatchStrategy,
-            outline_auto_parallel_threshold: 4,
-            ...(targetConfig?.totalWords !== undefined && { expected_total_words: targetConfig.totalWords }),
-            enable_diagrams: false,
-            max_diagrams: 0,
-        };
+        try {
+            const resp = await startOutlineTaskApi(
+                toBidProjectRecord({
+                    ...proj,
+                    requirements,
+                    bidType,
+                    analysisReport: proj.analysisReport,
+                    analysisV2: proj.analysisV2,
+                    outlineTaskOverrides: {
+                        scoring_details_json: scoringDetailsJson,
+                        outline_batch_strategy: outlineBatchStrategy,
+                        outline_auto_parallel_threshold: 4,
+                    },
+                } as Project & { outlineTaskOverrides: Record<string, unknown> }),
+                targetConfig?.totalWords || 0,
+            );
+            const taskId = String(resp?.task_id || '').trim();
+            if (!taskId) throw new Error('启动大纲任务失败：后端未返回 task_id');
 
-        const resp = await bidGeneratorFetch(`/tasks/start-outline`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
+            localStorage.setItem(`outline_task_${projectId}`, taskId);
+            this.update(projectId, {
+                status: 'generating_outline',
+                taskRuntime: {
+                    state: 'running',
+                    taskId,
+                    taskType: 'outline',
+                    message: outlineBatchStrategy === 'single' ? '大纲生成中' : '大纲并发生成中',
+                    progress: 0,
+                    startedAt: new Date().toISOString(),
+                    cancellable: true,
+                    updatedAt: new Date().toISOString(),
+                },
+            });
+            return { taskId };
+        } catch (error) {
             this.update(projectId, {
                 taskRuntime: {
                     ...(this.getById(projectId)?.taskRuntime || {}),
                     state: 'failed',
                     taskType: 'outline',
-                    message: `启动大纲任务失败: HTTP ${resp.status}`,
+                    message: error instanceof Error ? error.message : '启动大纲任务失败',
                     progress: 0,
                     cancellable: false,
                     updatedAt: new Date().toISOString(),
                 },
             });
-            throw new Error(`启动大纲任务失败: HTTP ${resp.status}`);
+            throw error;
         }
-        const data = await resp.json().catch(() => ({} as any));
-        const taskId = String(data?.task_id || '').trim();
-        if (!taskId) throw new Error('启动大纲任务失败：后端未返回 task_id');
-
-        localStorage.setItem(`outline_task_${projectId}`, taskId);
-        this.update(projectId, {
-            status: 'generating_outline',
-            taskRuntime: {
-                state: 'running',
-                taskId,
-                taskType: 'outline',
-                message: outlineBatchStrategy === 'single' ? '大纲生成中' : '大纲并发生成中',
-                progress: 0,
-                startedAt: new Date().toISOString(),
-                cancellable: true,
-                updatedAt: new Date().toISOString(),
-            },
-        });
-        return { taskId };
     },
 
     /** 请求取消任务：等待后端完成取消收敛 */
     async cancelTask(taskId: string, projectId?: string): Promise<any> {
-        const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-        const resp = await bidGeneratorFetch(`/tasks/${encodeURIComponent(taskId)}/cancel${qs}`, {
-            method: 'POST',
-        });
-        if (!resp.ok) {
-            const detail = await resp.text().catch(() => '');
-            throw new Error(`任务取消失败: ${resp.status}${detail ? ` ${detail}` : ''}`);
-        }
-        return await resp.json().catch(() => ({} as any));
+        return cancelTaskApi(taskId, projectId);
     },
 
     /** 调用后端 Dify API 提取项目需求（含脱敏预处理） */
@@ -2411,28 +2674,30 @@ export const projectService = {
             formData.append('file', file);
             formData.append('project_name', file.name.replace(/\.\w+$/, ''));
 
-            // 从 localStorage 读取脱敏设置（由侧边栏设置面板写入）
-            const deenSettings = JSON.parse(
-                localStorage.getItem('proengine_desen_settings') || '{}'
-            );
-            formData.append('enable_desensitize', String(deenSettings.enabled !== false)); // 默认 true
-            formData.append('desensitize_profile', deenSettings.profile || 'tender');
-
-            // 是否启用 PyMuPDF4LLM + VLM 多模态增强提取
-            const useVision = localStorage.getItem('proengine_use_vision_parsing') === 'true';
+            const enableDesensitize = true;
+            const desensitizeProfile = 'tender';
+            const useVision = true;
+            formData.append('enable_desensitize', String(enableDesensitize));
+            formData.append('desensitize_profile', desensitizeProfile);
             formData.append('use_vision_parsing', String(useVision));
 
-            const response: any = await api.post('/projects/extract', formData);
+            const response = await extractRequirementsApi({
+                file,
+                projectName: file.name.replace(/\.\w+$/, ''),
+                enableDesensitize,
+                desensitizeProfile,
+                useVisionParsing: useVision,
+            });
 
             return this.update(projectId, {
                 status: 'report_done',        // 进入新工作流：解析完成，等待进入技术方案
-                requirements: response.requirements || [],
+                requirements: toRequirementItems(response.requirements),
                 // 结构化解析报告（新）
                 analysisReport: response.analysis_report?.length
-                    ? response.analysis_report
+                    ? toAnalysisNodeList(response.analysis_report)
                     : undefined,
                 analysisV2: response.analysis_v2?.schema_version
-                    ? response.analysis_v2
+                    ? response.analysis_v2 as unknown as AnalysisV2
                     : undefined,
                 // PDF 预览 URL — 后端返回相对路径，需拼上后端 origin 才能在 iframe 加载
                 pdfUrl: response.pdf_url
@@ -2441,10 +2706,12 @@ export const projectService = {
                 bidType: response.bid_type,
                 summary: response.project_summary,
                 mappingTable: response.mapping_table || {},
-                imageMap: response.image_map || {},
+                placeholderManifest: response.placeholder_manifest || {},
+                placeholderPolicy: response.placeholder_policy || {},
+                imageMap: response.image_map as Record<string, string | { abs_path: string; preview_url: string; description?: string }> || {},
                 entityCount: response.entity_count || 0,
                 requiredAttachments: response.required_attachments?.length
-                    ? response.required_attachments
+                    ? toAttachmentRequirements(response.required_attachments)
                     : undefined,
                 scoringTableTemplate: response.scoring_table_template?.length
                     ? response.scoring_table_template
@@ -2470,26 +2737,19 @@ export const projectService = {
             onError?: (data: { message: string }) => void;
         }
     ): Promise<Project | null> {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('project_name', file.name.replace(/\.\w+$/, ''));
-        formData.append('project_id', projectId);
-
-        const deenSettings = JSON.parse(
-            localStorage.getItem('proengine_desen_settings') || '{}'
-        );
-        formData.append('enable_desensitize', String(deenSettings.enabled !== false));
-        formData.append('desensitize_profile', deenSettings.profile || 'tender');
-        const useVision = localStorage.getItem('proengine_use_vision_parsing') === 'true';
-        formData.append('use_vision_parsing', String(useVision));
+        const enableDesensitize = true;
+        const desensitizeProfile = 'tender';
+        const useVision = true;
 
         // 发起后台任务
-        const startResp = await bidGeneratorFetch(`/tasks/start-extract`, {
-            method: 'POST',
-            body: formData,
+        const { task_id } = await startExtractTaskApi({
+            projectId,
+            file,
+            projectName: file.name.replace(/\.\w+$/, ''),
+            enableDesensitize,
+            desensitizeProfile,
+            useVisionParsing: useVision,
         });
-        if (!startResp.ok) throw new Error(`解析请求失败: ${startResp.status}`);
-        const { task_id } = await startResp.json();
         localStorage.setItem(`extract_task_${projectId}`, task_id);
         // 与 analyze 任务使用统一键，便于全局锁与刷新恢复逻辑复用
         localStorage.setItem(`proengine_analyze_task_${projectId}`, task_id);
@@ -2509,8 +2769,7 @@ export const projectService = {
         let resultData: any = null;
         try {
             // 连接 SSE 进度
-            const response = await bidGeneratorFetch(`/tasks/${task_id}/progress?project_id=${encodeURIComponent(projectId)}`);
-            if (!response.ok) throw new Error(`进度连接失败: ${response.status}`);
+            const response = await fetchTaskProgressResponse(task_id, projectId);
 
             const reader = response.body?.getReader();
             if (!reader) throw new Error('无法获取响应流');
@@ -2598,6 +2857,8 @@ export const projectService = {
                 bidType: resultData.bid_type,
                 summary: resultData.project_summary,
                 mappingTable: resultData.mapping_table || {},
+                placeholderManifest: resultData.placeholder_manifest || {},
+                placeholderPolicy: resultData.placeholder_policy || {},
                 imageMap: resultData.image_map || {},
                 entityCount: resultData.entity_count || 0,
                 requiredAttachments: resultData.required_attachments?.length
@@ -2639,21 +2900,21 @@ export const projectService = {
             const proj = loadAll().find(p => p.id === projectId);
             if (!proj) throw new Error('Project not found');
 
-            const response: any = await api.post('/projects/re-extract', {
-                project_id: projectId,
-                project_name: proj.name,
+            const response = await reExtractRequirementsApi({
+                projectId,
+                projectName: proj.name,
             });
 
             return this.update(projectId, {
                 status: 'reviewing',
-                requirements: response.requirements || [],
+                requirements: toRequirementItems(response.requirements),
                 bidType: response.bid_type,
                 summary: response.project_summary,
                 // 这里 mappingTable 那些通常不变，或者按后端返回更新也行
                 // 后端 re-extract 会透传返回空的 mapping_table，前端这里选择不覆盖之前的（这很重要）
                 // 我们就不在此更新 mappingTable 和 entityCount 了，保留 extract 时留下的状态
                 requiredAttachments: response.required_attachments?.length
-                    ? response.required_attachments
+                    ? toAttachmentRequirements(response.required_attachments)
                     : undefined,
                 scoringTableTemplate: response.scoring_table_template?.length
                     ? response.scoring_table_template
@@ -2673,7 +2934,7 @@ export const projectService = {
     /** 获取预设解析框架配置（含每个节点的 extractionPrompt）*/
     async getAnalysisFramework(): Promise<{ framework: AnalysisNode[], raw: any }> {
         try {
-            const resp: any = await api.get('/config/analysis-framework');
+            const resp: any = await fetchAnalysisFrameworkApi();
             // 将后端 JSON 转换为前端 AnalysisNode 格式
             const convert = (nodes: any[]): AnalysisNode[] =>
                 (nodes || []).map(n => ({
@@ -2694,22 +2955,7 @@ export const projectService = {
 
     /** 导出解析报告 PDF（后端生成） */
     async exportReportPdf(projectName: string, nodes: any[]): Promise<void> {
-        const resp = await bidGeneratorFetch(`/projects/export-report`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_name: projectName, nodes }),
-        });
-        if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        // 从 Content-Disposition 取文件名，取不到则用默认
-        const cd = resp.headers.get('Content-Disposition') || '';
-        const fnMatch = cd.match(/filename\*?=(?:UTF-8'')?(.+)/i);
-        a.download = fnMatch ? decodeURIComponent(fnMatch[1]) : `解析报告_${projectName}.pdf`;
-        a.click();
-        URL.revokeObjectURL(url);
+        saveBlobToDisk(await exportReportApi(projectName, nodes));
     },
 
     /**
@@ -2754,44 +3000,40 @@ export const projectService = {
             formData.append('selected_node_ids', selectedNodeIds.join(','));
         }
 
-        const startRes = await bidGeneratorFetch(`/tasks/start-analyze`, {
-            method: 'POST',
-            body: formData,
-            signal,
-        });
-        if (!startRes.ok) {
+        try {
+            const { task_id } = await startAnalyzeTaskApi(projectId, selectedNodeIds || [], { signal });
+
+            // 存 task_id 供断线重连
+            localStorage.setItem(storageKey, task_id);
+            this.update(projectId, {
+                taskRuntime: {
+                    state: 'running',
+                    taskId: task_id,
+                    taskType: 'analyze',
+                    message: '解析报告生成中',
+                    progress: 0,
+                    startedAt: new Date().toISOString(),
+                    cancellable: true,
+                    updatedAt: new Date().toISOString(),
+                },
+            });
+
+            // ── 2. 监听 progress SSE（复用通用进度流） ──
+            await this._listenAnalyzeProgress(task_id, storageKey, projectId, callbacks, signal);
+        } catch (error) {
             this.update(projectId, {
                 taskRuntime: {
                     ...(this.getById(projectId)?.taskRuntime || {}),
                     state: 'failed',
                     taskType: 'analyze',
-                    message: `解析任务启动失败: ${startRes.status}`,
+                    message: error instanceof Error ? error.message : '解析任务启动失败',
                     progress: 0,
                     cancellable: false,
                     updatedAt: new Date().toISOString(),
                 },
             });
-            throw new Error(`解析任务启动失败: ${startRes.status}`);
+            throw error;
         }
-        const { task_id } = await startRes.json();
-
-        // 存 task_id 供断线重连
-        localStorage.setItem(storageKey, task_id);
-        this.update(projectId, {
-            taskRuntime: {
-                state: 'running',
-                taskId: task_id,
-                taskType: 'analyze',
-                message: '解析报告生成中',
-                progress: 0,
-                startedAt: new Date().toISOString(),
-                cancellable: true,
-                updatedAt: new Date().toISOString(),
-            },
-        });
-
-        // ── 2. 监听 progress SSE（复用通用进度流） ──
-        await this._listenAnalyzeProgress(task_id, storageKey, projectId, callbacks, signal);
     },
 
     /** 重连已有 analyze 任务（刷新/切换后恢复） */
@@ -2830,16 +3072,17 @@ export const projectService = {
         signal?: AbortSignal,
     ): Promise<void> {
 
-        const response = await bidGeneratorFetch(`/tasks/${taskId}/progress?project_id=${encodeURIComponent(projectId)}`, { signal });
-        if (!response.ok) {
-            if (response.status === 404) {
-                // 后端重启或任务过期 → 清除残留 task_id，静默退出，不向用户报错
+        let response: Response;
+        try {
+            response = await fetchTaskProgressResponse(taskId, projectId, signal);
+        } catch (error) {
+            const status = typeof (error as any)?.status === 'number' ? (error as any).status : 0;
+            if (status === 404) {
                 localStorage.removeItem(storageKey);
                 console.warn(`[analyze reconnect] 任务 ${taskId} 已过期（后端重启？），已清除缓存`);
                 return;
             }
-            // 其他 HTTP 错误也不弹给用户，console 记录即可
-            console.warn(`[analyze reconnect] 进度连接失败: ${response.status}`);
+            console.warn(`[analyze reconnect] 进度连接失败: ${status || 'unknown'}`);
             return;
         }
 
@@ -2951,12 +3194,7 @@ export const projectService = {
         onBidAttachments?: (items: BidAttachmentItem[]) => void,
     ): Promise<{ content: string } | null> {
 
-        const res = await bidGeneratorFetch(`/projects/${projectId}/analyze-node`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ node_id: nodeId, node_label: nodeLabel, extraction_prompt: extractionPrompt }),
-        });
-        if (!res.ok) throw new Error(`单节点提取失败: ${res.status}`);
+        const res = await fetchAnalyzeNodeResponse(projectId, nodeId, nodeLabel, extractionPrompt);
 
         // SSE 流式读取
         const reader = res.body?.getReader();
@@ -2997,11 +3235,7 @@ export const projectService = {
     /** 持久化解析报告到后端 */
     async saveAnalysisReport(projectId: string, nodes: AnalysisNode[]): Promise<void> {
         try {
-            await bidGeneratorFetch(`/projects/${projectId}/analysis-report`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ analysis_report: nodes }),
-            });
+            await saveAnalysisReportApi(projectId, nodes);
         } catch (e) {
             console.warn('[persist] 解析报告保存失败（可忽略）:', e);
         }
@@ -3010,13 +3244,11 @@ export const projectService = {
     /** 从后端读取解析报告 */
     async loadAnalysisReport(projectId: string): Promise<AnalysisNode[]> {
         try {
-            const res = await bidGeneratorFetch(`/projects/${projectId}/analysis-report`);
-            if (!res.ok) return [];
-            const data = await res.json();
+            const data = await loadAnalysisReportApi(projectId);
             if (data.analysis_v2?.schema_version) {
-                projectService.update(projectId, { analysisV2: data.analysis_v2 });
+                projectService.update(projectId, { analysisV2: data.analysis_v2 as unknown as AnalysisV2 });
             }
-            return data.analysis_report || [];
+            return toAnalysisNodeList(data.analysis_report);
         } catch {
             return [];
         }
@@ -3045,22 +3277,21 @@ export const projectService = {
             technicalH2BindingsJson = buildTechnicalH2BindingsJson(proj?.analysisV2);
             technicalTargetsJson = buildTechnicalTargetsJson(proj?.analysisV2);
         }
-        const response: any = await api.post('/projects/generate-outline', {
-            project_id: projectId,
+        const response = await generateOutlineApi({
+            projectId,
             requirements,
-            bid_type: bidType,
-            dify_api_key: outlineDifyApiKey,
-            use_knowledge: useKnowledgeBase,
-            analysis_context: analysisContext,
-            structure_heading_seed_json: structureHeadingSeedJson,
-            technical_h2_bindings_json: technicalH2BindingsJson,
-            technical_targets_json: technicalTargetsJson,
-            // undefined 时不附加字段，后端 default=0 自动触发 AI 自决逻辑
-            ...(targetConfig?.totalWords !== undefined && { expected_total_words: targetConfig.totalWords }),
-            enable_diagrams: false,
-            max_diagrams: 0,
+            bidType,
+            difyApiKey: outlineDifyApiKey,
+            useKnowledge: useKnowledgeBase,
+            analysisContext,
+            structureHeadingSeedJson,
+            technicalH2BindingsJson,
+            technicalTargetsJson,
+            expectedTotalWords: targetConfig?.totalWords,
+            enableDiagrams: DIAGRAM_GENERATION_ENABLED,
+            maxDiagrams: DIAGRAM_GENERATION_ENABLED ? DIAGRAM_MAX_PER_PROJECT : 0,
         });
-        return response.sections || [];
+        return toOutlineSections(response.sections);
     },
 
     /** 调用后端 Dify content_writer 工作流生成章节正文 */
@@ -3088,38 +3319,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        // 根据脱敏映射表构建占位符说明，告知 LLM 保留占位符不得删除
-        const mappingTable = proj?.mappingTable || {};
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-
-        // 投标人信息：仅在章节内容自然提及公司/负责人称谓时按需引用，绝不在无关段落强行插入
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [
-                `【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现“投标单位”、“法定代表人”、“项目负责人”等称谓时，才在对应位置引用以下占位符。投标人信息的引用不是每个章节都需要的，请根据实际情况适当引用。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入这些占位符。`,
-                `占位符格式为双下划线包裹，严禁简写（如必须写 {{__BIDDER_ORG__}} 而非 {{BIDDER_ORG}}）：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
 
         // 优先用大纲中的 relatedAnalysisIds 精确查解析节点；无 ID 时降级为关键词模糊匹配
         let analysisContext = '';
@@ -3145,6 +3345,7 @@ export const projectService = {
 
         const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
+        const runtimeSectionOutlineSlice = scopedGlobalOutline || sectionOutlineSlice;
         const coreWritingHint = extractCoreWritingIntent(params.writingHint);
         const requiresSearch = resolveRequiresSearch(
             params.requiresSearch,
@@ -3156,27 +3357,28 @@ export const projectService = {
             generationStrategy,
         );
 
-        const response: any = await api.post('/projects/generate-content', {
-            project_id: params.projectId,
-            section_id: params.sectionId,
-            section_title: params.sectionTitle,
-            writing_hint: coreWritingHint,
+        const response = await generateContentApi({
+            projectId: params.projectId,
+            sectionId: params.sectionId,
+            sectionTitle: params.sectionTitle,
+            writingHint: coreWritingHint,
             keywords: params.keywords,
-            expected_words: params.expectedWords,
-            project_summary: projectSummary,
-            global_outline: scopedGlobalOutline,
-            section_outline_slice: sectionOutlineSlice,
-            requires_search: requiresSearch,
-            placeholder_hint: placeholderHint,
-            analysis_context: analysisContext,  // 注入匹配到的招标文件解析
-            generation_strategy: generationStrategy,
-            enable_diagrams: DIAGRAM_GENERATION_ENABLED,
-            max_diagrams: DIAGRAM_MAX_PER_PROJECT,
-            need_diagram: DIAGRAM_GENERATION_ENABLED && diagramMeta.needDiagram,
-            diagram_brief: DIAGRAM_GENERATION_ENABLED ? diagramMeta.diagramBrief : '',
-            diagram_type_hint: diagramMeta.diagramTypeHint,
-            diagram_priority: diagramMeta.diagramPriority,
-            mapping_table: { ...mappingTable, ...bidderMappingTable },
+            expectedWords: params.expectedWords,
+            projectSummary,
+            globalOutline: scopedGlobalOutline,
+            sectionOutlineSlice: runtimeSectionOutlineSlice,
+            requiresSearch: requiresSearch,
+            placeholderHint,
+            analysisContext,
+            generationStrategy,
+            enableDiagrams: DIAGRAM_GENERATION_ENABLED,
+            maxDiagrams: DIAGRAM_MAX_PER_PROJECT,
+            needDiagram: DIAGRAM_GENERATION_ENABLED && diagramMeta.needDiagram,
+            diagramBrief: DIAGRAM_GENERATION_ENABLED ? diagramMeta.diagramBrief : '',
+            diagramTypeHint: diagramMeta.diagramTypeHint,
+            diagramPriority: diagramMeta.diagramPriority,
+            mappingTable: { ...mappingTable, ...bidderMappingTable },
+            bidderInfo: toBidderInfoRecord(proj?.bidderInfo),
         });
         return {
             content: response.content || '',
@@ -3223,33 +3425,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        const mappingTable = proj?.mappingTable || {};
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [`【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现"投标单位"、"法定代表人"等称谓时，才引用以下占位符。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入。`,
-                `占位符格式为双下划线包裹：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
 
         // 构建 image_map_hint：仅传占位符 + VLM 描述，不暴露服务器绝对路径给 Dify
         const imageMapHint = Object.entries(proj?.imageMap ?? {})
@@ -3292,6 +3468,7 @@ export const projectService = {
                 ? params.sectionOutlineSlice
                 : buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
+        const runtimeSectionOutlineSlice = scopedGlobalOutline || sectionOutlineSlice;
         const coreWritingHint = extractCoreWritingIntent(params.writingHint);
         const requiresSearch = resolveRequiresSearch(
             params.requiresSearch,
@@ -3312,7 +3489,7 @@ export const projectService = {
             expected_words: params.expectedWords,
             project_summary: projectSummary,
             global_outline: scopedGlobalOutline,
-            section_outline_slice: sectionOutlineSlice,
+            section_outline_slice: runtimeSectionOutlineSlice,
             requires_search: requiresSearch,
             placeholder_hint: placeholderHint,
             analysis_context: analysisContext,  // 精确注入招标文件解析上下文
@@ -3321,6 +3498,7 @@ export const projectService = {
             image_map_hint: imageMapHint,
             // 占位符回填兜底（后端优先查 DB，未命中则用该映射）
             mapping_table: { ...mappingTable, ...bidderMappingTable },
+            bidder_info: proj?.bidderInfo ?? {},
             // 结构化图表入参（来自大纲）
             enable_diagrams: enableDiagrams,
             max_diagrams: maxDiagrams,
@@ -3328,7 +3506,7 @@ export const projectService = {
             diagram_brief: enableDiagrams ? diagramMeta.diagramBrief : '',
             diagram_type_hint: diagramMeta.diagramTypeHint,
             diagram_priority: diagramMeta.diagramPriority,
-            defer_diagram: needDeferredDiagram,
+            defer_diagram: false,
         };
         const taskStorageKey = buildContentTaskStorageKey(params.projectId, params.sectionId);
 
@@ -3336,16 +3514,7 @@ export const projectService = {
         (async () => {
             try {
                 // 发起后台任务
-                const startResp = await bidGeneratorFetch(`/tasks/start-content`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                });
-                if (!startResp.ok) {
-                    callbacks.onError(`HTTP ${startResp.status}`);
-                    return;
-                }
-                const { task_id } = await startResp.json();
+                const { task_id } = await startContentTask(requestBody);
                 localStorage.setItem(taskStorageKey, task_id);
                 localStorage.removeItem(`content_task_${params.sectionId}`);
                 setLocalTaskRuntime(params.projectId, {
@@ -3367,24 +3536,7 @@ export const projectService = {
                     if (controller.signal.aborted) break;
 
                     try {
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                setLocalTaskRuntime(params.projectId, {
-                                    state: 'timed_out',
-                                    taskId: task_id,
-                                    taskType: 'content',
-                                    message: '任务不存在或已过期',
-                                    cancellable: false,
-                                });
-                                localStorage.removeItem(taskStorageKey);
-                                localStorage.removeItem(`content_task_${params.sectionId}`);
-                                callbacks.onError('任务不存在或已过期');
-                                break;
-                            }
-                            continue; // 网络抖动，重试
-                        }
-                        const taskStatus = await statusResp.json();
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId);
 
                         // 推送阶段变化
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
@@ -3393,7 +3545,7 @@ export const projectService = {
                         }
 
                         // 进行中阶段性结果：正文先到先展示，图表后到再增量覆盖
-                        const pr = taskStatus.partial_result;
+                        const pr = taskStatus.partial_result as any;
                         if (pr?.partial && pr.content) {
                             const sig = `${pr.phase || 'partial'}:${pr.word_count || 0}:${(pr.content || '').length}:${pr.diagrams_count || 0}`;
                             if (sig !== lastPartialSig) {
@@ -3420,12 +3572,15 @@ export const projectService = {
                                 quality_score?: number;
                                 feedback?: string;
                                 replace_report?: { placeholder: string; original: string }[];
+                                placeholder_warning?: PlaceholderWarning;
                                 diagram_deferred?: boolean;
                                 diagram_request?: DiagramRequest;
                                 diagram_error?: unknown;
+                                diagram_skip?: unknown;
                                 diagram_specs?: unknown;
                             };
-                            const diagramError = extractDiagramErrorMessage(r.diagram_error);
+                            const diagramError = extractDiagramErrorMessage(r.diagram_error)
+                                || extractDiagramSkipMessage(r.diagram_skip);
                             if (diagramError) {
                                 console.warn('[content task] diagram generation degraded to text-only result', {
                                     projectId: params.projectId,
@@ -3457,7 +3612,7 @@ export const projectService = {
                                     writing_hint: coreWritingHint,
                                     keywords: params.keywords,
                                     global_outline: scopedGlobalOutline,
-                                    section_outline_slice: sectionOutlineSlice,
+                                    section_outline_slice: runtimeSectionOutlineSlice,
                                     expected_words: params.expectedWords,
                                     analysis_context: analysisContext,
                                     mapping_table: { ...mappingTable, ...bidderMappingTable },
@@ -3478,6 +3633,7 @@ export const projectService = {
                                 qualityScore: r.quality_score,
                                 feedback: r.feedback,
                                 replaceReport: r.replace_report || [],
+                                placeholderWarning: normalizePlaceholderWarning(r.placeholder_warning),
                                 diagramError,
                                 diagramRequest,
                             });
@@ -3530,7 +3686,21 @@ export const projectService = {
                         }
                         // 任务仍在运行：逐步放宽轮询间隔，降低服务压力
                         pollMs = Math.min(5000, pollMs + 500);
-                    } catch { /* 网络异常，忽略并重试 */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            setLocalTaskRuntime(params.projectId, {
+                                state: 'timed_out',
+                                taskId: task_id,
+                                taskType: 'content',
+                                message: '任务不存在或已过期',
+                                cancellable: false,
+                            });
+                            localStorage.removeItem(taskStorageKey);
+                            localStorage.removeItem(`content_task_${params.sectionId}`);
+                            callbacks.onError('任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '生成失败');
@@ -3569,6 +3739,7 @@ export const projectService = {
             qualityScore?: number;
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
+            placeholderWarning?: PlaceholderWarning;
             diagramError?: string;
             diagramUpdate?: boolean;
         }) => void;
@@ -3582,33 +3753,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        const mappingTable = proj?.mappingTable || {};
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [`【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现"投标单位"、"法定代表人"等称谓时，才引用以下占位符。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入。`,
-                `占位符格式为双下划线包裹：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
 
         let analysisContext = '';
         let generationStrategy = 'general';
@@ -3631,6 +3776,7 @@ export const projectService = {
 
         const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, params.sectionId);
         const scopedGlobalOutline = buildOutlineNeighborhoodSlice(proj?.outline, params.sectionId, params.globalOutline);
+        const runtimeSectionOutlineSlice = scopedGlobalOutline || sectionOutlineSlice;
         const taskStorageKey = buildContentTaskStorageKey(params.projectId, params.sectionId);
         const requestBody = {
             project_id: params.projectId,
@@ -3641,25 +3787,17 @@ export const projectService = {
             expected_words: params.expectedWords,
             project_summary: projectSummary,
             global_outline: scopedGlobalOutline,
-            section_outline_slice: sectionOutlineSlice,
+            section_outline_slice: runtimeSectionOutlineSlice,
             placeholder_hint: placeholderHint,
             analysis_context: analysisContext,
             generation_strategy: generationStrategy,
             mapping_table: { ...mappingTable, ...bidderMappingTable },
+            bidder_info: proj?.bidderInfo ?? {},
         };
 
         (async () => {
             try {
-                const startResp = await bidGeneratorFetch(`/tasks/start-content-rewrite`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                });
-                if (!startResp.ok) {
-                    callbacks.onError(`HTTP ${startResp.status}`);
-                    return;
-                }
-                const { task_id } = await startResp.json();
+                const { task_id } = await startContentRewriteTask(requestBody);
                 localStorage.setItem(taskStorageKey, task_id);
                 localStorage.removeItem(`content_task_${params.sectionId}`);
                 setLocalTaskRuntime(params.projectId, {
@@ -3678,30 +3816,13 @@ export const projectService = {
                     await new Promise(r => setTimeout(r, pollMs));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                setLocalTaskRuntime(params.projectId, {
-                                    state: 'timed_out',
-                                    taskId: task_id,
-                                    taskType: 'content',
-                                    message: '重生成任务不存在或已过期',
-                                    cancellable: false,
-                                });
-                                localStorage.removeItem(taskStorageKey);
-                                localStorage.removeItem(`content_task_${params.sectionId}`);
-                                callbacks.onError('重生成任务不存在或已过期');
-                                break;
-                            }
-                            continue;
-                        }
-                        const taskStatus = await statusResp.json();
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId);
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                             lastStage = taskStatus.current_stage;
                             callbacks.onStage(lastStage);
                         }
                         if (taskStatus.status === 'done' && taskStatus.result) {
-                            const result = taskStatus.result;
+                            const result = taskStatus.result as any;
                             setLocalTaskRuntime(params.projectId, {
                                 state: 'succeeded',
                                 taskId: task_id,
@@ -3716,6 +3837,7 @@ export const projectService = {
                                 qualityScore: result.quality_score,
                                 feedback: result.feedback,
                                 replaceReport: result.replace_report || [],
+                                placeholderWarning: normalizePlaceholderWarning(result.placeholder_warning),
                             });
                             localStorage.removeItem(taskStorageKey);
                             localStorage.removeItem(`content_task_${params.sectionId}`);
@@ -3761,7 +3883,21 @@ export const projectService = {
                             break;
                         }
                         pollMs = Math.min(5000, pollMs + 500);
-                    } catch { /* 网络抖动时继续轮询 */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            setLocalTaskRuntime(params.projectId, {
+                                state: 'timed_out',
+                                taskId: task_id,
+                                taskType: 'content',
+                                message: '重生成任务不存在或已过期',
+                                cancellable: false,
+                            });
+                            localStorage.removeItem(taskStorageKey);
+                            localStorage.removeItem(`content_task_${params.sectionId}`);
+                            callbacks.onError('重生成任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '重生成失败');
@@ -3786,10 +3922,12 @@ export const projectService = {
             qualityScore?: number;
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
+            placeholderWarning?: PlaceholderWarning;
             diagramError?: string;
             diagramUpdate?: boolean;
             diagramRequest?: DiagramRequest;
         }) => void;
+        onSectionFailed?: (sectionId: string, error: string) => void;
         onDone: (result: {
             sections: Array<{
                 sectionId: string;
@@ -3798,6 +3936,7 @@ export const projectService = {
                 qualityScore?: number;
                 feedback?: string;
                 replaceReport?: { placeholder: string; original: string }[];
+                placeholderWarning?: PlaceholderWarning;
                 diagramError?: string;
                 diagramRequest?: DiagramRequest;
                 diagramUpdate?: boolean;
@@ -3817,33 +3956,7 @@ export const projectService = {
             const bp = proj.blueprint;
             projectSummary = `【项目核心定位】\n${bp.positioning}\n\n【整体投标策略】\n${bp.strategy}\n\n【差异化亮点】\n${bp.highlights.map(h => `- ${h}`).join('\n')}\n\n【写作语体基调】\n${bp.writing_style}`;
         }
-        const mappingTable = proj?.mappingTable || {};
-        const placeholderKeys = Object.keys(mappingTable);
-        const piitHint = placeholderKeys.length > 0
-            ? `文中含 ${placeholderKeys.length} 个脱敏占位符（格式严格为 {{__PIPT_*__}}，双下划线包裹），请原样保留，不得删除或修改其格式。`
-            : '';
-        const bidder = proj?.bidderInfo;
-        const bidderMappingTable: Record<string, string> = {};
-        if (bidder?.orgName) bidderMappingTable['{{__BIDDER_ORG__}}'] = bidder.orgName;
-        if (bidder?.legalRep) bidderMappingTable['{{__BIDDER_LEGAL_REP__}}'] = bidder.legalRep;
-        if (bidder?.projectLead) bidderMappingTable['{{__BIDDER_LEAD__}}'] = bidder.projectLead;
-        if (bidder?.phone) bidderMappingTable['{{__BIDDER_PHONE__}}'] = bidder.phone;
-        if (bidder?.docDate) bidderMappingTable['{{__BIDDER_DATE__}}'] = bidder.docDate;
-        const bidderLines: string[] = [];
-        if (bidder?.orgName) bidderLines.push(`投标单位名称：{{__BIDDER_ORG__}}`);
-        if (bidder?.legalRep) bidderLines.push(`法定代表人：{{__BIDDER_LEGAL_REP__}}`);
-        if (bidder?.projectLead) bidderLines.push(`项目负责人：{{__BIDDER_LEAD__}}`);
-        if (bidder?.phone) bidderLines.push(`联系电话：{{__BIDDER_PHONE__}}`);
-        if (bidder?.docDate) bidderLines.push(`文件编制日期：{{__BIDDER_DATE__}}`);
-        const bidderHint = bidderLines.length > 0
-            ? [`【投标人信息占位符使用规则（重要）】`,
-                `仅在章节内容自然需要出现"投标单位"、"法定代表人"等称谓时，才引用以下占位符。`,
-                `禁止在段落结尾、总结语或无需署名的正文中强行插入。`,
-                `占位符格式为双下划线包裹：`,
-                ...bidderLines.map((l: string) => `  ${l}`),
-            ].join('\n')
-            : '';
-        const placeholderHint = [piitHint, bidderHint].filter(Boolean).join('\n\n');
+        const { mappingTable, bidderMappingTable, placeholderHint } = buildContentPlaceholderContext(proj);
         const imageMapHint = Object.entries(proj?.imageMap ?? {})
             .map(([k, v]) => {
                 const desc = typeof v === 'string' ? '' : (v.description ?? '');
@@ -3873,6 +3986,7 @@ export const projectService = {
                 );
             }
             const sectionOutlineSlice = buildSectionOutlineSlice(proj?.outline, block.id);
+            const scopedSectionOutlineSlice = buildOutlineNeighborhoodSlice(proj?.outline, block.id, sectionOutlineSlice);
             const coreWritingHint = extractCoreWritingIntent(block.writingHint);
             const requiresSearch = resolveRequiresSearch(
                 block.requiresSearch,
@@ -3889,7 +4003,7 @@ export const projectService = {
                 writing_hint: coreWritingHint,
                 keywords: block.keywords || block.title,
                 expected_words: block.expectedWords,
-                section_outline_slice: sectionOutlineSlice,
+                section_outline_slice: scopedSectionOutlineSlice || sectionOutlineSlice,
                 analysis_context: analysisContext,
                 requires_search: requiresSearch,
                 generation_strategy: generationStrategy,
@@ -3910,6 +4024,7 @@ export const projectService = {
             placeholder_hint: placeholderHint,
             image_map_hint: imageMapHint,
             mapping_table: { ...mappingTable, ...bidderMappingTable },
+            bidder_info: proj?.bidderInfo ?? {},
             requires_search: normalizedChildren.some(item => item.requires_search),
             enable_diagrams: enableDiagrams,
             max_diagrams: maxDiagrams,
@@ -3918,29 +4033,12 @@ export const projectService = {
 
         (async () => {
             try {
-                const workflowResp = await bidGeneratorFetch(`/config/workflow-status`);
-                if (workflowResp.ok) {
-                    const workflowStatus = await workflowResp.json();
-                    if (workflowStatus?.content_group_writer?.configured === false) {
-                        callbacks.onError('content_group_writer 工作流未配置，请检查 DIFY_WORKFLOW_CONTENT_GROUP_WRITER');
-                        return;
-                    }
-                }
-                const startResp = await bidGeneratorFetch(`/tasks/start-content-group`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                });
-                if (!startResp.ok) {
-                    let detail = `HTTP ${startResp.status}`;
-                    try {
-                        const body = await startResp.json();
-                        detail = body?.detail || detail;
-                    } catch { /* ignore */ }
-                    callbacks.onError(detail);
+                const workflowStatus = await fetchWorkflowStatusApi().catch(() => null);
+                if (workflowStatus?.content_group_writer?.configured === false) {
+                    callbacks.onError('content_group_writer 工作流未配置，请检查 DIFY_WORKFLOW_CONTENT_GROUP_WRITER');
                     return;
                 }
-                const { task_id } = await startResp.json();
+                const { task_id } = await startContentGroupTask(requestBody);
                 params.blocks.forEach((block) => {
                     localStorage.setItem(buildContentTaskStorageKey(params.projectId, block.id), task_id);
                     localStorage.removeItem(`content_task_${block.id}`);
@@ -3966,7 +4064,9 @@ export const projectService = {
                     qualityScore: row.quality_score ?? row.qualityScore,
                     feedback: row.feedback,
                     replaceReport: row.replace_report || row.replaceReport || [],
-                    diagramError: extractDiagramErrorMessage(row.diagram_error ?? row.diagramError),
+                    placeholderWarning: normalizePlaceholderWarning(row.placeholder_warning ?? row.placeholderWarning),
+                    diagramError: extractDiagramErrorMessage(row.diagram_error ?? row.diagramError)
+                        || extractDiagramSkipMessage(row.diagram_skip ?? row.diagramSkip),
                     diagramRequest: row.diagram_request ?? row.diagramRequest,
                 });
                 const deliverPartialSection = (row: any) => {
@@ -3987,30 +4087,9 @@ export const projectService = {
                     await new Promise(r => setTimeout(r, pollMs));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusParams = new URLSearchParams({
-                            project_id: params.projectId,
-                            after_event_id: String(lastPartialEventId),
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId, {
+                            afterEventId: lastPartialEventId,
                         });
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?${statusParams.toString()}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                setLocalTaskRuntime(params.projectId, {
-                                    state: 'timed_out',
-                                    taskId: task_id,
-                                    taskType: 'content',
-                                    message: '分组任务不存在或已过期',
-                                    cancellable: false,
-                                });
-                                params.blocks.forEach((block) => {
-                                    localStorage.removeItem(buildContentTaskStorageKey(params.projectId, block.id));
-                                    localStorage.removeItem(`content_task_${block.id}`);
-                                });
-                                callbacks.onError('分组任务不存在或已过期');
-                                break;
-                            }
-                            continue;
-                        }
-                        const taskStatus = await statusResp.json();
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                             lastStage = taskStatus.current_stage;
                             callbacks.onStage(lastStage);
@@ -4054,6 +4133,10 @@ export const projectService = {
                                 if (deliveredSections.has(section.sectionId)) return;
                                 deliveredSections.add(section.sectionId);
                                 callbacks.onSectionDone(section);
+                            });
+                            failedSections.forEach((failed: any) => {
+                                if (deliveredSections.has(failed.sectionId)) return;
+                                callbacks.onSectionFailed?.(failed.sectionId, failed.error || '分组生成失败');
                             });
                             setLocalTaskRuntime(params.projectId, {
                                 state: 'succeeded',
@@ -4116,7 +4199,23 @@ export const projectService = {
                             break;
                         }
                         pollMs = Math.min(5000, pollMs + 500);
-                    } catch { /* 网络异常，忽略并重试 */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            setLocalTaskRuntime(params.projectId, {
+                                state: 'timed_out',
+                                taskId: task_id,
+                                taskType: 'content',
+                                message: '分组任务不存在或已过期',
+                                cancellable: false,
+                            });
+                            params.blocks.forEach((block) => {
+                                localStorage.removeItem(buildContentTaskStorageKey(params.projectId, block.id));
+                                localStorage.removeItem(`content_task_${block.id}`);
+                            });
+                            callbacks.onError('分组任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '分组生成失败');
@@ -4168,47 +4267,31 @@ export const projectService = {
 
         (async () => {
             try {
-                const startResp = await bidGeneratorFetch(`/tasks/start-group-review`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        project_id: params.projectId,
-                        group_id: params.groupId,
-                        group_title: params.groupTitle,
-                        project_summary: projectSummary,
-                        group_outline: buildOutlineNeighborhoodSlice(outline, params.groupId, ''),
-                        group_analysis_context: groupAnalysisContext,
-                        sections,
-                    }),
+                const { task_id } = await startGroupReviewTask({
+                    project_id: params.projectId,
+                    group_id: params.groupId,
+                    group_title: params.groupTitle,
+                    project_summary: projectSummary,
+                    group_outline: buildOutlineNeighborhoodSlice(outline, params.groupId, ''),
+                    group_analysis_context: groupAnalysisContext,
+                    sections,
                 });
-                if (!startResp.ok) {
-                    callbacks.onError(`HTTP ${startResp.status}`);
-                    return;
-                }
-                const { task_id } = await startResp.json();
                 callbacks.onStage(`🚀 评估任务已提交（${task_id.slice(0, 8)}）`);
                 let lastStage = '';
                 while (!controller.signal.aborted) {
                     await new Promise(r => setTimeout(r, 2000));
                     if (controller.signal.aborted) break;
                     try {
-                        const statusResp = await bidGeneratorFetch(`/tasks/${task_id}/status?project_id=${encodeURIComponent(params.projectId)}`);
-                        if (!statusResp.ok) {
-                            if (statusResp.status === 404) {
-                                callbacks.onError('评估任务不存在或已过期');
-                                break;
-                            }
-                            continue;
-                        }
-                        const taskStatus = await statusResp.json();
+                        const taskStatus = await getTaskStatusApi(task_id, params.projectId);
                         if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                             lastStage = taskStatus.current_stage;
                             callbacks.onStage(lastStage);
                         }
                         if (taskStatus.status === 'done' && taskStatus.result) {
+                            const result = taskStatus.result as any;
                             callbacks.onDone({
-                                feedback: String(taskStatus.result.group_feedback || ''),
-                                qualityScore: taskStatus.result.quality_score,
+                                feedback: String(result.group_feedback || ''),
+                                qualityScore: result.quality_score,
                             });
                             break;
                         }
@@ -4224,7 +4307,12 @@ export const projectService = {
                             callbacks.onError(taskStatus.error || '评估失败');
                             break;
                         }
-                    } catch { /* ignore */ }
+                    } catch (error) {
+                        if ((error as any)?.status === 404) {
+                            callbacks.onError('评估任务不存在或已过期');
+                            break;
+                        }
+                    }
                 }
             } catch (e: any) {
                 if (e.name !== 'AbortError') callbacks.onError(e.message || '评估失败');
@@ -4245,6 +4333,7 @@ export const projectService = {
             qualityScore?: number;
             feedback?: string;
             replaceReport?: { placeholder: string; original: string }[];
+            placeholderWarning?: PlaceholderWarning;
             diagramError?: string;
         }) => void;
         onError: (err: string) => void;
@@ -4263,26 +4352,15 @@ export const projectService = {
                 firstCheck = false;
                 if (controller.signal.aborted) break;
                 try {
-                    const resp = await bidGeneratorFetch(`/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`);
-                    if (!resp.ok) {
-                        if (resp.status === 404) {
-                            // 后端重启或任务过期 → 静默清理，重置到 idle（用户可凭「重新生成」恢复）
-                            localStorage.removeItem(taskStorageKey);
-                            localStorage.removeItem(`content_task_${sectionId}`);
-                            console.warn(`[content resume] 任务 ${taskId} 已过期，已清除缓存`);
-                            callbacks.onExpired?.();
-                            break;
-                        }
-                        continue; // 其他网络抖动，重试
-                    }
-                    const taskStatus = await resp.json();
+                    const taskStatus = await getTaskStatusApi(taskId, projectId);
                     if (taskStatus.current_stage && taskStatus.current_stage !== lastStage) {
                         lastStage = taskStatus.current_stage;
                         callbacks.onStage(lastStage);
                     }
                     if (taskStatus.status === 'done' && taskStatus.result) {
-                        const r = taskStatus.result;
-                        const diagramError = extractDiagramErrorMessage(r.diagram_error);
+                        const r = taskStatus.result as any;
+                        const diagramError = extractDiagramErrorMessage(r.diagram_error)
+                            || extractDiagramSkipMessage(r.diagram_skip);
                         if (diagramError) {
                             console.warn('[content resume] recovered text-only result after diagram failure', {
                                 projectId,
@@ -4298,6 +4376,7 @@ export const projectService = {
                             qualityScore: r.quality_score,
                             feedback: r.feedback,
                             replaceReport: r.replace_report || [],
+                            placeholderWarning: normalizePlaceholderWarning(r.placeholder_warning),
                             diagramError,
                         });
                         localStorage.removeItem(taskStorageKey);
@@ -4323,7 +4402,16 @@ export const projectService = {
                         localStorage.removeItem(`content_task_${sectionId}`);
                         break;
                     }
-                } catch { /* 网络异常，重试 */ }
+                } catch (error) {
+                    if ((error as any)?.status === 404) {
+                        // 后端重启或任务过期时静默清理，用户可凭“重新生成”恢复。
+                        localStorage.removeItem(taskStorageKey);
+                        localStorage.removeItem(`content_task_${sectionId}`);
+                        console.warn(`[content resume] 任务 ${taskId} 已过期，已清除缓存`);
+                        callbacks.onExpired?.();
+                        break;
+                    }
+                }
             }
         })();
 
@@ -4357,42 +4445,18 @@ export const projectService = {
         const proj = loadAll().find(p => p.id === projectId);
         if (!proj) throw new Error('项目不存在');
 
-        // 组装附件列表（使用项目已保存的 requiredAttachments 仅用于过滤，具体内容由前端暂存 state 传入——此处为空，后续可扩展）
-        const attachments: { label: string; content: string }[] = [];
-
-        const payload = {
-            project_id: projectId,
-            project_name: proj.name,
-            sections,
-            scoring_rows: proj.scoringRows ?? [],
-            attachments,
-            mapping_table: proj.mappingTable ?? {},
-            // forge 只传 abs_path 给后端：preview_url 是 API 路径，python-docx 无法通过 URL 读取文件
-            image_map: Object.fromEntries(
+        // 保持 legacy workbench 的 section 组装方式，只把实际接口收敛到统一 service layer。
+        saveBlobToDisk(await forgeDocumentApi(toBidProjectRecord({
+            ...proj,
+            scoringRows: proj.scoringRows ?? [],
+            imageMap: Object.fromEntries(
                 Object.entries(proj.imageMap ?? {}).map(([k, v]) => [
                     k,
                     typeof v === 'string' ? v : v.abs_path,
-                ])
+                ]),
             ),
-            bidder_info: proj.bidderInfo ?? {},
-        };
-
-        // 使用 blob 响应类型直接触发浏览器下载
-        const response = await api.post('/projects/forge-document', payload, {
-            responseType: 'blob',
-        });
-
-        const blob = new Blob([response as unknown as BlobPart], {
-            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${proj.name}_标书文件.docx`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+            bidderInfo: proj.bidderInfo,
+        }), sections as Array<Record<string, unknown>>));
     },
     /** 一键全部生成：串联调用所有章节（SSE 流式，逐 chunk 推送） */
     async generateAll(
@@ -4408,7 +4472,7 @@ export const projectService = {
         /** 外部取消信号：abort 后中断后续 block 的生成 */
         signal?: AbortSignal,
     ): Promise<void> {
-        const maxConcurrency = 2;
+        const maxConcurrency = 1;
         let cursor = 0;
         const activeCtrls = new Map<string, AbortController>();
         const units = buildContentGenerationUnits(blocks);
@@ -4460,9 +4524,15 @@ export const projectService = {
                                             qualityScore: section.qualityScore,
                                             feedback: section.feedback,
                                             replaceReport: section.replaceReport,
+                                            placeholderWarning: section.placeholderWarning,
                                             diagramUpdate: section.diagramUpdate,
                                             diagramRequest: section.diagramRequest,
                                         });
+                                    },
+                                    onSectionFailed: (sectionId, error) => {
+                                        if (!sectionId || deliveredInUnit.has(sectionId)) return;
+                                        deliveredInUnit.add(sectionId);
+                                        onProgress(sectionId, 'error', undefined, error || '分组生成失败');
                                     },
                                     onDone: (res) => {
                                         activeCtrls.delete(unit.key);
@@ -4479,6 +4549,7 @@ export const projectService = {
                                                     qualityScore: section.qualityScore,
                                                     feedback: section.feedback,
                                                     replaceReport: section.replaceReport,
+                                                    placeholderWarning: section.placeholderWarning,
                                                     diagramRequest: section.diagramRequest,
                                                 });
                                                 return;
@@ -4542,6 +4613,7 @@ export const projectService = {
                                             qualityScore: res.qualityScore,
                                             feedback: res.feedback,
                                             replaceReport: res.replaceReport,
+                                            placeholderWarning: res.placeholderWarning,
                                             diagramUpdate: res.diagramUpdate,
                                             diagramRequest: res.diagramRequest,
                                         });
@@ -4663,6 +4735,116 @@ export const projectService = {
                 break;
         }
     },
+
+    async buildScoringTable(project: Project): Promise<ScoringRow[]> {
+        const scoreReqs = (project.requirements ?? [])
+            .filter(r => r.type === 'score')
+            .map((r, i) => ({ id: `score_${i}`, content: r.content, points: r.points ?? 10 }));
+        const res = await buildScoringTableApi({
+            projectId: project.id,
+            scoreRequirements: scoreReqs,
+            scoringTableTemplate: project.scoringTableTemplate || [],
+        });
+        return (res.rows ?? []).map((row: any) => ({
+            id: row.id,
+            indicator: row.indicator,
+            maxScore: row.max_score,
+            criteria: row.criteria ?? '',
+            selfResponse: '',
+            selfComment: '',
+            evidenceRefs: [],
+        }));
+    },
+
+    async fillScoringRow(project: Project, row: ScoringRow): Promise<Partial<ScoringRow>> {
+        const reqsContext = (project.requirements ?? [])
+            .map(r => `[${r.type}] ${r.content}`)
+            .join('\n')
+            .substring(0, 800);
+        const res = await fillScoringRowApi({
+            rowId: row.id,
+            indicator: row.indicator,
+            maxScore: row.maxScore,
+            criteria: row.criteria,
+            projectSummary: project.summary ?? '',
+            requirementsContext: reqsContext,
+        });
+        return {
+            selfResponse: res.self_response as 'full' | 'partial',
+            selfComment: res.self_comment ?? '',
+            evidenceRefs: res.evidence_refs ?? [],
+        };
+    },
+
+    async exportScoringTable(project: Project, rows: ScoringRow[]): Promise<void> {
+        saveBlobToDisk(await exportScoringTableApi(
+            project.name,
+            rows.map(row => ({
+                id: row.id,
+                indicator: row.indicator,
+                max_score: row.maxScore,
+                criteria: row.criteria,
+                self_response: row.selfResponse,
+                self_comment: row.selfComment,
+                evidence_refs: row.evidenceRefs,
+            })),
+        ));
+    },
+
+    async generateAttachment(input: {
+        project: Project;
+        attachmentType: string;
+        attachmentName: string;
+        attachmentDesc: string;
+        recipient: string;
+        bidNo: string;
+        agentName: string;
+        agentId: string;
+    }): Promise<{ label: string; content: string }> {
+        const bidder = input.project.bidderInfo;
+        const res = await generateAttachmentApi({
+            attachmentType: input.attachmentType,
+            attachmentName: input.attachmentName,
+            attachmentDesc: input.attachmentDesc,
+            projectId: input.project.id,
+            orgName: bidder?.orgName || '',
+            legalRep: bidder?.legalRep || '',
+            projectLead: bidder?.projectLead || '',
+            phone: bidder?.phone || '',
+            docDate: bidder?.docDate || '',
+            projectName: input.project.name,
+            recipient: input.recipient,
+            bidNo: input.bidNo,
+            agentName: input.agentName,
+            agentId: input.agentId,
+        });
+        return { label: String(res.label || ''), content: String(res.content || '') };
+    },
+
+    async generateBlueprint(project: Project): Promise<BlueprintData> {
+        const reqs = (project.requirements || [])
+            .filter(requirement => requirement.type !== 'score')
+            .map(requirement => ({ type: requirement.type, content: requirement.content }));
+        const outline = (project.outline || []).map(section => ({ title: section.title }));
+        const res = await generateBlueprintApi({
+            projectId: project.id,
+            bidType: project.bidType || 'tech',
+            projectSummary: project.summary || '',
+            requirements: reqs,
+            outline,
+        });
+        return (res.blueprint || {
+            positioning: '',
+            strategy: '',
+            highlights: [],
+            writing_style: '',
+        }) as unknown as BlueprintData;
+    },
+
+    async getKnowledgeDocuments(): Promise<KnowledgeDocumentInfo[]> {
+        const res: any = await fetchKnowledgeDocumentsApi();
+        return toKnowledgeDocumentInfoList(res?.documents);
+    },
 };
 
 
@@ -4682,45 +4864,43 @@ export const bidAttachmentService = {
         resolvedStartLocator: string;
         resolvedEndLocator: string;
     }> => {
-        const res: any = await api.post('/bid-attachment/extract', {
-            project_id: projectId,
-            start_locator: item.start_locator,
-            end_locator: item.end_locator,
-            attachment_name: item.name,
+        const res = await extractBidAttachmentApi({
+            projectId,
+            startLocator: item.start_locator,
+            endLocator: item.end_locator,
+            attachmentName: item.name,
         });
         return {
-            html: res.html,
-            attachmentName: res.attachment_name,
-            paragraphCount: res.paragraph_count,
+            html: String(res.html || ''),
+            attachmentName: String(res.attachment_name || item.name),
+            paragraphCount: Number(res.paragraph_count || 0),
             resolvedStartLocator: res.resolved_start_locator || item.start_locator,
             resolvedEndLocator: res.resolved_end_locator || item.end_locator,
         };
     },
 
     getDocBlocks: async (projectId: string): Promise<DocBlocksResponse> => {
-        const res: any = await api.get(`/projects/${encodeURIComponent(projectId)}/doc-blocks`);
+        const res = await fetchProjectDocBlocksApi(projectId);
         return {
-            blocks: Array.isArray(res?.blocks) ? res.blocks : [],
+            blocks: Array.isArray(res?.blocks)
+                ? res.blocks.map((item: any) => ({
+                    block_id: String(item?.block_id || ''),
+                    locator: String(item?.locator || ''),
+                    body_idx: Number(item?.body_idx || 0),
+                    type: (item?.type === 'table' ? 'table' : 'paragraph') as 'table' | 'paragraph',
+                    text: String(item?.text || ''),
+                })).filter((item: any) => Boolean(item.block_id))
+                : [],
             snapshotOnly: Boolean(res?.snapshot_only),
         };
     },
 
     getSourceDocx: async (projectId: string): Promise<Blob> => {
-        const resp = await bidGeneratorFetch(`/projects/${encodeURIComponent(projectId)}/source-docx`);
-        if (!resp.ok) {
-            const msg = await resp.text().catch(() => '');
-            throw new Error(msg || `获取原始 DOCX 失败: HTTP ${resp.status}`);
-        }
-        return await resp.blob();
+        return (await fetchSourceDocxApi(projectId)).blob;
     },
 
     rebuildLocator: async (projectId: string, file: File): Promise<{ blocks: number; locators: number }> => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res: any = await api.post(
-            `/projects/${encodeURIComponent(projectId)}/rebuild-locator`,
-            formData
-        );
+        const res = await rebuildLocatorApi(projectId, file);
         return {
             blocks: Number(res?.blocks || 0),
             locators: Number(res?.locators || 0),
@@ -4731,18 +4911,18 @@ export const bidAttachmentService = {
         projectId: string,
         params: { attachmentName: string; startBlockId: string; endBlockId: string },
     ): Promise<{ html: string; attachmentName: string; paragraphCount: number; startBlockId: string; endBlockId: string; snapshotOnly: boolean }> => {
-        const res: any = await api.post('/bid-attachment/extract-by-block', {
-            project_id: projectId,
-            attachment_name: params.attachmentName,
-            start_block_id: params.startBlockId,
-            end_block_id: params.endBlockId,
+        const res = await extractBidAttachmentByBlocksApi({
+            projectId,
+            attachmentName: params.attachmentName,
+            startBlockId: params.startBlockId,
+            endBlockId: params.endBlockId,
         });
         return {
-            html: res.html,
-            attachmentName: res.attachment_name,
-            paragraphCount: res.paragraph_count,
-            startBlockId: res.start_block_id,
-            endBlockId: res.end_block_id,
+            html: String(res.html || ''),
+            attachmentName: String(res.attachment_name || params.attachmentName),
+            paragraphCount: Number(res.paragraph_count || 0),
+            startBlockId: String(res.start_block_id || params.startBlockId),
+            endBlockId: String(res.end_block_id || params.endBlockId),
             snapshotOnly: Boolean(res.snapshot_only),
         };
     },
@@ -4751,21 +4931,13 @@ export const bidAttachmentService = {
         projectId: string,
         params: { attachmentName: string; startBlockId: string; endBlockId: string },
     ): Promise<Blob> => {
-        const resp = await bidGeneratorFetch(`/bid-attachment/extract-by-block-docx`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_id: projectId,
-                attachment_name: params.attachmentName,
-                start_block_id: params.startBlockId,
-                end_block_id: params.endBlockId,
-            }),
+        const download = await extractBidAttachmentDocxByBlocksApi({
+            projectId,
+            attachmentName: params.attachmentName,
+            startBlockId: params.startBlockId,
+            endBlockId: params.endBlockId,
         });
-        if (!resp.ok) {
-            const detail = await resp.text().catch(() => '');
-            throw new Error(`HTTP ${resp.status}${detail ? `: ${detail}` : ''}`);
-        }
-        return await resp.blob();
+        return download.blob;
     },
 
     /**
@@ -4775,7 +4947,16 @@ export const bidAttachmentService = {
         total_locators: number;
         preview: { locator: string; body_idx: number; snippet: string }[];
     }> => {
-        const res: any = await api.get(`/bid-attachment/test-locators?project_id=${encodeURIComponent(projectId)}`);
-        return res;
+        const res = await testBidAttachmentLocatorsApi(projectId);
+        return {
+            total_locators: Number(res.total_locators || 0),
+            preview: Array.isArray(res.preview)
+                ? res.preview.map((item: any) => ({
+                    locator: String(item?.locator || ''),
+                    body_idx: Number(item?.body_idx || 0),
+                    snippet: String(item?.snippet || ''),
+                }))
+                : [],
+        };
     },
 };

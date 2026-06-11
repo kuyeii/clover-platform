@@ -24,6 +24,7 @@ def _find_repo_root() -> Path:
 
 REPO_ROOT = _find_repo_root()
 load_dotenv(REPO_ROOT / ".env", override=False)
+load_dotenv(REPO_ROOT / ".env.local", override=False)
 load_dotenv(BASE_DIR / ".env", override=False)
 
 
@@ -45,7 +46,7 @@ class Settings:
     clause_split_max_concurrency: int = int(os.getenv("CLAUSE_SPLIT_MAX_CONCURRENCY", "3"))
     run_root: Path = Path(os.getenv("RUN_ROOT", "data/runs"))
     debug_save_intermediate: bool = os.getenv("DEBUG_SAVE_INTERMEDIATE", "1") == "1"
-    fast_screen_enabled: bool = os.getenv("FAST_SCREEN_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
+    fast_screen_enabled: bool = os.getenv("FAST_SCREEN_ENABLED", "0").strip().lower() not in {"0", "false", "no", "off"}
     fast_screen_max_candidates: str = str(os.getenv("FAST_SCREEN_MAX_CANDIDATES", "12"))
     analysis_scope: str = os.getenv("ANALYSIS_SCOPE", "full_detail")
 

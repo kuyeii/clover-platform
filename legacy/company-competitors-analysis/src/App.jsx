@@ -1261,6 +1261,33 @@ function isPendingCompetitorIntro(value) {
   return typeof value === "string" && value.includes("正在");
 }
 
+function pickObjectEntriesByIds(source, allowedIds) {
+  if (!source || typeof source !== "object") return {};
+  return Object.fromEntries(Object.entries(source).filter(([id]) => allowedIds.has(id)));
+}
+
+function isCompetitorFailed(competitorId, details = {}, reports = {}) {
+  return details?.[competitorId]?.status === "error" || reports?.[competitorId]?.status === "error";
+}
+
+function filterRenderableCompetitorState(competitors = [], details = {}, reports = {}) {
+  const nextCompetitors = competitors.filter((item) => !isCompetitorFailed(item.id, details, reports));
+  const allowedIds = new Set(nextCompetitors.map((item) => item.id));
+  return {
+    competitors: nextCompetitors,
+    competitorDetails: pickObjectEntriesByIds(details, allowedIds),
+    compareReports: pickObjectEntriesByIds(reports, allowedIds)
+  };
+}
+
+function getVisibleWarnings(warnings) {
+  if (!Array.isArray(warnings)) return [];
+  return warnings.filter((message) => {
+    const text = String(message || "");
+    return !text.startsWith("已过滤竞品") && !text.startsWith("已过滤对比报告生成失败的竞品");
+  });
+}
+
 function CompetitorCard({ item, scoreItem, detailData, detailStatus = "idle", reportStatus = "idle", scoreStatus = "idle", detailError = "", reportError = "", isActive, onClick }) {
   const rawScore = scoreItem?.威胁分数 ?? item.threatScore;
   const score = rawScore === null || rawScore === undefined || rawScore === "" ? NaN : Number(rawScore);
@@ -1998,7 +2025,12 @@ export default function App() {
   const applyRecordSnapshot = useCallback((record, routeState = {}) => {
     const snap = record?.stateSnapshot || {};
     const restoredForm = { ...createEmptyForm(), ...(snap.form || record.input || {}) };
-    const restoredCompetitors = Array.isArray(snap.competitors) ? snap.competitors : [];
+    const restoredState = filterRenderableCompetitorState(
+      Array.isArray(snap.competitors) ? snap.competitors : [],
+      snap.competitorDetails || {},
+      snap.compareReports || {}
+    );
+    const restoredCompetitors = restoredState.competitors;
     const requestedCompetitorId = routeState.selectedCompetitorId || snap.selectedCompetitorId || null;
     const restoredSelectedCompetitorId = restoredCompetitors.some((item) => item.id === requestedCompetitorId)
       ? requestedCompetitorId
@@ -2008,8 +2040,8 @@ export default function App() {
     setTargetCompanyInfo(snap.targetCompanyInfo || null);
     setTargetDetail(snap.targetDetail || null);
     setCompetitors(restoredCompetitors);
-    setCompetitorDetails(snap.competitorDetails || {});
-    setCompareReports(snap.compareReports || {});
+    setCompetitorDetails(restoredState.competitorDetails);
+    setCompareReports(restoredState.compareReports);
     setScoreResult(snap.scoreResult || null);
     setQueryTime(snap.queryTime || record.queryTime || "");
     setSingleMode(Boolean(snap.singleMode || splitCompetitorNames(restoredForm.competitorCompanyName).length === 1));
@@ -2043,7 +2075,8 @@ export default function App() {
     (record, options = {}) => {
       const { syncUrl = true, routeState = {} } = options;
       applyRecordSnapshot(record, routeState);
-      setApiError(Array.isArray(record?.warnings) && record.warnings.length ? record.warnings.join("；") : "");
+      const visibleWarnings = getVisibleWarnings(record?.warnings);
+      setApiError(visibleWarnings.length ? visibleWarnings.join("；") : "");
       if (syncUrl && record?.id) {
         pushResultRoute(record.id, getRecordRouteOptions(record, routeState));
       }
@@ -2407,6 +2440,22 @@ export default function App() {
       setScoreStatus(nextCompetitors.length ? "loading" : "idle");
     };
 
+    const removeCompetitorFromResults = (competitorId) => {
+      if (!competitorId) return;
+      setCompetitors((prev) => prev.filter((item) => item.id !== competitorId));
+      setCompetitorDetails((prev) => {
+        const next = { ...prev };
+        delete next[competitorId];
+        return next;
+      });
+      setCompareReports((prev) => {
+        const next = { ...prev };
+        delete next[competitorId];
+        return next;
+      });
+      setSelectedCompetitorId((prev) => (prev === competitorId ? null : prev));
+    };
+
     const markPendingStagesAsError = (message) => {
       setTargetDetailStatus((prev) => (prev === "loading" ? "error" : prev));
       setTargetDetailError((prev) => prev || message);
@@ -2459,12 +2508,16 @@ export default function App() {
       if (eventType === "competitor_detail_ready") {
         const competitorId = data.competitorId;
         if (!competitorId) return;
+        if (data.status !== "success") {
+          removeCompetitorFromResults(competitorId);
+          return;
+        }
         setCompetitorDetails((prev) => ({
           ...prev,
           [competitorId]: {
-            status: data.status === "success" ? "success" : "error",
-            data: data.status === "success" ? data.data || null : null,
-            error: data.status === "success" ? "" : data.error || "企业详情加载失败"
+            status: "success",
+            data: data.data || null,
+            error: ""
           }
         }));
         return;
@@ -2473,12 +2526,16 @@ export default function App() {
       if (eventType === "compare_report_ready") {
         const competitorId = data.competitorId;
         if (!competitorId) return;
+        if (data.status !== "success") {
+          removeCompetitorFromResults(competitorId);
+          return;
+        }
         setCompareReports((prev) => ({
           ...prev,
           [competitorId]: {
-            status: data.status === "success" ? "success" : "error",
-            text: data.status === "success" ? data.text || "" : "",
-            error: data.status === "success" ? "" : data.error || "对比报告生成失败"
+            status: "success",
+            text: data.text || "",
+            error: ""
           }
         }));
         return;
@@ -2511,7 +2568,8 @@ export default function App() {
         setRunningResultId("");
         restoreHistory(record, { syncUrl: true });
         setHistoryItems((prev) => [record, ...prev.filter((item) => item.id !== record.id)].slice(0, 200));
-        setApiError(Array.isArray(record.warnings) && record.warnings.length ? record.warnings.join("；") : "");
+        const visibleWarnings = getVisibleWarnings(record.warnings);
+        setApiError(visibleWarnings.length ? visibleWarnings.join("；") : "");
         setAnalysisMessage("分析完成");
         setFinalizing(false);
         setIsLoading(false);

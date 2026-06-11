@@ -8,9 +8,9 @@ import {
 } from '@dnd-kit/sortable';
 import { SortableBlock } from './SortableBlock';
 import {
-    AlertCircle, CheckCircle2, Download,
-    FileDown, FileText, FolderTree, Loader2, PanelRightClose, PanelRightOpen,
-    Plus, RefreshCw, RotateCcw, Sparkles, Trash2, UploadIcon, XCircle,
+    AlertCircle, AlertTriangle, CheckCircle2, Download,
+    FileDown, FileText, FolderTree, Loader2,
+    Plus, RefreshCw, RotateCcw, Sparkles, Trash2, UploadIcon, UserRound, XCircle,
 } from 'lucide-react';
 import type { StandardYaml, TemplateBlock } from '../services/configService';
 import { configService } from '../services/configService';
@@ -24,8 +24,10 @@ import {
 import clsx from 'clsx';
 import { ContentEditor } from './ContentEditor';
 import { TaskLoadingState } from './TaskLoadingState';
-import { bidGeneratorFetch } from '../services/apiBase';
-import { ProtectedIframe } from './ProtectedIframe';
+import { BidderInfoDialog } from './BidderInfoDialog';
+import type { BidderInfo } from '../services/projectService';
+import type { PlaceholderWarning } from '../services/projectService';
+import { ResizablePdfPreviewPane } from './ResizablePdfPreviewPane';
 
 interface Props {
     projectId?: string;  // 当前项目 ID
@@ -50,6 +52,18 @@ interface BlockContentState {
     previousWordCount?: number;
     /** 占位符替换报告：模型输出后还原的实体列表 */
     replaceReport?: { placeholder: string; original: string }[];
+    placeholderWarning?: PlaceholderWarning;
+    versions?: Array<{
+        id: string;
+        label: string;
+        type: 'generated' | 'edited' | 'regenerated';
+        content: string;
+        wordCount: number;
+        createdAt: string;
+    }>;
+    activeVersionId?: string;
+    originalVersionId?: string;
+    lockedVersionId?: string;
 }
 
 function isGroupBlock(block?: TemplateBlock | null): boolean {
@@ -68,6 +82,25 @@ function isSelfGeneratingParentBlock(block?: TemplateBlock | null): boolean {
     if (!block || !isContentBlock(block) || block.parent_heading_id) return false;
     if (block.heading_level && block.heading_level !== 2) return false;
     return Boolean(block.generates_from_self || block.generation_strategy === 'response_special');
+}
+
+function resolveExpectedWordCount(source: any, fallback = 1500): number {
+    const raw = source?.wordCount ?? source?.word_count ?? source?.expectedWordCount ?? source?.expected_word_count ?? fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
+function getMissingBidderFields(projectId?: string): string[] {
+    const bidder = projectId ? projectService.getById(projectId)?.bidderInfo : undefined;
+    const required: Array<[keyof NonNullable<typeof bidder>, string]> = [
+        ['orgName', '投标单位全称'],
+        ['legalRep', '法定代表人'],
+        ['projectLead', '项目负责人'],
+        ['phone', '联系电话'],
+    ];
+    return required
+        .filter(([key]) => !String(bidder?.[key] || '').trim())
+        .map(([, label]) => label);
 }
 
 function reorderStructuredBlocks(blocks: TemplateBlock[], activeId: string, overId: string): TemplateBlock[] {
@@ -151,6 +184,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
 
     // 一键生成全部状态
     const [showGenerateAllConfirm, setShowGenerateAllConfirm] = useState(false);
+    const [showBidderInfoDialog, setShowBidderInfoDialog] = useState(false);
     const [isGeneratingAll, setIsGeneratingAll] = useState(false);
     const [, setGenerateAllProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -158,6 +192,8 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     const [checkedBlockIds, setCheckedBlockIds] = useState<Set<string>>(new Set());
     // 已入队但尚未开始生成的 block ID（锁定 checkbox）
     const [queuedBlockIds, setQueuedBlockIds] = useState<Set<string>>(new Set());
+    const missingBidderFields = getMissingBidderFields(projectId);
+    const bidderInfoReady = missingBidderFields.length === 0;
 
     // 配置面板折叠 & 更多菜单
     const [showConfigBeforeGenerate, setShowConfigBeforeGenerate] = useState(false);
@@ -173,6 +209,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     const [contentStates, setContentStates] = useState<Record<string, BlockContentState>>({});
     const hasGeneratingContent = Object.values(contentStates).some((state) => state.status === 'queued' || state.status === 'generating');
     const isContentGenerationBusy = isGeneratingAll || queuedBlockIds.size > 0 || hasGeneratingContent;
+    const hasGeneratedContent = Object.values(contentStates).some((state) => state.status === 'done' && state.content.trim());
     const fileInputRef = useRef<HTMLInputElement>(null);
     // 用于取消 generateAll 的完整串行循环
     const generateAllAbortRef = useRef<AbortController | null>(null);
@@ -219,12 +256,28 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
         qualityScore?: number;
         feedback?: string;
         replaceReport?: { placeholder: string; original: string }[];
+        placeholderWarning?: PlaceholderWarning;
         diagramError?: string;
     }) => {
         setContentStates(prev => {
             const existing = prev[blockId] ?? { status: 'idle', content: '', wordCount: 0 };
             const finalContent = applyPlaceholderReportToContent(result.content || '', result.replaceReport);
             const finalWordCount = countVisibleWords(finalContent);
+            const now = new Date().toISOString();
+            const isRewrite = Boolean(existing.previousContent?.trim() || existing.content?.trim());
+            const versionId = `${isRewrite ? 'regenerated' : 'generated'}_${Date.now()}`;
+            const versions = Array.isArray(existing.versions) ? existing.versions : [];
+            const nextVersions = [
+                ...versions,
+                {
+                    id: versionId,
+                    label: isRewrite ? '重生成版本' : '首次生成',
+                    type: isRewrite ? 'regenerated' as const : 'generated' as const,
+                    content: finalContent,
+                    wordCount: finalWordCount,
+                    createdAt: now,
+                },
+            ];
             const nextState: BlockContentState = {
                 ...existing,
                 status: 'done',
@@ -234,7 +287,14 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                 feedback: result.feedback,
                 diagramError: result.diagramError,
                 replaceReport: result.replaceReport,
+                placeholderWarning: result.placeholderWarning,
                 stage: undefined,
+                previousContent: undefined,
+                previousWordCount: undefined,
+                versions: nextVersions,
+                activeVersionId: versionId,
+                originalVersionId: existing.originalVersionId || versionId,
+                lockedVersionId: undefined,
             };
             const next = { ...prev, [blockId]: nextState };
             if (projectId) projectService.update(projectId, { generatedContent: next });
@@ -390,14 +450,14 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                 },
             });
         };
-        const resetToIdle = () => {
+        const markGenerationError = (message: string) => {
             immediatelyPersist({
                 [block.id]: {
                     ...existing,
-                    status: 'idle',
+                    status: 'error',
                     content: '',
                     wordCount: 0,
-                    error: undefined,
+                    error: message || '生成失败',
                     stage: undefined,
                 },
             });
@@ -424,6 +484,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         feedback: result.feedback,
                         diagramError: result.diagramError,
                         replaceReport: result.replaceReport,
+                        placeholderWarning: result.placeholderWarning,
                     });
                 },
                 onError: (err) => {
@@ -466,6 +527,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         feedback: result.feedback,
                         diagramError: result.diagramError,
                         replaceReport: result.replaceReport,
+                        placeholderWarning: result.placeholderWarning,
                     });
                     if (result.diagramRequest) {
                         patchContentState(block.id, { stage: '🎨 图表生成中' });
@@ -481,6 +543,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                     feedback: diagramResult.feedback,
                                     diagramError: diagramResult.diagramError,
                                     replaceReport: diagramResult.replaceReport,
+                                    placeholderWarning: diagramResult.placeholderWarning,
                                 });
                             },
                         }).finally(() => {
@@ -507,7 +570,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                     delete streamControllersRef.current[`${block.id}_retry`];
                     delete streamControllersRef.current[block.id];
                     console.warn(`[content generate] ${block.title} 失败:`, err);
-                    resetToIdle();
+                    markGenerationError(err || '生成失败');
                 },
             });
 
@@ -644,6 +707,12 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
         setGenerateAllProgress(null);
         setQueuedBlockIds(new Set());
     }, [contentStates, isLocked, getContentTaskKey, projectId]);
+
+    const handleBidderInfoConfirm = useCallback((bidderInfo: BidderInfo) => {
+        if (!projectId) return;
+        projectService.updateBidderInfo(projectId, bidderInfo);
+        setShowBidderInfoDialog(false);
+    }, [projectId]);
 
     useEffect(() => {
         if (!template) return;
@@ -799,7 +868,16 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             },
                         });
                     } else {
-                        immediatelyPersist({ [blockId]: { ...previous, status: 'idle', error: undefined, stage: undefined } });
+                        immediatelyPersist({
+                            [blockId]: {
+                                ...previous,
+                                status: 'error',
+                                content: previous?.content || '',
+                                wordCount: previous?.wordCount || 0,
+                                error: error || '生成失败',
+                                stage: undefined,
+                            },
+                        });
                     }
                     setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
                 }
@@ -918,7 +996,16 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             },
                         });
                     } else {
-                        immediatelyPersist({ [blockId]: { ...previous, status: 'idle', error: undefined, stage: undefined } });
+                        immediatelyPersist({
+                            [blockId]: {
+                                ...previous,
+                                status: 'error',
+                                content: previous?.content || '',
+                                wordCount: previous?.wordCount || 0,
+                                error: error || '生成失败',
+                                stage: undefined,
+                            },
+                        });
                     }
                     setGenerateAllProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null);
                 }
@@ -1023,8 +1110,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             resumeTargets.forEach(({ blockId, taskId }) => {
                                 // 竞态约束：先快速查一次后端状态，若已 done 则直接应用，不等 resumeContentTask 轮询
                                 // 场景：刷新前任务刚完成但结果还没写入 localStorage，后端已有数据
-                                bidGeneratorFetch(`/tasks/${taskId}/status?project_id=${encodeURIComponent(projectId)}`)
-                                    .then(r => r.ok ? r.json() : null)
+                                projectService.getTaskStatus(taskId, projectId)
                                     .then(taskStatus => {
                                         if (taskStatus?.status === 'done' && taskStatus.result) {
                                             // 后端已完成 → 直接应用，无须继续轮询（优先于 localStorage 的 generating 状态）
@@ -1041,6 +1127,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                 feedback: r.feedback,
                                                 diagramError: typeof r.diagram_error === 'object' ? String(r.diagram_error?.message || '') : (r.diagram_error || undefined),
                                                 replaceReport: r.replace_report,
+                                                placeholderWarning: r.placeholder_warning,
                                                 stage: undefined,
                                             }});
                                             localStorage.removeItem(buildContentTaskStorageKey(projectId, blockId));
@@ -1070,6 +1157,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                     feedback: result.feedback,
                                                     diagramError: result.diagramError,
                                                     replaceReport: result.replaceReport,
+                                                    placeholderWarning: result.placeholderWarning,
                                                     stage: undefined,
                                                 }});
                                             },
@@ -1099,6 +1187,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                     feedback: result.feedback,
                                                     diagramError: result.diagramError,
                                                     replaceReport: result.replaceReport,
+                                                    placeholderWarning: result.placeholderWarning,
                                                     stage: undefined,
                                                 }});
                                             },
@@ -1154,7 +1243,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                 need_diagram: child.needDiagram ?? false,
                                 diagram_brief: child.diagramBrief || '',
                                 diagram_plan: child.diagramPlan || undefined,
-                                expected_word_count: child.wordCount,
+                                expected_word_count: resolveExpectedWordCount(child),
                                 requires_search: (child.generationStrategy || child.generation_strategy) === 'response_special' ? false : true,
                                 block_kind: 'content',
                                 heading_level: child.headingLevel || 3,
@@ -1174,7 +1263,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         need_diagram: false,
                         diagram_brief: '',
                         diagram_plan: undefined,
-                        expected_word_count: sec.wordCount,
+                        expected_word_count: resolveExpectedWordCount(sec),
                         requires_search: (sec.generationStrategy || sec.generation_strategy) === 'response_special' ? false : true,
                         block_kind: 'content',
                         heading_level: sec.headingLevel || 2,
@@ -1327,6 +1416,8 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
     const displayContent = activeContent?.content
         ? (showOriginal ? applyMappings(activeContent.content) : activeContent.content)
         : '';
+    const placeholderWarningMessage = activeContent?.placeholderWarning?.message
+        || '模型生成发生错误，请手动修改异常文本或重新生成。';
 
     // 用户手动编辑内容回调
     const handleContentEdit = useCallback((html: string) => {
@@ -1399,6 +1490,21 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    {projectId && (
+                        <button
+                            type="button"
+                            onClick={() => setShowBidderInfoDialog(true)}
+                            className={clsx(
+                                'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-lg hover:bg-gray-50 transition-colors',
+                                bidderInfoReady
+                                    ? 'text-gray-600 bg-white border-gray-200'
+                                    : 'text-warning bg-[var(--color-warning-bg)] border-[var(--color-warning-border)]',
+                            )}
+                        >
+                            <UserRound className="w-3 h-3" />
+                            投标人信息配置
+                        </button>
+                    )}
 
                     {/* 导出技术方案 */}
                     {projectId && (
@@ -1414,7 +1520,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         </button>
                     )}
 
-                    {/* 一键生成：生成中显示进度，无选中→全量弹窗，有选中→直接生成 */}
+                    {/* 一键生成：统一先确认，缺少投标人信息时在弹窗内引导 */}
                     {!isLocked && isGeneratingAll ? (
                         <button onClick={handleCancelGenerateAll}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
@@ -1422,7 +1528,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                         </button>
                     ) : !isLocked ? (
                         <button
-                            onClick={checkedSelectableCount > 0 ? handleGenerateSelected : () => setShowGenerateAllConfirm(true)}
+                            onClick={() => setShowGenerateAllConfirm(true)}
                             disabled={isContentGenerationBusy || contentBlocks.length === 0 || (!hasSelectableBlocks && checkedSelectableCount === 0)}
                             className={clsx(
                                 'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
@@ -1796,10 +1902,20 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                         className="px-2.5 py-1.5 rounded-lg text-sm font-medium text-gray-500 bg-gray-100 border border-gray-200 hover:bg-gray-200 transition-colors"
                                                     >取消生成</button>
                                                 </div>
-                                            ) : (
-                                                <div className="flex items-center gap-1.5">
-                                                    <button
-                                                        onClick={() => {
+	                                            ) : (
+	                                                <div className="flex items-center gap-1.5">
+                                                        {activeContent?.placeholderWarning && (
+                                                            <button
+                                                                type="button"
+                                                                title={placeholderWarningMessage}
+                                                                aria-label={placeholderWarningMessage}
+                                                                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-warning hover:bg-[var(--color-warning-bg)] focus:outline-none focus:ring-2 focus:ring-[var(--color-warning-border)]"
+                                                            >
+                                                                <AlertTriangle className="h-4 w-4" />
+                                                            </button>
+                                                        )}
+	                                                    <button
+	                                                        onClick={() => {
                                                             if (isLocked || isContentGenerationBusy) return;
                                                             const hasDraft = Boolean(activeContent?.content?.trim());
                                                             if (hasDraft) {
@@ -1813,17 +1929,17 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                                             } else {
                                                                 if (activeBlock) handleGenerateContent(activeBlock);
                                                             }
-                                                        }}
-                                                        className={clsx('flex items-center gap-1 transition-colors',
-                                                            activeContent?.content?.trim()
-                                                                ? showConfigBeforeGenerate
+	                                                        }}
+	                                                        className={clsx('flex items-center gap-1 transition-colors',
+	                                                            activeContent?.content?.trim()
+	                                                                ? showConfigBeforeGenerate
                                                                     ? 'text-xs text-brand-600 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-lg'
                                                                     : 'text-xs text-gray-400 hover:text-brand-600 px-1.5 py-0.5 rounded hover:bg-brand-50'
-                                                                : activeContent?.status === 'error'
-                                                                    ? 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-[var(--color-warning-border)] text-warning hover:bg-[var(--color-warning-bg)]'
-                                                                : 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-brand-200 text-brand-600 hover:bg-brand-50')}
-                                                        disabled={isLocked || isContentGenerationBusy}
-                                                    >
+		                                                                : activeContent?.status === 'error'
+		                                                                    ? 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-[var(--color-warning-border)] text-warning hover:bg-[var(--color-warning-bg)]'
+		                                                                : 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-brand-200 text-brand-600 hover:bg-brand-50')}
+		                                                        disabled={isLocked || isContentGenerationBusy}
+		                                                    >
                                                         {activeContent?.content?.trim() ? <><RotateCcw className="w-3 h-3" />{showConfigBeforeGenerate ? '收起配置' : '重新生成'}</>
                                                             : activeContent?.status === 'error' ? <><RefreshCw className="w-3.5 h-3.5" />重试</>
                                                                 : <><Sparkles className="w-3.5 h-3.5" />AI 生成</>}
@@ -1981,17 +2097,24 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                 <div className="mx-5 mt-3 text-sm text-gray-500 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg flex items-center gap-2 shrink-0">
                                     <XCircle className="w-3.5 h-3.5 shrink-0" />【已取消】生成已中断
                                     {!isLocked && activeBlock && (
-                                        <button
-                                            onClick={() => handleGenerateContent(activeBlock)}
-                                            disabled={isContentGenerationBusy}
-                                            className={clsx(
-                                                'ml-auto underline text-xs transition-colors',
-                                                isContentGenerationBusy ? 'cursor-not-allowed text-gray-300 no-underline' : 'hover:text-gray-700',
-                                            )}
+	                                        <button
+	                                            onClick={() => handleGenerateContent(activeBlock)}
+	                                            disabled={isContentGenerationBusy}
+	                                            className={clsx(
+	                                                'ml-auto underline text-xs transition-colors',
+	                                                isContentGenerationBusy ? 'cursor-not-allowed text-gray-300 no-underline' : 'hover:text-gray-700',
+	                                            )}
                                         >
                                             重新生成
                                         </button>
                                     )}
+                                </div>
+                            )}
+
+                            {isContentBlock(activeBlock) && activeContent?.status === 'done' && activeContent.diagramError && (
+                                <div className="mx-5 mt-3 text-sm text-warning bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-3 py-2 rounded-lg flex items-start gap-2 shrink-0">
+                                    <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                    <span className="min-w-0 break-words">{activeContent.diagramError}</span>
                                 </div>
                             )}
 
@@ -2001,6 +2124,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                         <ContentEditor
                                             key={`${selectedBlockId}-${showOriginal}`}
                                             content={displayContent}
+                                            projectId={projectId}
                                             onChange={handleContentEdit}
                                             readOnly={
                                                 isLocked ||
@@ -2039,43 +2163,20 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
 
                 {/* 3. 右侧：PDF 侧边栏（仿解析报告） */}
                 {pdfUrl && (
-                    <div className={`flex shrink-0 border-l border-gray-200 transition-all duration-200 ${showPdf ? 'w-[46%] min-w-[360px] max-w-[620px]' : 'w-8'}`}>
-                        <button
-                            onClick={() => setShowPdf(!showPdf)}
-                            className="w-8 shrink-0 bg-gray-50 hover:bg-brand-50 border-r border-gray-200 flex flex-col items-center justify-center gap-2 transition-colors group"
-                            title={showPdf ? '收起原文' : '展开查看原始招标文件'}
-                        >
-                            {showPdf
-                                ? <PanelRightClose className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
-                                : <PanelRightOpen className="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-600" />
-                            }
-                            <span
-                                className="text-xs text-gray-400 group-hover:text-brand-600"
-                                style={{ writingMode: 'vertical-rl', letterSpacing: '0.05em' }}
-                            >
-                                招标文件原文
-                            </span>
-                        </button>
-                        {showPdf && (
-                            <div className="flex-1 bg-gray-100 flex flex-col min-w-0">
-                                <div className="px-3 py-2 bg-white border-b border-gray-200 shrink-0">
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">原始招标文件</p>
-                                </div>
-                                <ProtectedIframe
-                                    src={`${pdfUrl}#pagemode=none`}
-                                    className="flex-1 w-full border-0"
-                                    title="招标文件预览"
-                                />
-                            </div>
-                        )}
-                    </div>
+                    <ResizablePdfPreviewPane
+                        pdfUrl={pdfUrl}
+                        open={showPdf}
+                        onOpenChange={setShowPdf}
+                    />
                 )}
             </div>
 
             {/* ── 一键生成全部：确认弹窗 ── */}
             {showGenerateAllConfirm && template && (() => {
-                const proj = projectId ? projectService.getById(projectId) : null;
-                const bidderOk = !!(proj?.bidderInfo?.orgName);
+                const bidderOk = bidderInfoReady;
+                const targetCount = checkedSelectableCount > 0 ? checkedSelectableCount : contentBlocks.length;
+                const confirmTitle = checkedSelectableCount > 0 ? '一键生成选中章节' : '一键生成全部章节';
+                const startGenerate = checkedSelectableCount > 0 ? handleGenerateSelected : handleGenerateAll;
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-panel w-full max-w-md mx-4 overflow-hidden">
@@ -2085,7 +2186,7 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                                         <Sparkles className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
-                                        <h3 className="text-base font-bold text-gray-900">一键生成全部章节</h3>
+                                        <h3 className="text-base font-bold text-gray-900">{confirmTitle}</h3>
                                         <p className="text-sm text-gray-500 mt-0.5">系统会按目录顺序生成，并逐节点回填正文</p>
                                     </div>
                                 </div>
@@ -2093,26 +2194,47 @@ export function TemplateEditor({ projectId, pdfUrl, onBusyChange, isLocked = fal
                             <div className="px-6 py-4 space-y-3">
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-gray-600">待生成章节</span>
-                                    <span className="font-semibold text-gray-900">{contentBlocks.length} 个章节</span>
+                                    <span className="font-semibold text-gray-900">{targetCount} 个章节</span>
                                 </div>
                                 <div className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg text-sm',
                                     bidderOk ? 'bg-[var(--color-success-bg)] text-success' : 'bg-[var(--color-warning-bg)] text-warning')}>
                                     {bidderOk
                                         ? <><CheckCircle2 className="w-3.5 h-3.5 shrink-0" />投标人信息已配置</>
-                                        : <><AlertCircle className="w-3.5 h-3.5 shrink-0" />投标人信息未配置</>}
+                                        : <>投标人信息未配置</>}
                                 </div>
                                 <p className="text-sm text-gray-400">单章节失败将自动跳过，不影响其余章节。</p>
                             </div>
                             <div className="px-6 pb-6 flex gap-3">
                                 <button onClick={() => setShowGenerateAllConfirm(false)}
                                     className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">取消</button>
-                                <button onClick={handleGenerateAll}
-                                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand-500 hover:bg-brand-600 transition-all shadow-none ">开始生成</button>
+                                <div className="relative flex-1 group">
+                                    <button onClick={startGenerate}
+                                        disabled={!bidderOk}
+                                        className={clsx('w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-none',
+                                            bidderOk
+                                                ? 'text-white bg-brand-500 hover:bg-brand-600'
+                                                : 'text-gray-400 bg-gray-100 cursor-not-allowed')}>
+                                        开始生成
+                                        {!bidderOk && <AlertCircle className="w-3.5 h-3.5" aria-label="投标人信息提示" />}
+                                    </button>
+                                    {!bidderOk && (
+                                        <span className="pointer-events-none absolute right-0 bottom-full z-10 mb-2 hidden w-56 rounded-lg bg-gray-900 px-3 py-2 text-xs leading-5 text-white shadow-panel group-hover:block">
+                                            完成投标人信息配置后才能开始正文生成。
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
                 );
             })()}
+            <BidderInfoDialog
+                visible={showBidderInfoDialog}
+                initialValue={projectId ? projectService.getById(projectId)?.bidderInfo : undefined}
+                hasGeneratedContent={hasGeneratedContent}
+                onCancel={() => setShowBidderInfoDialog(false)}
+                onConfirm={handleBidderInfoConfirm}
+            />
         </div>
     );
 }

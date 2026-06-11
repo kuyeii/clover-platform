@@ -1,16 +1,17 @@
 import { useEffect, useCallback } from 'react';
-import { Routes, Route, useParams, useNavigate, Navigate, useMatch, useLocation } from 'react-router-dom';
+import { Routes, Route, useParams, useNavigate, Navigate, useMatch } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
-import { KnowledgeHub } from './components/Dashboard/KnowledgeHub';
 import { ProjectCreator } from './components/Project/ProjectCreator';
 import RequirementsReview from './components/Dashboard/RequirementsReview';
 import { OutlineGenerator } from './components/Project/OutlineGenerator';
 import { TemplateEditor } from './components/TemplateEditor';
 import { BidDocWorkbench } from './components/BidDocWorkbench';
 import { TechProposalGate } from './components/TechProposalGate';
+import { BidderInfoDialog } from './components/BidderInfoDialog';
 import { StageTopBar, getCurrentStageIndex, type StageId } from './components/StageTopBar';
-import type { Project, TechProposalConfig } from './services/projectService';
+import type { BidderInfo, Project, TechProposalConfig } from './services/projectService';
 import { buildInitialOutlineFromTechnicalHeadings, projectService } from './services/projectService';
+import { shouldBlockProjectNavigation } from './services/navigationPolicy';
 import { useState } from 'react';
 import { AlertTriangle, FileDown, FolderOpen, Loader2, Lock } from 'lucide-react';
 import { buildBidExportSections } from './utils/bidExport';
@@ -43,6 +44,7 @@ function ProjectView({
   const [isContentBusy, setIsContentBusy] = useState(false);
   const [exportingBidDoc, setExportingBidDoc] = useState(false);
   const [isStartingOutline, setIsStartingOutline] = useState(false);
+  const [showBidderGate, setShowBidderGate] = useState(false);
   const activeBusyMeta = projectService.getProjectBusyMeta(activeProject);
 
   useEffect(() => {
@@ -75,10 +77,9 @@ function ProjectView({
           window.alert('大纲尚未生成完成，请等待大纲任务结束后再进入技术方案。');
           return;
         }
-        projectService.update(activeProject.id, { status: 'editing' });
-        refreshProjects();
+        setShowBidderGate(true);
+        return;
       }
-      navigate(`/projects/${id}/tech`);
     } else if (action === 'go_bid') {
       // 技术方案完成，更新项目状态再跳转
       if (activeProject) {
@@ -141,6 +142,15 @@ function ProjectView({
       });
   };
 
+  const handleBidderGateConfirm = (bidderInfo: BidderInfo) => {
+    if (!activeProject || !id) return;
+    projectService.updateBidderInfo(activeProject.id, bidderInfo);
+    projectService.update(activeProject.id, { status: 'editing' });
+    refreshProjects();
+    setShowBidderGate(false);
+    navigate(`/projects/${id}/tech`);
+  };
+
   // 大纲生成完成：保持在大纲页（状态 outline_ready），由用户点「下一步」再进技术方案
   const handleOutlineConfirmed = (_updated: Project) => {
     refreshProjects();
@@ -180,6 +190,24 @@ function ProjectView({
     </div>
   );
 
+  useEffect(() => {
+    if (activeTab !== 'bid' || !activeProject?.id) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await projectService.syncFromServer();
+        if (!cancelled) refreshProjects();
+      } catch {
+        // 静默刷新失败不打断投标文件编排使用。
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject?.id, activeTab, refreshProjects]);
+
   if (!activeProject) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-400 flex-col gap-3">
@@ -201,24 +229,6 @@ function ProjectView({
     || Boolean(activeProject.outline?.length);
   // 前序阶段默认只读，但技术方案在进入投标文件阶段后仍允许继续编辑和生成。
   const isLockedReadOnly = activeTab !== 'tech' && tabIdx < currentStageIdx;
-
-  useEffect(() => {
-    if (activeTab !== 'bid' || !activeProject?.id) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        await projectService.syncFromServer();
-        if (!cancelled) refreshProjects();
-      } catch {
-        // 静默刷新失败不打断投标文件编排使用。
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProject?.id, activeTab, refreshProjects]);
 
   // ── 内容区渲染 ──
   const renderContent = () => {
@@ -312,6 +322,15 @@ function ProjectView({
         initialConfig={activeProject?.targetConfig}
         disabled={isStartingOutline}
       />
+      <BidderInfoDialog
+        visible={showBidderGate}
+        title="投标人信息配置"
+        subtitle="进入技术方案前请确认投标人信息"
+        initialValue={activeProject?.bidderInfo}
+        submitLabel="进入技术方案"
+        onCancel={() => setShowBidderGate(false)}
+        onConfirm={handleBidderGateConfirm}
+      />
     </>
   );
 }
@@ -321,13 +340,14 @@ function ProjectView({
 // ─────────────────────────────────────────────
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState('');
   const [repairingLocks, setRepairingLocks] = useState(false);
   const [switchWarn, setSwitchWarn] = useState<{
     open: boolean;
     targetLabel: string;
   }>({ open: false, targetLabel: '' });
   const navigate = useNavigate();
-  const location = useLocation();
 
   const refreshProjects = useCallback(() => {
     setProjects(projectService.getAll());
@@ -381,25 +401,46 @@ export default function App() {
 
   // 从 URL 读取当前活跃项目 id 和全局视图
   const projectMatch = useMatch('/projects/:id/:tab');
-  const knowledgeMatch = useMatch('/knowledge');
   const activeProjectId = projectMatch?.params.id ?? null;
   const activeProject = projects.find(p => p.id === activeProjectId) ?? null;
-  const globalTab: 'project' | 'knowledge' = knowledgeMatch ? 'knowledge' : 'project';
+  const globalTab: 'project' = 'project';
 
   const isProjectBusy = useCallback((proj: Project): boolean => {
     return projectService.getProjectBusyMeta(proj).busy;
   }, []);
 
   const hasBusyTask = projects.some(isProjectBusy);
-  const busyProjectId = projects.find((proj) => isProjectBusy(proj))?.id || null;
+  const busyProjectIds = projects.filter(isProjectBusy).map((proj) => proj.id);
+  const activeProjectBusy = shouldBlockProjectNavigation(activeProjectId, busyProjectIds);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
-      await projectService.syncFromServer();
-      await projectService.repairZombieLocks();
-      reconcileProjectStatuses();
-      refreshProjects();
+      try {
+        await projectService.syncFromServer();
+        await projectService.repairZombieLocks();
+        reconcileProjectStatuses();
+        if (!cancelled) {
+          refreshProjects();
+          setBootstrapError('');
+        }
+      } catch (error) {
+        console.warn('[BidGeneratorApp] 首屏同步失败，回退到本地缓存展示。', error);
+        if (!cancelled) {
+          refreshProjects();
+          setBootstrapError('统一后端同步失败，当前已回退到本地缓存展示。');
+        }
+      } finally {
+        if (!cancelled) {
+          setBootstrapping(false);
+        }
+      }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [refreshProjects, reconcileProjectStatuses]);
 
   useEffect(() => {
@@ -421,19 +462,6 @@ export default function App() {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [hasBusyTask]);
-
-  useEffect(() => {
-    if (!busyProjectId) return;
-    if (activeProjectId === busyProjectId) return;
-    const locked = projects.find((proj) => proj.id === busyProjectId);
-    if (!locked) return;
-    if (globalTab === 'knowledge') return;
-    // 新建项目页需要完整展示预处理进度，不应被忙任务自动跳转抢走
-    if (!location.pathname.startsWith('/projects/')) return;
-    if (!activeProjectId) {
-      navigate(`/projects/${busyProjectId}/${getProjectTabByStatus(locked)}`, { replace: true });
-    }
-  }, [busyProjectId, activeProjectId, projects, navigate, globalTab, location.pathname]);
 
   const handleSelectProject = (id: string) => {
     const proj = projects.find(p => p.id === id);
@@ -467,7 +495,7 @@ export default function App() {
   }, [refreshProjects, reconcileProjectStatuses, repairingLocks]);
 
   const guardNavigation = (targetLabel: string, action: () => void) => {
-    if (!busyProjectId || activeProjectId === busyProjectId) {
+    if (!activeProjectBusy) {
       action();
       return;
     }
@@ -480,29 +508,29 @@ export default function App() {
       <Sidebar
         projects={projects}
         activeProjectId={activeProjectId}
-        activeProject={activeProject}
         globalTab={globalTab}
         onSelectProject={handleSelectProject}
         onNewProject={() => guardNavigation('新建项目', () => navigate('/'))}
         onDeleteProject={handleDeleteProject}
-        onOpenKnowledge={() => guardNavigation('知识库管理', () => navigate('/knowledge'))}
-        onBidderInfoUpdated={refreshProjects}
         onRepairLocks={handleRepairZombieLocks}
         repairingLocks={repairingLocks}
-        lockedProjectId={busyProjectId}
-        disableNewProject={Boolean(busyProjectId)}
+        projectsLoading={bootstrapping}
+        lockedProjectId={activeProjectBusy ? activeProjectId : null}
+        disableNewProject={activeProjectBusy}
       />
 
       {/* 右侧主内容区 */}
       <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
+        {bootstrapError ? (
+          <div className="border-b border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-6 py-3 text-sm text-[var(--color-warning-text)]">
+            {bootstrapError}
+          </div>
+        ) : null}
         <Routes>
           {/* 新建项目 */}
           <Route path="/" element={
             <ProjectCreator onProjectCreated={handleProjectCreated} />
           } />
-
-          {/* 知识库 */}
-          <Route path="/knowledge" element={<KnowledgeHub />} />
 
           {/* 项目视图（必须有 tab） */}
           <Route path="/projects/:id/:tab" element={
@@ -530,7 +558,7 @@ export default function App() {
                 <h3 className="text-base font-bold text-gray-900">检测到生成任务进行中</h3>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                当前有真实 AI 任务仍在执行。为避免同一浏览器窗口下的项目状态串扰，任务运行期间不允许切换到「{switchWarn.targetLabel}」。
+                当前项目有真实 AI 任务仍在执行。为避免同一浏览器窗口下的项目状态串扰，任务运行期间不允许切换到「{switchWarn.targetLabel}」。
               </p>
             </div>
             <div className="px-6 pb-6 flex gap-3">

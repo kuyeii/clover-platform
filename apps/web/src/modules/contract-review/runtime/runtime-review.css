@@ -1,0 +1,1598 @@
+/* Contract review runtime styles copied from the pre-migration reviewed UI */
+.contractReviewRuntime {
+--bg: #f4f5f7;
+  --panel: rgba(255, 255, 255, 0.78);
+  --panel-strong: rgba(255, 255, 255, 0.9);
+  --line: rgba(15, 23, 42, 0.08);
+  --line-strong: rgba(15, 23, 42, 0.12);
+  --text: #111827;
+  --muted: #667085;
+  --accent: var(--color-brand);
+  --accent-soft: var(--color-brand-soft);
+  --danger: var(--color-danger-text);
+  --warn: var(--color-warning-text);
+  --info: var(--color-info-text);
+  --shadow-lg: none;
+  --shadow-md: none;
+  --radius-xl: 28px;
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  /* Comment (balloon) sizing: Figma-style, responsive but stable.
+     - Cards should "stick" to the paper edge, so their LEFT edge aligns with the paper boundary.
+     - We reserve horizontal space in `.docRow--withComments` to prevent overlap. */
+  --commentW: clamp(240px, 22vw, 320px);
+  --commentPadRight: calc(var(--commentW) + 24px);
+font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--text);
+  background: #f6f7fb;
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
+.contractReviewRuntime * { box-sizing: border-box; }
+.contractReviewRuntime button, .contractReviewRuntime input { font: inherit; }
+.contractReviewRuntime .hiddenInput {
+display: none;
+}
+.contractReviewRuntime .glassPane {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.contractReviewRuntime .glassInset {
+background: rgba(255,255,255,0.72);
+  border: 1px solid rgba(255,255,255,0.76);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+.contractReviewRuntime .appShell {
+  height: 100vh;
+  min-height: 100vh;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  transition: grid-template-columns 180ms ease;
+}
+
+/* Review-only layout (no left sidebar) */
+.contractReviewRuntime .reviewOnlyShell {
+  height: 100vh;
+  min-height: 100vh;
+  padding: 0;
+}
+.contractReviewRuntime .reviewOnlyShell .contentShell {
+  height: 100vh;
+  overflow: hidden;
+}
+.contractReviewRuntime .reviewOnlyShell .reviewWorkspace {
+  /* Override modern .reviewWorkspace card styles to avoid nested rounded surfaces */
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+}
+.contractReviewRuntime .appShell--sidebarExpanded {
+grid-template-columns: 248px minmax(0, 1fr);
+}
+.contractReviewRuntime .appShell--sidebarCollapsed {
+grid-template-columns: 88px minmax(0, 1fr);
+}
+.contractReviewRuntime .sideNav {
+min-height: 0;
+  border-radius: 28px;
+  padding: 18px 14px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  transition: padding 180ms ease;
+}
+.contractReviewRuntime .sideNav--collapsed {
+align-items: center;
+  padding-inline: 10px;
+}
+.contractReviewRuntime .sideNavTop {
+display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.contractReviewRuntime .sideNav--collapsed .sideNavTop {
+width: 100%;
+  flex-direction: column;
+}
+.contractReviewRuntime .brandPanel {
+display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.contractReviewRuntime .brandBadge {
+width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--color-brand);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  flex: 0 0 auto;
+}
+.contractReviewRuntime .brandMeta {
+min-width: 0;
+}
+.contractReviewRuntime .brandTitle {
+font-weight: 700;
+  font-size: 15px;
+  line-height: 1.2;
+}
+.contractReviewRuntime .brandSubtitle {
+margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.contractReviewRuntime .sideToggleBtn {
+width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 0;
+  background: rgba(255,255,255,0.86);
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06);
+  color: #344054;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.contractReviewRuntime .navList {
+width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.contractReviewRuntime .navItem {
+display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 18px;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+}
+.contractReviewRuntime .sideNav--collapsed .navItem {
+justify-content: center;
+  padding: 8px;
+}
+.contractReviewRuntime .navItem:hover {
+background: rgba(255,255,255,0.62);
+}
+.contractReviewRuntime .navItem--active {
+background: var(--color-brand-soft);
+  box-shadow: inset 0 0 0 1px var(--color-brand-border);
+}
+.contractReviewRuntime .navIconWrap {
+width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,0.72);
+  color: #111827;
+  flex: 0 0 auto;
+}
+.contractReviewRuntime .navItem--active .navIconWrap {
+background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+.contractReviewRuntime .navTextWrap {
+min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.contractReviewRuntime .navLabel {
+font-weight: 650; font-size: 14px;
+}
+.contractReviewRuntime .navDesc {
+font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.contractReviewRuntime .sideNavFooter {
+margin-top: auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.62);
+}
+.contractReviewRuntime .sideNav--collapsed .sideNavFooter {
+justify-content: center;
+  padding: 8px;
+}
+.contractReviewRuntime .sideFooterBadge {
+min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.84);
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.contractReviewRuntime .sideFooterMeta {
+min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.contractReviewRuntime .sideFooterLabel {
+font-size: 12px;
+  color: var(--muted);
+}
+.contractReviewRuntime .sideFooterValue {
+font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contractReviewRuntime .contentShell {
+  min-width: 0;
+  min-height: 0;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(255,255,255,0.68);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.contractReviewRuntime .dashboardPage, .contractReviewRuntime .historyPage, .contractReviewRuntime .reviewWorkspace {
+  height: 100vh;
+  min-height: 100vh;
+  min-height: 0;
+}
+.contractReviewRuntime .dashboardPage, .contractReviewRuntime .historyPage {
+overflow: auto;
+  padding: 28px;
+}
+.contractReviewRuntime .eyebrow {
+font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #98a2b3;
+}
+.contractReviewRuntime .sectionTitle {
+margin: 12px 0 0;
+  font-size: 38px;
+  line-height: 1.12;
+  letter-spacing: -0.05em;
+}
+.contractReviewRuntime .sectionTitle--compact {
+max-width: 760px;
+}
+.contractReviewRuntime .cardTitle {
+font-size: 18px;
+  font-weight: 650;
+}
+.contractReviewRuntime .cardHint, .contractReviewRuntime .latestMetaSub, .contractReviewRuntime .historyRun, .contractReviewRuntime .metricLabel, .contractReviewRuntime .historyMetaLabel {
+font-size: 12px;
+  color: var(--muted);
+}
+.contractReviewRuntime .metricValue {
+margin-top: 8px;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+.contractReviewRuntime .sectionTopBar {
+display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.contractReviewRuntime .sectionTopBar--tight {
+align-items: center;
+  margin-bottom: 18px;
+}
+.contractReviewRuntime .workspaceHero, .contractReviewRuntime .historyHero, .contractReviewRuntime .historyCollection {
+border-radius: var(--radius-xl);
+  padding: 28px;
+}
+.contractReviewRuntime .uploadLayout {
+margin-top: 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+  gap: 18px;
+}
+.contractReviewRuntime .uploadDropzone {
+min-height: 360px;
+  border-radius: 30px;
+  padding: 34px;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-brand-border);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+.contractReviewRuntime .uploadDropzone:hover, .contractReviewRuntime .uploadDropzone--active {
+transform: translateY(-1px);
+  border-color: var(--color-brand-border);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), 0 22px 46px var(--color-focus-ring);
+}
+.contractReviewRuntime .dropzoneIcon {
+width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+.contractReviewRuntime .dropzoneTitle {
+margin-top: 22px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+.contractReviewRuntime .dropzoneHint {
+margin-top: 10px;
+  max-width: 520px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.contractReviewRuntime .dropzoneFilePill {
+margin-top: 20px;
+  max-width: 100%;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.92);
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06);
+  font-size: 13px;
+  color: #475467;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contractReviewRuntime .dropzoneActions {
+margin-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+.contractReviewRuntime .workspaceAside {
+display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.contractReviewRuntime .dashboardStatsGrid, .contractReviewRuntime .historySummaryGrid {
+display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.contractReviewRuntime .metricCard {
+padding: 18px 18px 20px;
+  border-radius: 24px;
+}
+.contractReviewRuntime .latestReviewCard, .contractReviewRuntime .historyFeatured, .contractReviewRuntime .dashboardCard, .contractReviewRuntime .emptyHistory {
+padding: 22px;
+  border-radius: 26px;
+}
+.contractReviewRuntime .latestReviewHeader, .contractReviewRuntime .cardHeader {
+display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.contractReviewRuntime .cardHeader--stack {
+align-items: flex-start;
+}
+.contractReviewRuntime .latestReviewName, .contractReviewRuntime .historyFeaturedName {
+margin-top: 16px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+.contractReviewRuntime .latestReviewActions, .contractReviewRuntime .historyFeaturedActions {
+margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.contractReviewRuntime .historyFeatured {
+margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.contractReviewRuntime .historyFeaturedLabel {
+font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.contractReviewRuntime .workspaceSecondaryGrid {
+margin-top: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 18px;
+}
+.contractReviewRuntime .checkList {
+margin-top: 18px;
+  display: grid;
+  gap: 14px;
+}
+.contractReviewRuntime .checkItem {
+display: flex;
+  gap: 10px;
+  line-height: 1.7;
+  color: #475467;
+}
+.contractReviewRuntime .checkMark {
+font-weight: 700;
+  color: var(--color-brand);
+}
+.contractReviewRuntime .recentRunList {
+margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+.contractReviewRuntime .recentRunItem {
+width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.76);
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.contractReviewRuntime .recentRunText {
+min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.contractReviewRuntime .recentRunName {
+font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contractReviewRuntime .recentRunMeta {
+font-size: 12px;
+  color: var(--muted);
+}
+.contractReviewRuntime .historyCollection {
+margin-top: 18px;
+}
+.contractReviewRuntime .historyRows {
+display: grid;
+  gap: 14px;
+}
+.contractReviewRuntime .historyRow {
+display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+}
+.contractReviewRuntime .historyRowTitle {
+font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+.contractReviewRuntime .historyRowSummary {
+margin-top: 10px;
+  color: #475467;
+  line-height: 1.7;
+}
+.contractReviewRuntime .historyRowMeta {
+display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.contractReviewRuntime .historyMetaBlock {
+min-width: 180px;
+}
+.contractReviewRuntime .historyMetaValue {
+margin-top: 6px;
+  line-height: 1.6;
+}
+.contractReviewRuntime .emptyCardState {
+margin-top: 16px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.contractReviewRuntime .btn {
+height: 40px;
+  padding: 0 16px;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(255,255,255,0.82);
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+.contractReviewRuntime .btnIcon {
+  width: 40px;
+  padding: 0;
+  justify-content: center;
+}
+.contractReviewRuntime .btn:hover {
+transform: translateY(-1px);
+}
+.contractReviewRuntime .btn:disabled {
+opacity: 0.55; cursor: not-allowed; transform: none;
+}
+.contractReviewRuntime .btnPrimary {
+  background: var(--color-brand);
+  color: #ffffff;
+  box-shadow: none;
+}
+.contractReviewRuntime .btnDark {
+background: var(--color-text-primary);
+  color: #fff;
+  box-shadow: none;
+}
+.contractReviewRuntime .btnSoft {
+background: rgba(255,255,255,0.94);
+}
+.contractReviewRuntime .statusChip, .contractReviewRuntime .statusPill, .contractReviewRuntime .summaryPill {
+display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(15,23,42,0.06);
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+}
+.contractReviewRuntime .statusPill--completed {
+background: var(--color-success-bg); color: var(--color-success-text);
+}
+.contractReviewRuntime .statusPill--running {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+.contractReviewRuntime .statusPill--queued {
+  background: rgba(148, 163, 184, 0.18);
+  color: #475569;
+}
+.contractReviewRuntime .statusPill--failed {
+background: var(--color-danger-bg); color: var(--color-danger-text);
+}
+.contractReviewRuntime .topBar {
+  margin: 0;
+  min-height: 72px;
+  border-radius: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(15,23,42,0.08);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.contractReviewRuntime .topBarLead, .contractReviewRuntime .topBarActions, .contractReviewRuntime .topBarMeta {
+display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.contractReviewRuntime .topBarRight {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.contractReviewRuntime .topBarLead {
+min-width: 0;
+}
+.contractReviewRuntime .topBarActions {
+  gap: 10px;
+}
+.contractReviewRuntime .topBarMeta {
+  gap: 8px;
+}
+.contractReviewRuntime .brand {
+display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.contractReviewRuntime .brandDot {
+width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--color-brand);
+  box-shadow: none;
+  flex: 0 0 auto;
+}
+.contractReviewRuntime .brandText {
+font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.contractReviewRuntime .topBarSubtext {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #667085;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.contractReviewRuntime .filePill {
+min-width: 0;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.82);
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06);
+  font-size: 12px;
+  color: var(--muted);
+}
+.contractReviewRuntime .statusId, .contractReviewRuntime .statusText {
+font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.contractReviewRuntime .statusId {
+max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.82);
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06);
+}
+.contractReviewRuntime .statusTextPill {
+padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(15,23,42,0.06);
+  color: #344054;
+  font-weight: 700;
+}
+.contractReviewRuntime .mainGrid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  gap: 0;
+  padding: 0;
+  align-items: stretch;
+  border-top: 1px solid rgba(15,23,42,0.08);
+}
+.contractReviewRuntime .mainGrid--resizable {
+  grid-template-columns: minmax(0, 1fr) 14px var(--review-risk-pane-width, 440px);
+}
+.contractReviewRuntime .mainGrid--resizable > .docPane,
+.contractReviewRuntime .mainGrid--resizable > .riskPane {
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+}
+.contractReviewRuntime .docPane, .contractReviewRuntime .riskPane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  overflow: hidden;
+}
+.contractReviewRuntime .riskPane {
+  border-left: 0;
+}
+.contractReviewRuntime .mainGridDivider {
+  width: 14px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid rgba(15,23,42,0.08);
+  border-right: 1px solid rgba(15,23,42,0.08);
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+}
+.contractReviewRuntime .mainGridDividerHandle {
+  width: 4px;
+  height: 72px;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.78);
+  box-shadow: 0 0 0 4px rgba(15,23,42,0.04);
+  transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.contractReviewRuntime .mainGridDivider:hover .mainGridDividerHandle,
+.contractReviewRuntime .mainGridDivider--dragging .mainGridDividerHandle {
+  background: var(--color-brand);
+  box-shadow: none;
+  transform: scaleY(1.05);
+}
+
+.contractReviewRuntime .paneHeader {
+  min-height: 64px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid rgba(15,23,42,0.08);
+  background: #fff;
+}
+.contractReviewRuntime .paneHeader--risk {
+  padding: 16px 18px;
+  justify-content: space-between;
+  gap: 12px;
+}
+.contractReviewRuntime .paneTitle {
+font-weight: 700; font-size: 15px;
+}
+.contractReviewRuntime .riskHeaderStats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.contractReviewRuntime .riskHeaderStat {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(15,23,42,0.10);
+  background: rgba(15,23,42,0.03);
+  color: #475467;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+.contractReviewRuntime .riskHeaderStat--high {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+.contractReviewRuntime .riskHeaderStat--medium {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+.contractReviewRuntime .riskHeaderStat--low {
+  border-color: var(--color-info-border);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+.contractReviewRuntime .paneHint {
+display: none;
+}
+/*
+  IMPORTANT:
+  The following rules are MOBILE overrides.
+  Previously they were unscoped and caused the desktop workspace to collapse into a single column,
+  which is why DocumentEditor + RiskPanel appeared in two ROWS.
+*/
+@media (max-width: 980px) {
+  .contractReviewRuntime .appShell--sidebarExpanded {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .contractReviewRuntime .uploadLayout, .contractReviewRuntime .workspaceSecondaryGrid {
+    grid-template-columns: 1fr;
+  }
+  .contractReviewRuntime .topBar {
+    grid-template-columns: 1fr;
+  }
+  .contractReviewRuntime .topBarActions, .contractReviewRuntime .topBarMeta {
+    justify-self: start;
+  }
+  .contractReviewRuntime .topBarRight {
+    justify-self: start;
+    flex-wrap: wrap;
+  }
+  .contractReviewRuntime .appShell, .contractReviewRuntime .appShell--sidebarExpanded, .contractReviewRuntime .appShell--sidebarCollapsed {
+    display: block;
+    height: auto;
+    padding: 12px;
+  }
+  .contractReviewRuntime .sideNav {
+    margin-bottom: 12px;
+    flex-direction: row;
+    align-items: center;
+    overflow: auto;
+  }
+  .contractReviewRuntime .sideNavTop, .contractReviewRuntime .sideNav--collapsed .sideNavTop {
+    flex-direction: row;
+  }
+  .contractReviewRuntime .navList {
+    flex-direction: row;
+  }
+  .contractReviewRuntime .contentShell, .contractReviewRuntime .reviewWorkspace, .contractReviewRuntime .dashboardPage, .contractReviewRuntime .historyPage {
+    min-height: auto;
+  }
+  .contractReviewRuntime .dashboardStatsGrid, .contractReviewRuntime .historySummaryGrid, .contractReviewRuntime .historyRow, .contractReviewRuntime .mainGrid {
+    grid-template-columns: 1fr;
+  }
+  .contractReviewRuntime .mainGridDivider {
+    display: none;
+  }
+  .contractReviewRuntime .historyFeatured, .contractReviewRuntime .topBar, .contractReviewRuntime .topBarLead, .contractReviewRuntime .topBarActions, .contractReviewRuntime .topBarMeta, .contractReviewRuntime .topBarRight {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .contractReviewRuntime .mainGrid {
+    border-top: 0;
+  }
+}
+.contractReviewRuntime .docEditor {
+flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: #fff;
+}
+.contractReviewRuntime .docViewport {
+position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: #f6f7fb;
+}
+.contractReviewRuntime .docToolbar {
+height: 44px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding: 0 12px;
+  gap: 10px;
+  background: #fff;
+}
+.contractReviewRuntime .docToolbarLeft {
+display: flex; align-items: center; gap: 8px;
+}
+.contractReviewRuntime .docToolbarRight {
+min-width: 0;
+}
+.contractReviewRuntime .toolbarLabel {
+font-size: 12px; color: var(--muted);
+}
+.contractReviewRuntime .iconBtn {
+width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+}
+.contractReviewRuntime .iconBtn:hover {
+background: #f8fafc;
+}
+.contractReviewRuntime .zoomText {
+font-size: 12px; width: 52px; text-align: center; color: var(--text);
+}
+.contractReviewRuntime .toolbarHint {
+font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; display: block;
+}
+.contractReviewRuntime .docScroll {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  /* Figma-style: neutral work surface behind the paper */
+  background: transparent;
+}
+.contractReviewRuntime .docScroll--locked .editableBlock {
+  user-select: none;
+}
+.contractReviewRuntime .editableBlock--locked {
+  caret-color: transparent;
+}
+.contractReviewRuntime .docInteractionMask {
+position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px) saturate(1.04);
+  -webkit-backdrop-filter: blur(8px) saturate(1.04);
+}
+.contractReviewRuntime .docInteractionMaskViewport {
+width: 100%;
+  height: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 4vh, 40px) 28px;
+  box-sizing: border-box;
+}
+.contractReviewRuntime .docInteractionMaskCard {
+width: auto;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-float);
+  padding: 18px 24px 16px;
+  color: #111827;
+}
+.contractReviewRuntime .docInteractionMaskText {
+display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: #111827;
+  white-space: nowrap;
+}
+.contractReviewRuntime .docInteractionMaskTextLabel {
+flex: 0 0 auto;
+}
+.contractReviewRuntime .docInteractionMaskEllipsis {
+flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  min-width: 3.75ch;
+}
+.contractReviewRuntime .docInteractionMaskEllipsisDot {
+display: inline-block;
+  min-width: 0.62ch;
+  text-align: center;
+  opacity: 0.22;
+  animation: legacyDocInteractionMaskEllipsisRoll 0.84s ease-in-out infinite;
+}
+.contractReviewRuntime .docInteractionMaskProgress {
+display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.78);
+  background: rgba(255, 255, 255, 0.98);
+}
+.contractReviewRuntime .docInteractionMaskProgressDot {
+width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-sizing: border-box;
+  border: 1.5px solid #b9c0c9;
+  background: #ffffff;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.contractReviewRuntime .docInteractionMaskProgressDot--filled {
+border-color: #111827;
+  background: #111827;
+}
+@keyframes legacyDocInteractionMaskEllipsisRoll {
+  0%, 100% {
+    opacity: 0.22;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 0.96;
+    transform: translateY(-1px);
+  }
+  65% {
+    opacity: 0.42;
+    transform: translateY(0);
+  }
+}
+.contractReviewRuntime .docRow {
+position: relative;
+  width: max-content;
+  min-width: 100%;
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 16px 12px 44px;
+  transition: gap 180ms ease;
+}
+.contractReviewRuntime .docRow--compact {
+gap: 8px;
+  padding-right: 18px;
+}
+.contractReviewRuntime .docRow--withComments {
+gap: 8px;
+  /* Reserve space for the comment column so balloons never overlap the paper.
+     (The gutter itself is absolutely positioned and doesn't contribute to layout width.) */
+  padding-right: var(--commentPadRight);
+}
+.contractReviewRuntime .docCanvas {
+position: relative;
+  /* Do not add an extra white layer under the paper. The paper is the docx section itself. */
+  width: max-content;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+.contractReviewRuntime .docCanvas > div:first-child {
+position: relative;
+  z-index: 1;
+}
+.contractReviewRuntime .changeOverlay {
+position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.contractReviewRuntime .changeHighlight {
+position: absolute;
+  border-radius: 4px;
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.65);
+}
+.contractReviewRuntime .changeHighlight--insert {
+background: var(--color-success-bg);
+  outline: 1px solid var(--color-success-border);
+}
+.contractReviewRuntime .changeHighlight--replace {
+background: var(--color-brand-soft);
+  outline: 1px solid var(--color-brand-border);
+}
+.contractReviewRuntime .changeHighlight--delete {
+background: var(--color-danger-bg);
+  outline: 1px solid var(--color-danger-border);
+}
+.contractReviewRuntime .changeDeleteMarker {
+position: absolute;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--color-danger-icon);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.7);
+}
+.contractReviewRuntime .changeDeleteMarker--replace {
+background: var(--color-warning-text);
+}
+.contractReviewRuntime .docx-wrapper {
+background: transparent !important;
+  padding: 0 !important;
+}
+.contractReviewRuntime .docx {
+background: transparent !important;
+}
+.contractReviewRuntime .docx > section {
+  /* Render a single "paper" surface (no double-white background). */
+  background: #fff;
+  box-shadow: var(--shadow-float);
+  outline: 1px solid #eceff3;
+}
+.contractReviewRuntime .editableBlock {
+position: relative;
+  outline: none;
+  caret-color: #111827;
+}
+.contractReviewRuntime .changedBlock {
+position: relative;
+}
+.contractReviewRuntime .changedBlock::before {
+content: '';
+  position: absolute;
+  left: -12px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--color-brand);
+}
+.contractReviewRuntime .riskBlock {
+background: rgba(250, 204, 21, 0.24);
+  border-radius: 3px;
+}
+.contractReviewRuntime .focusPulse {
+animation: legacyPulse 1.6s ease-in-out 3;
+}
+@keyframes legacyPulse {
+  0% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+  25% { box-shadow: 0 0 0 9px var(--color-focus-ring); background: var(--color-brand-soft); }
+  100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+}
+.contractReviewRuntime .commentLines {
+position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+.contractReviewRuntime .commentPolyline {
+  fill: none;
+  stroke: rgba(15,23,42,0.22);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.65;
+}
+
+.contractReviewRuntime .commentTrunk {
+stroke-width: 1.05;
+  stroke-dasharray: 4 3;
+  opacity: 0.95;
+}
+.contractReviewRuntime .commentGutter {
+width: var(--commentW);
+  overflow: visible;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+.contractReviewRuntime .commentGutter--open {
+opacity: 1;
+  pointer-events: auto;
+}
+.contractReviewRuntime .commentGutterInner {
+position: relative;
+  min-height: 100%;
+  padding-top: 12px;
+}
+.contractReviewRuntime .commentBalloon {
+width: var(--commentW);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 10px 10px 9px;
+  text-align: left;
+  cursor: pointer;
+  position: absolute;
+  left: 0;
+  right: auto;
+  box-shadow: var(--shadow-float);
+}
+.contractReviewRuntime .commentBalloon:hover {
+	box-shadow: var(--shadow-float);
+}
+.contractReviewRuntime .commentBalloonHead {
+display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+}
+.contractReviewRuntime .commentTag {
+font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-danger-border);
+  background: var(--color-danger-bg);
+  color: var(--danger);
+}
+.contractReviewRuntime .commentTime {
+font-size: 12px; color: var(--muted); white-space: nowrap;
+}
+.contractReviewRuntime .commentText {
+margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--text);
+}
+.contractReviewRuntime .commentDel {
+text-decoration: line-through; color: rgba(31,35,40,0.80);
+}
+.contractReviewRuntime .commentIns {
+color: var(--color-success-text);
+}
+.contractReviewRuntime .commentBalloon--delete .commentTag {
+	border-color: var(--color-danger-border); background: var(--color-danger-bg); color: var(--danger);
+}
+.contractReviewRuntime .commentBalloon--insert .commentTag {
+	border-color: var(--color-success-border); background: var(--color-success-bg); color: var(--color-success-text);
+}
+.contractReviewRuntime .commentBalloon--replace .commentTag {
+	border-color: var(--color-warning-border); background: var(--color-warning-bg); color: var(--color-warning-text);
+}
+.contractReviewRuntime .emptyState {
+padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.contractReviewRuntime .riskRoot {
+  height: 100vh;
+  min-height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+.contractReviewRuntime .riskControls {
+  padding: 10px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border-bottom: 1px solid rgba(15,23,42,0.06);
+}
+.contractReviewRuntime .riskUndoBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(15,23,42,0.08);
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 12px;
+  color: #475467;
+}
+.contractReviewRuntime .riskUndoBarText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1 1 auto;
+}
+.contractReviewRuntime .riskUndoBarTitle {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #101828;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contractReviewRuntime .riskUndoBarMeta {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #475467;
+  text-align: left;
+}
+
+.contractReviewRuntime .riskList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px 18px;
+  background: #f8fafc;
+}
+
+.contractReviewRuntime .riskGroup {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  margin-bottom: 16px;
+}
+
+.contractReviewRuntime .riskGroupTitle {
+  cursor: pointer;
+  padding: 6px 2px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: transparent;
+  border-bottom: 1px solid rgba(15,23,42,0.06);
+}
+
+.contractReviewRuntime .riskGroupCount {
+font-size: 12px; color: var(--muted);
+}
+.contractReviewRuntime .riskCards {
+  padding: 12px 0 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.contractReviewRuntime .riskCard {
+  border: 1px solid rgba(15,23,42,0.06);
+  border-radius: 16px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 1px 0 rgba(15,23,42,0.04);
+}
+
+.contractReviewRuntime .riskCardHead {
+display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+}
+.contractReviewRuntime .riskTitle {
+display: flex; align-items: center; gap: 8px;
+}
+.contractReviewRuntime .riskBadge {
+font-size: 12px;
+  font-weight: 800;
+  width: 26px;
+  height: 20px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: #fafafa;
+}
+.contractReviewRuntime .riskBadge--high {
+border-color: var(--color-danger-border); background: var(--color-danger-bg); color: var(--danger);
+}
+.contractReviewRuntime .riskBadge--medium {
+border-color: var(--color-warning-border); background: var(--color-warning-bg); color: var(--color-warning-text);
+}
+.contractReviewRuntime .riskBadge--low {
+border-color: var(--color-info-border); background: var(--color-info-bg); color: var(--color-info-text);
+}
+.contractReviewRuntime .riskLabel {
+font-size: 13px; font-weight: 700; line-height: 1.35;
+}
+.contractReviewRuntime .btnSmall {
+height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.contractReviewRuntime .btnSmall:hover {
+background: #f8fafc;
+}
+.contractReviewRuntime .btnSmall--primary {
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg);
+  color: #065f46;
+  font-weight: 600;
+}
+.contractReviewRuntime .riskSection {
+margin-top: 12px;
+}
+.contractReviewRuntime .riskSectionTitle {
+font-size: 12px; font-weight: 700; margin-bottom: 6px;
+}
+.contractReviewRuntime .riskSectionBody {
+font-size: 12px;
+  line-height: 1.6;
+  color: rgba(31,35,40,0.92);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.contractReviewRuntime .riskSectionBody--scroll {
+max-height: 220px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.contractReviewRuntime .riskCardActions {
+display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.contractReviewRuntime .riskCardActions {
+flex-wrap: wrap;
+}
+/* NOTE: The original CSS had a mobile-only fallback that collapses the grid to 1 column.
+   In this build we keep the desktop workspace two-column; a separate media query can be
+   added later if you want a responsive single-column layout on small screens. */
+.contractReviewRuntime .docRow {
+width: auto; min-width: 100%;
+}
+.contractReviewRuntime .topBar::-webkit-scrollbar {
+height: 6px;
+}
+.contractReviewRuntime .topBar::-webkit-scrollbar-thumb {
+background: rgba(15,23,42,0.12); border-radius: 999px;
+}
+.contractReviewRuntime .contentShell {
+display: flex; flex-direction: column;
+}
+.contractReviewRuntime .sideNav--collapsed .navIconWrap {
+width: 44px; height: 44px;
+}
+.contractReviewRuntime .sideNav--collapsed .navItem--active {
+box-shadow: none;
+}
+.contractReviewRuntime .statusTextPill:empty {
+display: none;
+}
+
+
+/* Review progress (waiting view) */
+.contractReviewRuntime .progressWrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: #eceff3;
+}
+.contractReviewRuntime .progressCard {
+  width: 100%;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  background: #eceff3;
+  box-shadow: none;
+  padding: 18px 18px 16px;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+.contractReviewRuntime .progressHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.contractReviewRuntime .progressTitle {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #101828;
+}
+.contractReviewRuntime .progressSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #667085;
+  line-height: 1.35;
+}
+.contractReviewRuntime .progressTags {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.contractReviewRuntime .progressTag {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-success-border);
+  background: var(--color-success-bg);
+  color: #065f46;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+.contractReviewRuntime .progressRun {
+  font-size: 11px;
+  color: #667085;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(15,23,42,0.10);
+  border-radius: 999px;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+.contractReviewRuntime .progressSteps {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+.contractReviewRuntime .progressGroup {
+  display: grid;
+  gap: 6px;
+}
+.contractReviewRuntime .progressGroupTitle {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #101828;
+}
+.contractReviewRuntime .progressGroupTasks {
+  display: grid;
+  gap: 6px;
+}
+.contractReviewRuntime .progressTask {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.contractReviewRuntime .progressTaskIcon {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.contractReviewRuntime .progressTaskRing {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1.5px solid #c6c9d0;
+  box-sizing: border-box;
+}
+.contractReviewRuntime .progressTaskRing--spin {
+  border-top-color: #9aa2af;
+  animation: reviewProgressSpin 1s linear infinite;
+}
+.contractReviewRuntime .progressTaskCheck {
+  width: 12px;
+  height: 12px;
+  color: #34c38f;
+}
+.contractReviewRuntime .progressTask--done .progressTaskIcon {
+  border-radius: 999px;
+  background: rgba(52, 195, 143, 0.12);
+  border: 1px solid rgba(52, 195, 143, 0.42);
+}
+.contractReviewRuntime .progressTask--failed .progressTaskRing {
+  border-color: #e06d6d;
+}
+.contractReviewRuntime .progressTaskText {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #667085;
+}
+.contractReviewRuntime .progressHint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #667085;
+  line-height: 1.35;
+  padding-top: 10px;
+  border-top: 1px solid rgba(15,23,42,0.09);
+}
+.contractReviewRuntime .progressActions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+@keyframes reviewProgressSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

@@ -49,6 +49,7 @@ kb_sync_status/
 
 # 输出文件
 output/
+.cache/
 *.docx
 !**/templates/*.docx
 

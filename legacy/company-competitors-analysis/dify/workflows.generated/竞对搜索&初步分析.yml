@@ -1,0 +1,431 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: 竞对搜索&初步分析
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/tongyi:0.1.43@c56cb5159e37b2719559550518312773bb08e11baaf5b791cccf472d272b5438
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: parameter-extractor
+        targetType: end
+      id: 1774408609801-source-1775641018761-target
+      selected: false
+      source: '1774408609801'
+      sourceHandle: source
+      target: '1775641018761'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: agent
+      id: 1774315293799-source-1774344120589-target
+      source: '1774315293799'
+      sourceHandle: source
+      target: '1774344120589'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: agent
+        targetType: llm
+      id: 1774344120589-source-1777459330780-target
+      source: '1774344120589'
+      sourceHandle: source
+      target: '1777459330780'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: parameter-extractor
+      id: 1777459330780-source-1774408609801-target
+      source: '1777459330780'
+      sourceHandle: source
+      target: '1774408609801'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: target_company_name
+          max_length: 40
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: target_company_name
+        - default: 全国
+          hint: ''
+          label: province
+          max_length: 20
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: province
+        - default: ''
+          hint: ''
+          label: target_company_intro
+          max_length: 2048
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: target_company_intro
+        - default: ''
+          hint: ''
+          label: target_company_business
+          max_length: 2048
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: target_company_business
+      height: 187
+      id: '1774315293799'
+      position:
+        x: 2008.2550312484627
+        y: 233
+      positionAbsolute:
+        x: 2008.2550312484627
+        y: 233
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        agent_parameters:
+          instruction:
+            type: constant
+            value: "## 目标\n基于用户提供的企业信息与竞争对手筛选条件，调用在线搜索工具（最多两次），分析并列举该企业的主要竞争对手（最多\
+              \ 5 个）。\n\n## 执行步骤\n\n### 1. 首次检索与分析\n- **业务关键词提炼**：\n  基于用户提供的“目标企业介绍”和“主营业务”，提炼一个更宽泛但精准的业务领域关键词/短句。\n\
+              \  - 必须完全来源于用户输入，不得使用模型外部知识\n  - 仅保留业务类型，去除修饰词\n\n- **执行搜索**：\n  使用该关键词\
+              \ + “竞争对手搜索地域限制（省份）”进行搜索\n\n- **地域筛选（第一层：严格筛选）**：\n  仅保留满足以下条件的企业：\n\
+              \  - 在该省份 **有法人注册信息 / 注册地明确位于该省**\n\n- **结果评估**：\n  - 若 ≥5 个 → 直接进入步骤\
+              \ 3\n  - 若 <5 个 → 进入步骤 2（触发放宽策略）\n\n---\n\n### 2. 二次检索策略（仅在不足时触发）\n\n\
+              #### 2.1 业务关键词扩展（可选）\n- 在原有关键词基础上适度扩展（仍需基于用户输入逻辑）\n\n#### 2.2 再次搜索\n\
+              - 使用扩展关键词 + 省份限制再次搜索\n\n#### 2.3 地域筛选（第二层：放宽筛选）\n在本阶段，允许在“法人注册”之外，纳入以下企业：\n\
+              \n- 在该省份 **有明确业务布局 / 分公司 / 直营网点 / 线下门店 / 重要运营活动**\n- 或搜索结果中明确表述其 **在该省份市场活跃\
+              \ / 用户覆盖较多**\n\n⚠️ 注意：\n- 仍需有明确证据支持“在该省份活跃”，禁止推测\n- 不得纳入完全无该省份关联的企业\n\
+              \n---\n\n### 3. 内容生成\n- 针对筛选出的每个竞争对手：\n  - 输出企业名称 + 简介\n  - 简介仅描述其业务与特点\n\
+              \  - 禁止与目标企业对比\n\n- **竞争关系判定规则**：\n  - 不要求完全同业务\n  - 只要在同一“宽泛业务领域”存在用户或市场竞争即可\n\
+              \n---\n\n### 4. 最终输出\n- 仅输出：\n  企业名称 + 企业简介\n- 最多 5 个\n- 若不足 5 个 → 输出实际数量，禁止补充或解释\n\
+              \n---\n\n## 严格约束\n\n### 工具调用\n- 最多调用 2 次搜索工具\n- 第二次调用必须由“结果不足”触发\n\n\
+              ### 地域筛选规则（核心约束）\n必须严格按照以下优先级执行：\n\n1️⃣ 第一优先级（必须优先尝试）  \n→ 法人注册在指定省份\n\
+              \n2️⃣ 第二优先级（仅在不足时启用）  \n→ 在该省份有明确业务活动/运营存在\n\n3️⃣ 禁止行为  \n❌ 跳过第一层直接使用放宽条件\
+              \  \n❌ 无证据推断“可能在该省有业务”  \n❌ 为凑满 5 个引入不符合地域条件的企业  \n\n---\n\n### 事实依据\n\
+              - 所有信息必须来源于搜索结果\n- 禁止编造\n\n---\n\n### 输出格式\n- 仅包含：\n  企业名称 + 简介\n- 不得包含任何解释性文字"
+          maximum_iterations:
+            type: constant
+            value: 8
+          model:
+            type: constant
+            value:
+              completion_params: {}
+              mode: chat
+              model: qwen3.5-plus
+              model_type: llm
+              provider: langgenius/tongyi/tongyi
+              type: model-selector
+          query:
+            type: constant
+            value: '目标企业名称：{{#1774315293799.target_company_name#}}
+
+              目标企业介绍：{{#1774315293799.target_company_intro#}}
+
+              目标企业主营业务：{{#1774315293799.target_company_business#}}
+
+              竞争对手搜索地域限制：{{#1774315293799.province#}}'
+          tools:
+            type: constant
+            value:
+            - enabled: true
+              extra:
+                description: '使用阿里云开放平台联网检索。返回中包含 result.search_result 列表， 每条含 title、link、snippet/content
+                  等字段（以实际响应为准）。
+
+                  '
+              parameters:
+                content_type:
+                  auto: 0
+                  value:
+                    type: constant
+                    value: summary
+                history:
+                  auto: 0
+                  value:
+                    type: mixed
+                    value: null
+                query:
+                  auto: 1
+                  value: null
+                query_rewrite:
+                  auto: 0
+                  value:
+                    type: constant
+                    value: true
+                top_k:
+                  auto: 0
+                  value:
+                    type: constant
+                    value: 10
+              provider_name: d2b614af-62c9-492f-8595-c0e86ca33704
+              provider_show_name: 阿里云联网搜索
+              settings: {}
+              tool_description: '使用阿里云开放平台联网检索。返回中包含 result.search_result 列表， 每条含
+                title、link、snippet/content 等字段（以实际响应为准）。
+
+                '
+              tool_label: aliyun_open_search_web_search
+              tool_name: aliyun_open_search_web_search
+              type: api
+        agent_strategy_label: FunctionCalling
+        agent_strategy_name: function_calling
+        agent_strategy_provider_name: langgenius/agent/agent
+        meta:
+          minimum_dify_version: 1.7.0
+          version: 0.0.2
+        output_schema: {}
+        plugin_unique_identifier: langgenius/agent:0.0.33@fb9f8a19f25e22e0eefb8b62241c004fe237f00f015b4e1b653be2fd6bbac2e9
+        selected: false
+        title: 竞争对手企业搜索&初步画像
+        tool_node_version: '2'
+        type: agent
+      height: 188
+      id: '1774344120589'
+      position:
+        x: 2345.8988183135516
+        y: 254
+      positionAbsolute:
+        x: 2345.8988183135516
+        y: 254
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        instruction: '## 任务描述
+
+          从输入信息中提取企业名称与对应的企业简介。
+
+
+          # 提取要求
+
+          - 以类似python列表的形式组织并输出提取到的企业信息
+
+          - 对于提取到的每个企业，将提取到的企业名称与简介使用类似json的格式进行组织，形如"{"企业名称"：“XX”，"简介": "XX"}"
+
+
+          ## 输出示例
+
+          [{"企业名称": "企业1", "简介":"企业1简介"}, {"企业名称": "企业2", "简介":"企业2简介"}]
+
+          '
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: kimi-k2.5
+          provider: langgenius/tongyi/tongyi
+        parameters:
+        - description: 企业信息
+          name: competitors
+          required: false
+          type: array[object]
+        query:
+        - '1777459330780'
+        - text
+        reasoning_mode: prompt
+        selected: false
+        title: 参数提取器
+        type: parameter-extractor
+        vision:
+          enabled: false
+      height: 88
+      id: '1774408609801'
+      position:
+        x: 3017.4812573529875
+        y: 254
+      positionAbsolute:
+        x: 3017.4812573529875
+        y: 254
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1774408609801'
+          - competitors
+          value_type: array[object]
+          variable: competitors
+        selected: false
+        title: 目标企业有效且未指定对手
+        type: end
+      height: 88
+      id: '1775641018761'
+      position:
+        x: 3337.1798523339826
+        y: 254
+      positionAbsolute:
+        x: 3337.1798523339826
+        y: 254
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            enable_search: true
+            temperature: 0.7
+          mode: chat
+          name: qwen3.5-plus
+          provider: langgenius/tongyi/tongyi
+        prompt_template:
+        - id: b497a1ce-634c-407a-8d75-1cc2c1bbfef1
+          role: system
+          text: "## 任务目标\n基于上一阶段生成的“竞争对手列表（企业名称 + 简介）”，调用联网搜索工具进行事实校验、修正与必要替换，输出最终准确、可靠的竞争对手列表（最多\
+            \ 5 个）。\n\n---\n\n## 输入内容\n你将接收到：\n1）目标企业介绍  \n2）目标企业主营业务  \n3）竞争对手搜索地域限制（省级行政区）\
+            \  \n4）上一阶段生成的竞争对手列表（企业名称 + 简介）  \n\n---\n\n## 执行步骤\n\n### 1. 逐条核验（必须联网搜索）\n\
+            \n对每一个竞争对手逐条执行：\n\n#### 1.1 名称标准性校验\n- 确认企业标准名称（工商注册名或广泛使用名称）\n- 若存在别名/简称\
+            \ → 修正\n\n---\n\n#### 1.2 企业真实性校验\n- 企业必须真实存在且正常经营\n- 若：\n  - 查无此企业  \n\
+            \  - 已注销 / 吊销  \n  - 信息严重不一致  \n\n→ 标记为无效\n\n---\n\n#### 1.3 业务信息核验\n\
+            - 校验简介是否符合事实\n- 若存在：\n  - 错误  \n  - 过时  \n  - 描述偏差  \n\n→ 基于搜索结果修正\n\n\
+            ⚠️ 简介仍必须：\n- 仅描述自身业务\n- 禁止对比目标企业\n\n---\n\n#### 1.4 地域校验（分层机制，必须严格执行）\n\
+            \n按照以下优先级判断：\n\n##### 第一优先级（严格）\n✔ 企业法人注册地位于指定省份  \n\n→ 直接判定为“地域合格”\n\n\
+            ---\n\n##### 第二优先级（仅当不满足第一优先级时判断）\n✔ 企业虽非注册于该省，但满足以下至少一项：\n- 在该省有分公司 /\
+            \ 子公司 / 门店 / 网点  \n- 在该省有明确业务布局或长期运营  \n- 搜索结果明确表述其在该省市场活跃或用户覆盖  \n\n\
+            → 判定为“地域合格（放宽）”\n\n---\n\n##### 判定为无效的情况\n❌ 无任何证据表明其与该省有关  \n❌ 仅为全国性企业但无具体省份信息\
+            \  \n❌ 基于推测判断其“可能在该省有业务”  \n\n---\n\n#### 1.5 竞争关系校验（核心）\n- 判断是否存在：\n\
+            \  - 业务领域重叠  \n  或  \n  - 用户群体竞争  \n\n若：\n❌ 完全无交集  \n❌ 不构成竞争关系  \n\n→\
+            \ 标记为无效\n\n---\n\n### 2. 无效项处理与替换机制（仅在必要时触发）\n\n当某条竞对被标记为无效时，执行：\n\n---\n\
+            \n#### 2.1 搜索补充竞对（必须联网）\n\n- 基于：\n  - 目标企业主营业务\n  - 用户输入信息\n\n重新提炼“宽泛业务关键词”（必须来源于输入逻辑）\n\
+            \n---\n\n#### 2.2 地域筛选（必须复用同一分层规则）\n\n候选企业必须按以下顺序筛选：\n\n1️⃣ 优先选择：法人注册在该省\
+            \  \n2️⃣ 不足时：允许选择在该省有明确业务活动的企业  \n\n---\n\n#### 2.3 替换规则\n\n- 每发现一个无效项\
+            \ → 替换一个新竞对  \n- 若无法找到符合条件的 → 允许减少数量  \n\n---\n\n### 3. 内容修正规范\n\n所有最终输出的企业简介必须：\n\
+            \n- 完全基于搜索结果  \n- 客观描述自身业务  \n- 禁止任何对比  \n- 信息简洁、准确  \n\n---\n\n## 严格约束\n\
+            \n### 联网要求\n- 所有判断必须基于搜索结果\n- 禁止使用模型已有知识直接判断\n\n---\n\n### 搜索调用限制\n- 建议\
+            \ ≤ 3 次\n- 可合并查询提升效率\n\n---\n\n### 地域规则（强一致性要求）\n必须严格遵守：\n\n1️⃣ 先判断“法人注册”\
+            \  \n2️⃣ 不足时才允许“业务活跃放宽”  \n3️⃣ 禁止跳过第一层直接放宽  \n\n---\n\n### 禁止行为\n❌ 编造企业\
+            \  \n❌ 保留不确定信息  \n❌ 用模糊描述替代事实  \n❌ 为凑满 5 个降低筛选标准  \n\n---\n\n## 输出格式（强约束）\n\
+            \n仅输出：\n\n企业名称：企业简介  \n\n- 每个企业一行或一段  \n- 不得包含任何解释、说明或过程信息  \n- 不得提及“修正\
+            \ / 替换 / 校验”等过程  \n\n---\n\n## 数量规则\n- 最多 5 个  \n- 若不足 → 输出实际数量  \n- 严禁凑数"
+        - id: 103a55c3-197a-4e60-90e5-c0a963aafc69
+          role: user
+          text: '待质检竞争对手列表：{{#1774344120589.text#}}
+
+            目标企业名称：{{#1774315293799.target_company_name#}}
+
+            目标企业介绍：{{#1774315293799.target_company_intro#}}
+
+            目标企业主营业务：{{#1774315293799.target_company_business#}}
+
+            竞争对手搜索地域限制：{{#1774315293799.province#}}'
+        selected: false
+        structured_output_enabled: false
+        title: 质检
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: '1777459330780'
+      position:
+        x: 2673.323378086166
+        y: 254
+      positionAbsolute:
+        x: 2673.323378086166
+        y: 254
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -1574.4266765553573
+      y: 320.2704745380746
+      zoom: 0.6987567968520987
+  rag_pipeline_variables: []
