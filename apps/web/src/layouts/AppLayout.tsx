@@ -4,7 +4,6 @@ import { LayoutGroup, motion } from "framer-motion";
 import {
   BookOpen,
   ChevronLeft,
-  Globe2,
   LayoutGrid,
   LogOut,
   MessageSquare,
@@ -47,7 +46,6 @@ const modulePathAliases: Record<PortalModule["code"], string[]> = {
 const secondaryNavItems = [
   { to: "/knowledge", label: "知识库", icon: BookOpen, aliases: ["/knowledge"] },
   { to: "/settings", label: "用户管理", icon: Settings2, aliases: ["/settings", "/users", "/admin/users"] },
-  { to: "/bid-reference-sites", label: "招投标网址", icon: Globe2, aliases: ["/bid-reference-sites"] },
   { to: "/feedback", label: "用户反馈", icon: MessageSquare, aliases: ["/feedback"] },
 ];
 
