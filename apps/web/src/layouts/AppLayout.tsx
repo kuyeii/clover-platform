@@ -202,7 +202,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
               >
                 <motion.span
                   initial={false}
-                  animate={isEmbeddedModuleView ? { x: -2 } : { x: 0 }}
+                  animate={isEmbeddedModuleView ? { x: -14 } : { x: 0 }}
                   transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
                   className="inline-flex min-w-0 items-center justify-center"
                 >
@@ -210,7 +210,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                     href={primaryNavTarget}
                     onClick={(event) => onNavigate(event, primaryNavTarget)}
                     className={[
-                      "inline-flex min-w-0 items-center justify-center gap-2 transition-colors",
+                      "inline-flex min-w-0 items-center justify-center gap-3 transition-colors",
                       shouldShowPrimaryIndicator
                         ? "text-brand-500"
                         : activeModule

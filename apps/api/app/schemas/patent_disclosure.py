@@ -29,3 +29,9 @@ class GenerateDisclosureRequest(BaseModel):
     anonymize: bool = True
     extraInstruction: str = ""
 
+
+class ReviseDisclosureRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revisionInstruction: str = Field(min_length=1, max_length=12000)
+    renderMermaidPng: bool = True

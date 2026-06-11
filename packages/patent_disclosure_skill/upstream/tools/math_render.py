@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""
-将 Markdown 中的 LaTeX 公式渲染为 PNG（matplotlib mathtext），**保留 `$...$` / `\(...\)` / `$$...$$` / `\[...\]` 原文**，
-图片引用写入 HTML 注释 ``<!-- ![...](path) -->``（预览不显示图，Word 仍嵌入）。
+将 Markdown 中的 LaTeX 公式渲染为 PNG（matplotlib mathtext）。默认将公式替换为可见 Markdown 图片，
+便于交付 `.md` 直接预览；也可用 ``--hidden-images`` 保留旧行为：LaTeX 原文 + HTML 注释隐藏图片引用。
 
 支持（失败时**保留原文**，不中断）：
 
@@ -26,9 +26,15 @@ _DEFAULT_ASSETS = "math_figures"
 _INLINE_RE = re.compile(
     r"(?<!\$)\$(?!\$)((?:\\.|[^$\n])+?)\$(?!\$)(?!\s*<!--)"
 )
-_INLINE_PAREN_RE = re.compile(r"\\\(((?:\\.|[^)])+?)\\\)(?!\s*<!--)")
 _HIDDEN_IMG_COMMENT_RE = re.compile(
     r"<!--\s*!\[[^\]]*\]\([^)]+\)\s*-->"
+)
+_HIDDEN_IMG_COMMENT_CAPTURE_RE = re.compile(
+    r"<!--\s*!\[([^\]]*)\]\(([^)]+)\)\s*-->"
+)
+_INLINE_DOLLAR_WITH_HIDDEN_IMG_RE = re.compile(
+    r"(?<!\$)\$(?!\$)((?:\\.|[^$\n])+?)\$(?!\$)\s*"
+    r"<!--\s*!\[(公式[^\]]*)\]\(([^)]+)\)\s*-->"
 )
 
 # matplotlib mathtext 不识别部分 LaTeX 简写；按「长命令优先」映射为 mathtext 符号
@@ -48,6 +54,7 @@ _LATEX_CMD_ALIASES: tuple[tuple[str, str], ...] = (
     ("implies", "Rightarrow"),
 )
 _CASES_ENV_RE = re.compile(r"\\begin\s*\{cases\}(.*?)\\end\s*\{cases\}", re.DOTALL)
+_SIMPLE_BRACED_RE_CACHE: dict[str, re.Pattern[str]] = {}
 
 
 def _convert_cases_environment(body: str) -> str:
@@ -71,6 +78,58 @@ def _normalize_cases_environments(body: str) -> str:
     return _CASES_ENV_RE.sub(lambda m: _convert_cases_environment(m.group(1)), body)
 
 
+def _replace_simple_braced_command(body: str, command: str, repl: str) -> str:
+    r"""Replace ``\command{simple}`` without trying to parse nested LaTeX."""
+    pattern = _SIMPLE_BRACED_RE_CACHE.get(command)
+    if pattern is None:
+        pattern = re.compile(rf"\\{command}\{{([^{{}}]*)\}}")
+        _SIMPLE_BRACED_RE_CACHE[command] = pattern
+    return pattern.sub(lambda m: repl.format(m.group(1)), body)
+
+
+def _read_braced(body: str, open_brace: int) -> tuple[str, int] | None:
+    if open_brace >= len(body) or body[open_brace] != "{":
+        return None
+    depth = 0
+    for i in range(open_brace, len(body)):
+        ch = body[i]
+        if ch == "\\":
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return body[open_brace + 1 : i], i + 1
+    return None
+
+
+def _drop_underbraces(body: str) -> str:
+    r"""Matplotlib mathtext does not support ``\underbrace``; keep its visible body."""
+    out: list[str] = []
+    i = 0
+    needle = r"\underbrace"
+    while i < len(body):
+        if not body.startswith(needle, i):
+            out.append(body[i])
+            i += 1
+            continue
+        body_start = i + len(needle)
+        visible = _read_braced(body, body_start)
+        if visible is None:
+            out.append(body[i])
+            i += 1
+            continue
+        replacement, pos = visible
+        if body.startswith("_{", pos):
+            note = _read_braced(body, pos + 1)
+            if note is not None:
+                pos = note[1]
+        out.append(replacement)
+        i = pos
+    return "".join(out)
+
+
 def normalize_latex_for_mathtext(body: str) -> str:
     """将常见 LaTeX 命令转为 matplotlib mathtext 可解析形式。"""
     out = body
@@ -78,16 +137,23 @@ def normalize_latex_for_mathtext(body: str) -> str:
         if short == repl:
             continue
         out = re.sub(rf"\\{short}(?![A-Za-z])", rf"\\{repl}", out)
+    # mathtext 不支持 \Bigl / \Bigr 等尺寸括号命令；去掉尺寸命令，保留后续定界符。
+    out = re.sub(r"\\(?:big|Big|bigg|Bigg)[lmr]?(?![A-Za-z])\s*", "", out)
+    # mathtext supports \mathtt / \mathrm but not \texttt.  Keep literal protocol
+    # fragments such as @@PIPT: readable while avoiding parser failures.
+    out = _replace_simple_braced_command(out, "texttt", r"\mathtt{{{}}}")
     # 交底书 Word 正文为常规宋体，公式图不做数学粗体
     for cmd in ("mathbf", "bm", "boldsymbol", "textbf"):
         prev = None
         while prev != out:
             prev = out
             out = re.sub(rf"\\{cmd}\{{([^{{}}]+)\}}", r"\1", out)
+    out = _drop_underbraces(out)
     # mathtext 不支持 amsmath 编号/标签；块级公式内换行也会解析失败
     out = re.sub(r"\\label\s*\{[^{}]*\}", "", out)
     out = re.sub(r"\\tag\s*\{([^{}]*)\}", r"\\quad (\1)", out)
     out = re.sub(r"\\notag\b", "", out)
+    out = re.sub(r"\\n(?![A-Za-z])", " ", out)
     out = _normalize_cases_environments(out)
     out = re.sub(r"\s+", " ", out).strip()
     return out
@@ -129,12 +195,14 @@ def render_latex_to_png(
     )
 
 
-def _next_eq_name(counter: dict[str, int], kind: str) -> str:
-    counter[kind] = counter.get(kind, 0) + 1
-    n = counter[kind]
-    if kind == "inline":
-        return f"inline_{n:03d}.png"
-    return f"eq_{n:03d}.png"
+def _next_eq_name(counter: dict[str, int], kind: str, assets_dir: Path) -> str:
+    """返回未被当前目录占用的下一个图片名，避免补渲染时覆盖旧 PNG。"""
+    prefix = "inline" if kind == "inline" else "eq"
+    while True:
+        counter[kind] = counter.get(kind, 0) + 1
+        fname = f"{prefix}_{counter[kind]:03d}.png"
+        if not (assets_dir / fname).exists():
+            return fname
 
 
 def _try_render(
@@ -168,7 +236,7 @@ def _replace_inline_math(
 
     def render_one(inner: str, wrapper: str) -> str:
         nonlocal ok, failed
-        fname = _next_eq_name(counter, "inline")
+        fname = _next_eq_name(counter, "inline", assets_dir)
         png_path = assets_dir / fname
         if _try_render(inner, png_path, dpi=dpi, fontsize=fontsize):
             ok += 1
@@ -181,13 +249,164 @@ def _replace_inline_math(
         inner = m.group(1)
         return render_one(inner, f"${inner}$")
 
-    def repl_paren(m: re.Match[str]) -> str:
-        inner = m.group(1)
-        return render_one(inner, f"\\({inner}\\)")
-
     text = _INLINE_RE.sub(repl_dollar, text)
-    text = _INLINE_PAREN_RE.sub(repl_paren, text)
-    return text, ok, failed
+    out: list[str] = []
+    pos = 0
+    while True:
+        start = text.find("\\(", pos)
+        if start == -1:
+            out.append(text[pos:])
+            break
+        end = _find_inline_paren_end(text, start)
+        if end == -1:
+            out.append(text[pos:])
+            break
+        close = end + 2
+        out.append(text[pos:start])
+        wrapper = text[start:close]
+        if _has_hidden_image_comment_after(text, close):
+            out.append(wrapper)
+        else:
+            out.append(render_one(text[start + 2 : end], wrapper))
+        pos = close
+    return "".join(out), ok, failed
+
+
+def _find_inline_paren_end(text: str, start: int) -> int:
+    r"""查找 ``\(...\)`` 的结束分隔符，允许公式内容包含普通 ``)``。"""
+    i = start + 2
+    while i < len(text) - 1:
+        if text.startswith("\\)", i):
+            return i
+        i += 1
+    return -1
+
+
+def _has_hidden_image_comment_after(text: str, pos: int) -> bool:
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    return _HIDDEN_IMG_COMMENT_RE.match(text, pos) is not None
+
+
+def _is_formula_hidden_comment(line: str) -> tuple[str, str] | None:
+    match = _HIDDEN_IMG_COMMENT_CAPTURE_RE.fullmatch(line.strip())
+    if not match:
+        return None
+    alt, src = match.group(1), match.group(2).strip()
+    if not alt.startswith("公式"):
+        return None
+    return alt, src
+
+
+def _visible_image_markdown(alt: str, src: str) -> str:
+    return f"![{alt}]({src})"
+
+
+def _replace_inline_hidden_math_with_visible(line: str) -> str:
+    line = _INLINE_DOLLAR_WITH_HIDDEN_IMG_RE.sub(
+        lambda m: _visible_image_markdown(m.group(2), m.group(3).strip()),
+        line,
+    )
+
+    out: list[str] = []
+    pos = 0
+    while True:
+        start = line.find("\\(", pos)
+        if start == -1:
+            out.append(line[pos:])
+            break
+        end = _find_inline_paren_end(line, start)
+        if end == -1:
+            out.append(line[pos:])
+            break
+        close = end + 2
+        comment_start = close
+        while comment_start < len(line) and line[comment_start].isspace():
+            comment_start += 1
+        comment = _HIDDEN_IMG_COMMENT_CAPTURE_RE.match(line, comment_start)
+        if comment and comment.group(1).startswith("公式"):
+            out.append(line[pos:start])
+            out.append(_visible_image_markdown(comment.group(1), comment.group(2).strip()))
+            pos = comment.end()
+        else:
+            out.append(line[pos:close])
+            pos = close
+    return "".join(out)
+
+
+def make_formula_images_visible(md_text: str) -> str:
+    """将公式源码 + 隐藏 PNG 注释转换为可见 Markdown 图片。"""
+    lines = md_text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+
+    def next_formula_comment(index: int) -> tuple[tuple[str, str] | None, int]:
+        j = index
+        while j < len(lines) and lines[j].strip() == "":
+            j += 1
+        if j >= len(lines):
+            return None, index
+        return _is_formula_hidden_comment(lines[j]), j
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped == "$$":
+            block_lines = [line]
+            i += 1
+            while i < len(lines):
+                block_lines.append(lines[i])
+                if lines[i].strip() == "$$":
+                    i += 1
+                    break
+                i += 1
+            hidden, hidden_idx = next_formula_comment(i)
+            if hidden:
+                out.append(_visible_image_markdown(*hidden) + "\n")
+                i = hidden_idx + 1
+                continue
+            out.extend(block_lines)
+            continue
+
+        if stripped.startswith("$$") and stripped.endswith("$$") and len(stripped) > 4:
+            hidden, hidden_idx = next_formula_comment(i + 1)
+            if hidden:
+                out.append(_visible_image_markdown(*hidden) + "\n")
+                i = hidden_idx + 1
+                continue
+
+        if stripped.startswith("\\["):
+            if stripped.endswith("\\]") and len(stripped) > 4:
+                hidden, hidden_idx = next_formula_comment(i + 1)
+                if hidden:
+                    out.append(_visible_image_markdown(*hidden) + "\n")
+                    i = hidden_idx + 1
+                    continue
+            else:
+                block_lines = [line]
+                i += 1
+                while i < len(lines):
+                    block_lines.append(lines[i])
+                    if "\\]" in lines[i]:
+                        i += 1
+                        break
+                    i += 1
+                hidden, hidden_idx = next_formula_comment(i)
+                if hidden:
+                    out.append(_visible_image_markdown(*hidden) + "\n")
+                    i = hidden_idx + 1
+                    continue
+                out.extend(block_lines)
+                continue
+
+        hidden = _is_formula_hidden_comment(line)
+        if hidden:
+            out.append(_visible_image_markdown(*hidden) + ("\n" if line.endswith("\n") else ""))
+        else:
+            out.append(_replace_inline_hidden_math_with_visible(line))
+        i += 1
+    return "".join(out)
 
 
 def render_markdown_math(
@@ -198,6 +417,7 @@ def render_markdown_math(
     dpi: int = 200,
     block_fontsize: float = 10.5,
     inline_fontsize: float = 10.5,
+    visible_images: bool = True,
 ) -> tuple[str, int, int]:
     """
     返回 (新 markdown, 成功渲染数, 失败保留原文数)。
@@ -241,7 +461,7 @@ def render_markdown_math(
                 if closing:
                     out.append("$$\n")
                 continue
-            fname = _next_eq_name(counter, "block")
+            fname = _next_eq_name(counter, "block", assets_dir)
             png_path = assets_dir / fname
             if _try_render(latex, png_path, dpi=dpi, fontsize=block_fontsize):
                 ok += 1
@@ -266,7 +486,7 @@ def render_markdown_math(
             and len(stripped) > 4
         ):
             latex = stripped[2:-2].strip()
-            fname = _next_eq_name(counter, "block")
+            fname = _next_eq_name(counter, "block", assets_dir)
             png_path = assets_dir / fname
             if _try_render(latex, png_path, dpi=dpi, fontsize=block_fontsize):
                 ok += 1
@@ -283,7 +503,7 @@ def render_markdown_math(
         if stripped.startswith("\\["):
             if stripped.endswith("\\]") and len(stripped) > 4:
                 latex = stripped[2:-2].strip()
-                fname = _next_eq_name(counter, "block")
+                fname = _next_eq_name(counter, "block", assets_dir)
                 png_path = assets_dir / fname
                 if _try_render(latex, png_path, dpi=dpi, fontsize=block_fontsize):
                     ok += 1
@@ -312,7 +532,7 @@ def render_markdown_math(
                 continue
             latex = "".join(body_lines) + tail
             latex = latex.replace("\\[", "", 1).replace("\\]", "").strip()
-            fname = _next_eq_name(counter, "block")
+            fname = _next_eq_name(counter, "block", assets_dir)
             png_path = assets_dir / fname
             if latex and _try_render(latex, png_path, dpi=dpi, fontsize=block_fontsize):
                 ok += 1
@@ -363,7 +583,10 @@ def render_markdown_math(
         out.append(new_line if new_line.endswith("\n") else new_line + "\n")
         i += 1
 
-    return "".join(out), ok, failed
+    new_md = "".join(out)
+    if visible_images:
+        new_md = make_formula_images_visible(new_md)
+    return new_md, ok, failed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -378,6 +601,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dpi", type=int, default=200)
     p.add_argument("--block-fontsize", type=float, default=10.5)
     p.add_argument("--inline-fontsize", type=float, default=10.5)
+    p.add_argument(
+        "--hidden-images",
+        action="store_true",
+        help="保留旧格式：LaTeX 原文 + HTML 注释隐藏图片引用（Markdown 预览不显示图）",
+    )
     args = p.parse_args(argv)
 
     in_path = args.input.resolve()
@@ -402,6 +630,7 @@ def main(argv: list[str] | None = None) -> int:
         dpi=args.dpi,
         block_fontsize=args.block_fontsize,
         inline_fontsize=args.inline_fontsize,
+        visible_images=not args.hidden_images,
     )
     out_path.write_text(new_md, encoding="utf-8")
     msg = f"已写入 {out_path}（公式：{ok} 处已转为 PNG"

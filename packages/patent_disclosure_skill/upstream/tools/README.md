@@ -96,7 +96,7 @@ Windows 上若仅装 Node 未执行 `npm install`，脚本会通过 `npx -y @mer
 
 ## math_render.py — LaTeX 公式 → PNG
 
-将 Markdown 中的 **LaTeX 公式**（``$...$`` / ``\\(...\\)`` 行内；``$$...$$`` / ``\\[...\\]`` 块级）用 **matplotlib mathtext** 渲染为 PNG；**保留 LaTeX 原文**，图片引用写入 HTML 注释 ``<!-- ![...](math_figures/...) -->``（Markdown 预览不显示图），供 **`md_to_docx.py`** 嵌入 Word。
+将 Markdown 中的 **LaTeX 公式**（``$...$`` / ``\\(...\\)`` 行内；``$$...$$`` / ``\\[...\\]`` 块级）用 **matplotlib mathtext** 渲染为 PNG；默认将公式替换为可见 Markdown 图片，便于交付 `.md` 直接预览。若需要旧格式（保留 LaTeX 原文，图片引用写入 HTML 注释 ``<!-- ![...](math_figures/...) -->``，供中间态 Word 导出使用），可加 ``--hidden-images``。
 
 **Mermaid 框图**：``mermaid_render.py`` **保留** `` ```mermaid`` 源码，并追加 ``<!-- ![图示 n](mermaid_figures/...) -->``（预览隐藏图引用，Word 仍大图嵌入）。
 
@@ -117,6 +117,7 @@ pip install -r requirements.txt   # 含 matplotlib
 ```bash
 python3 tools/math_render.py -i draft.md -o draft_with_math.md
 python3 tools/math_render.py -i draft.md -o out.md --assets-dir math_figures
+python3 tools/math_render.py -i draft.md -o out_hidden.md --hidden-images
 ```
 
 定稿流水线：**``mermaid_render.py`` 默认先跑公式再跑 mermaid**（可用 ``--no-math`` 跳过）。单独转 Word 时 **`md_to_docx.py` 也会自动尝试公式渲染**（``--no-math-render`` 可关闭）。

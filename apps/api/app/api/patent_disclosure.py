@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_current_user
 from app.core.errors import PlatformError
-from app.schemas.patent_disclosure import GenerateDisclosureRequest, PatentCaseCreate
+from app.schemas.patent_disclosure import GenerateDisclosureRequest, PatentCaseCreate, ReviseDisclosureRequest
 from app.services import portal_store
 from app.services.patent_disclosure_service import APP_CODE, get_patent_disclosure_service
 
@@ -112,6 +112,15 @@ async def start_patent_generation(
     return get_patent_disclosure_service().start_generation(user, case_id, payload.model_dump())
 
 
+@router.post("/api/cases/{case_id}/revise")
+async def start_patent_revision(
+    case_id: str,
+    payload: ReviseDisclosureRequest,
+    user: dict[str, Any] = Depends(require_patent_disclosure_user),
+) -> dict[str, Any]:
+    return get_patent_disclosure_service().start_revision(user, case_id, payload.model_dump())
+
+
 @router.get("/api/jobs/{job_id}")
 async def get_patent_job(
     job_id: str,
@@ -139,9 +148,10 @@ async def stream_patent_job(
 @router.get("/api/cases/{case_id}/artifacts")
 async def list_patent_artifacts(
     case_id: str,
+    scope: str = Query(default="latest", pattern="^(latest|all)$"),
     user: dict[str, Any] = Depends(require_patent_disclosure_user),
 ) -> dict[str, Any]:
-    return get_patent_disclosure_service().list_artifacts(user, case_id)
+    return get_patent_disclosure_service().list_artifacts(user, case_id, scope=scope)
 
 
 @router.get("/api/artifacts/{artifact_id}/download")

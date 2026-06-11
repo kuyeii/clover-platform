@@ -17,6 +17,7 @@ export const PATENT_DISCLOSURE_API_PREFIX = "/patent-disclosure/api";
 
 type RequestControl = {
   signal?: AbortSignal;
+  scope?: "latest" | "all";
 };
 
 type EventSourceHandlers = {
@@ -106,6 +107,17 @@ export function startPatentDisclosureGeneration(caseId: string, settings: Genera
   );
 }
 
+export function startPatentDisclosureRevision(caseId: string, revisionInstruction: string) {
+  return apiClient.post<PatentGenerationJob>(
+    `${PATENT_DISCLOSURE_API_PREFIX}/cases/${encodeURIComponent(caseId)}/revise`,
+    {
+      revisionInstruction,
+      renderMermaidPng: true,
+    },
+    { unwrapEnvelope: false },
+  );
+}
+
 export function fetchPatentGenerationJob(jobId: string, options: RequestControl = {}) {
   return apiClient.get<PatentGenerationJob>(
     `${PATENT_DISCLOSURE_API_PREFIX}/jobs/${encodeURIComponent(jobId)}`,
@@ -114,9 +126,10 @@ export function fetchPatentGenerationJob(jobId: string, options: RequestControl 
 }
 
 export function listCaseArtifacts(caseId: string, options: RequestControl = {}) {
+  const scope = options.scope ? `?scope=${encodeURIComponent(options.scope)}` : "";
   return apiClient
     .get<{ items?: PatentArtifact[] } | PatentArtifact[]>(
-      `${PATENT_DISCLOSURE_API_PREFIX}/cases/${encodeURIComponent(caseId)}/artifacts`,
+      `${PATENT_DISCLOSURE_API_PREFIX}/cases/${encodeURIComponent(caseId)}/artifacts${scope}`,
       { signal: options.signal, unwrapEnvelope: false },
     )
     .then((payload) => (Array.isArray(payload) ? payload : payload.items || []).map(normalizeArtifact));

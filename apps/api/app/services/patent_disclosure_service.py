@@ -29,9 +29,12 @@ from packages.patent_disclosure_skill.adapter import (
     PatentLlmConfig,
     PipelineOptions,
     PipelineProgress,
+    RevisionOptions,
+    RevisionPipeline,
 )
 from packages.patent_disclosure_skill.adapter.cnipa_searcher import CnipaPriorArtSearcher
 from packages.patent_disclosure_skill.adapter.docx_exporter import DocxExporter
+from packages.patent_disclosure_skill.adapter.fallback_searcher import FallbackPriorArtSearcher
 from packages.patent_disclosure_skill.adapter.material_reader import MaterialReader, validate_zip_safe
 from packages.patent_disclosure_skill.adapter.openai_compatible_llm import PatentLlmError
 from packages.py_common.db.session import get_engine
@@ -58,6 +61,7 @@ ALLOWED_ARTIFACT_TYPES = {
     "disclosure_md",
     "disclosure_docx",
     "self_check",
+    "revision_log",
 }
 
 
@@ -183,7 +187,6 @@ class PatentDisclosureSettings:
     max_case_size_bytes: int
     allowed_extensions: set[str]
     cnipa_enabled: bool
-    skip_prior_art: bool
     cnipa_timeout_seconds: int
     cnipa_max_results: int
     enable_mermaid_render: bool
@@ -208,7 +211,6 @@ class PatentDisclosureSettings:
             max_case_size_bytes=int(os.getenv("PATENT_DISCLOSURE_MAX_CASE_SIZE_MB", "300")) * 1024 * 1024,
             allowed_extensions=allowed,
             cnipa_enabled=os.getenv("PATENT_DISCLOSURE_CNIPA_ENABLED", "true").lower() in {"1", "true", "yes"},
-            skip_prior_art=os.getenv("PATENT_DISCLOSURE_SKIP_PRIOR_ART", "false").lower() in {"1", "true", "yes"},
             cnipa_timeout_seconds=int(os.getenv("PATENT_DISCLOSURE_CNIPA_TIMEOUT_SECONDS", "300")),
             cnipa_max_results=int(os.getenv("PATENT_DISCLOSURE_CNIPA_MAX_RESULTS", "20")),
             enable_mermaid_render=os.getenv("PATENT_DISCLOSURE_ENABLE_MERMAID_RENDER", "true").lower()
@@ -390,14 +392,12 @@ class PatentDisclosureService:
             )
             and _find_chromium_executable() is not None
         )
-        prior_art_skipped = self.settings.skip_prior_art
         return {
-            "ok": skill_found and self.settings.llm.configured and (cnipa_available or prior_art_skipped) and docx_available,
+            "ok": skill_found and self.settings.llm.configured and docx_available,
             "module": APP_CODE,
             "skillFound": skill_found,
             "openaiCompatibleConfigured": self.settings.llm.configured,
             "cnipaAvailable": cnipa_available,
-            "priorArtSkipped": prior_art_skipped,
             "docxExportAvailable": docx_available,
             "mermaidRenderAvailable": mermaid_available,
             "sseEnabled": True,
@@ -623,8 +623,6 @@ class PatentDisclosureService:
             raise PlatformError(code="PATENT_SKILL_NOT_FOUND", message="专利交底书 skill 文件未找到。", status_code=503)
         if not health["openaiCompatibleConfigured"]:
             raise PlatformError(code="PATENT_LLM_NOT_CONFIGURED", message="专利交底书生成模型尚未配置。", status_code=503)
-        if not health["cnipaAvailable"] and not health.get("priorArtSkipped"):
-            raise PlatformError(code="PATENT_CNIPA_UNAVAILABLE", message="国知局查新工具不可用。", status_code=503)
         if not health["docxExportAvailable"]:
             raise PlatformError(code="PATENT_DOCX_EXPORT_FAILED", message="Word 导出工具不可用。", status_code=503)
 
@@ -694,6 +692,82 @@ class PatentDisclosureService:
             "sseUrl": f"/api/v1/patent-disclosure/api/jobs/{job['id']}/stream",
         }
 
+    def start_revision(self, user: dict[str, Any], case_id: str, options: dict[str, Any]) -> dict[str, Any]:
+        health = self.health()
+        if not health["skillFound"]:
+            raise PlatformError(code="PATENT_SKILL_NOT_FOUND", message="专利交底书 skill 文件未找到。", status_code=503)
+        if not health["openaiCompatibleConfigured"]:
+            raise PlatformError(code="PATENT_LLM_NOT_CONFIGURED", message="专利交底书生成模型尚未配置。", status_code=503)
+        if not health["docxExportAvailable"]:
+            raise PlatformError(code="PATENT_DOCX_EXPORT_FAILED", message="Word 导出工具不可用。", status_code=503)
+
+        case = self._get_case_for_user(user, case_id)
+        base_artifact = self._latest_artifact(case_id, "disclosure_md")
+        if not base_artifact:
+            raise PlatformError(code="PATENT_DISCLOSURE_NOT_FOUND", message="请先生成交底书，再提交修订意见。", status_code=422)
+        revision_instruction = str(options.get("revisionInstruction") or "").strip()
+        if not revision_instruction:
+            raise PlatformError(code="VALIDATION_ERROR", message="修订意见不能为空。", status_code=422)
+        job_input = {
+            "revisionInstruction": revision_instruction,
+            "baseArtifactId": str(base_artifact["id"]),
+            "renderMermaidPng": bool(options.get("renderMermaidPng", True)),
+        }
+        try:
+            with get_engine().begin() as conn:
+                core_job_id = conn.execute(
+                    text(
+                        """
+                        INSERT INTO core.jobs (
+                          module_code, job_type, status, progress, input, output, created_by
+                        )
+                        VALUES (
+                          :module_code, 'revise_disclosure', 'pending', 0,
+                          CAST(:input AS jsonb), '{}'::jsonb, :created_by
+                        )
+                        RETURNING id
+                        """
+                    ),
+                    {"module_code": MODULE_CODE, "input": _json_dumps(job_input), "created_by": _user_id(user)},
+                ).scalar_one()
+                row = conn.execute(
+                    text(
+                        """
+                        INSERT INTO patent_disclosure.jobs (
+                          case_id, core_job_id, job_type, status, step, progress, input, output, created_by
+                        )
+                        VALUES (
+                          :case_id, :core_job_id, 'revise_disclosure', 'pending', 'pending', 0,
+                          CAST(:input AS jsonb), '{}'::jsonb, :created_by
+                        )
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "case_id": case_id,
+                        "core_job_id": str(core_job_id),
+                        "input": _json_dumps(job_input),
+                        "created_by": _user_id(user),
+                    },
+                ).mappings().one()
+                conn.execute(
+                    text("UPDATE patent_disclosure.cases SET status = 'running', updated_at = now() WHERE id = :case_id"),
+                    {"case_id": case_id},
+                )
+        except SQLAlchemyError as exc:
+            raise _db_error(exc) from exc
+
+        job = _job_from_row(row)
+        threading.Thread(
+            target=self._run_revision_job,
+            args=(job["id"], case, dict(base_artifact), job_input),
+            daemon=True,
+        ).start()
+        return {
+            **job,
+            "sseUrl": f"/api/v1/patent-disclosure/api/jobs/{job['id']}/stream",
+        }
+
     def get_job(self, user: dict[str, Any], job_id: str) -> dict[str, Any]:
         try:
             with get_engine().begin() as conn:
@@ -746,19 +820,47 @@ class PatentDisclosureService:
         finally:
             SSE_BROKER.unsubscribe(job_id, queue)
 
-    def list_artifacts(self, user: dict[str, Any], case_id: str) -> dict[str, Any]:
+    def list_artifacts(self, user: dict[str, Any], case_id: str, scope: str = "latest") -> dict[str, Any]:
         self._get_case_for_user(user, case_id)
+        if scope == "all":
+            query = """
+                SELECT *
+                FROM patent_disclosure.artifacts
+                WHERE case_id = :case_id
+                ORDER BY version_no DESC,
+                  CASE artifact_type
+                    WHEN 'disclosure_md' THEN 1
+                    WHEN 'disclosure_docx' THEN 2
+                    WHEN 'revision_log' THEN 3
+                    WHEN 'patent_points' THEN 4
+                    WHEN 'cnipa_prior_art_notes' THEN 5
+                    WHEN 'self_check' THEN 6
+                    ELSE 7
+                  END,
+                  created_at DESC
+            """
+        else:
+            query = """
+                SELECT *
+                FROM patent_disclosure.artifacts
+                WHERE case_id = :case_id
+                  AND artifact_type IN ('disclosure_md', 'disclosure_docx')
+                  AND version_no = (
+                    SELECT MAX(version_no)
+                    FROM patent_disclosure.artifacts
+                    WHERE case_id = :case_id
+                      AND artifact_type IN ('disclosure_md', 'disclosure_docx')
+                  )
+                ORDER BY CASE artifact_type
+                  WHEN 'disclosure_md' THEN 1
+                  WHEN 'disclosure_docx' THEN 2
+                  ELSE 3
+                END
+            """
         try:
             with get_engine().begin() as conn:
                 rows = conn.execute(
-                    text(
-                        """
-                        SELECT *
-                        FROM patent_disclosure.artifacts
-                        WHERE case_id = :case_id
-                        ORDER BY created_at DESC, version_no DESC
-                        """
-                    ),
+                    text(query),
                     {"case_id": case_id},
                 ).mappings().all()
         except SQLAlchemyError as exc:
@@ -799,7 +901,7 @@ class PatentDisclosureService:
         try:
             self._set_job_progress(job_id, "running", "pending", 1, "生成任务已启动")
             version_no = self._next_version(case["id"])
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            version_label = f"v{version_no}"
             safe_case_title = _safe_name(str(case.get("title") or "patent_disclosure"), "patent_disclosure")
             output_dir = self.file_store.output_dir(case["id"], version_no)
             tmp_dir = self.file_store.tmp_dir(case["id"], job_id)
@@ -811,9 +913,11 @@ class PatentDisclosureService:
                 llm=OpenAICompatibleLLMClient(self.settings.llm),
                 cnipa_searcher=CnipaPriorArtSearcher(
                     self.settings.skill_dir,
+                    enabled=self.settings.cnipa_enabled,
                     timeout_seconds=self.settings.cnipa_timeout_seconds,
                     max_results=self.settings.cnipa_max_results,
                 ),
+                fallback_searcher=FallbackPriorArtSearcher(max_results=self.settings.cnipa_max_results),
                 docx_exporter=DocxExporter(
                     self.settings.skill_dir,
                     timeout_seconds=self.settings.tool_timeout_seconds,
@@ -831,13 +935,12 @@ class PatentDisclosureService:
                 parsed_dir=parsed_dir,
                 tmp_dir=tmp_dir,
                 safe_case_title=safe_case_title,
-                timestamp=timestamp,
+                timestamp=version_label,
                 options=PipelineOptions(
                     output_formats=list(options.get("outputFormats") or ["md", "docx"]),
                     include_mermaid=bool(options.get("includeMermaid", True)),
                     render_mermaid_png=bool(options.get("renderMermaidPng", True)),
                     anonymize=bool(options.get("anonymize", True)),
-                    skip_prior_art=self.settings.skip_prior_art,
                     extra_instruction=str(options.get("extraInstruction") or ""),
                 ),
                 emit=emit,
@@ -862,6 +965,72 @@ class PatentDisclosureService:
         except Exception as exc:
             logger.exception("Patent disclosure generation failed job_id=%s", job_id)
             self._set_job_failed(job_id, case["id"], str(exc) or "生成失败。")
+        finally:
+            SSE_BROKER.close(job_id)
+
+    def _run_revision_job(
+        self,
+        job_id: str,
+        case: dict[str, Any],
+        base_artifact: dict[str, Any],
+        options: dict[str, Any],
+    ) -> None:
+        try:
+            self._set_job_progress(job_id, "running", "revision_start", 1, "修订任务已启动")
+            version_no = self._next_version(case["id"])
+            version_label = f"v{version_no}"
+            safe_case_title = _safe_name(str(case.get("title") or "patent_disclosure"), "patent_disclosure")
+            output_dir = self.file_store.output_dir(case["id"], version_no)
+            tmp_dir = self.file_store.tmp_dir(case["id"], job_id)
+            base_path = self.file_store.ensure_within_root(str(base_artifact["storage_path"]))
+            if not base_path.is_file():
+                raise PlatformError(code="PATENT_ARTIFACT_NOT_FOUND", message="基准交底书文件不存在。", status_code=404)
+
+            pipeline = RevisionPipeline(
+                skill_dir=self.settings.skill_dir,
+                llm=OpenAICompatibleLLMClient(self.settings.llm),
+                docx_exporter=DocxExporter(
+                    self.settings.skill_dir,
+                    timeout_seconds=self.settings.tool_timeout_seconds,
+                    enable_mermaid_render=self.settings.enable_mermaid_render and bool(options.get("renderMermaidPng", True)),
+                ),
+            )
+
+            def emit(progress: PipelineProgress) -> None:
+                self._set_job_progress(job_id, "running", progress.step, progress.progress, progress.message)
+
+            result = pipeline.run(
+                case=case,
+                base_disclosure_md=base_path,
+                output_dir=output_dir,
+                tmp_dir=tmp_dir,
+                safe_case_title=safe_case_title,
+                timestamp=version_label,
+                revision_instruction=str(options.get("revisionInstruction") or ""),
+                options=RevisionOptions(render_mermaid_png=bool(options.get("renderMermaidPng", True))),
+                emit=emit,
+            )
+            metadata_warnings = [
+                *result.warnings,
+                f"修订类型：{'纠正迭代' if result.revision_kind == 'correct' else '合并迭代'}",
+                f"修订摘要：{result.summary}",
+            ]
+            artifact_ids = self._save_pipeline_artifacts(
+                case_id=case["id"],
+                job_id=job_id,
+                version_no=version_no,
+                paths=[
+                    ("disclosure_md", result.disclosure_md),
+                    ("disclosure_docx", result.disclosure_docx),
+                ],
+                warnings=metadata_warnings,
+            )
+            self._set_job_done(job_id, case["id"], artifact_ids, metadata_warnings)
+        except PatentLlmError as exc:
+            self._set_job_failed(job_id, case["id"], str(exc), code=exc.code)
+        except Exception as exc:
+            logger.exception("Patent disclosure revision failed job_id=%s", job_id)
+            self._set_job_failed(job_id, case["id"], str(exc) or "修订失败。")
         finally:
             SSE_BROKER.close(job_id)
 
@@ -1141,6 +1310,24 @@ class PatentDisclosureService:
             raise _db_error(exc) from exc
         return _job_from_row(row) if row else None
 
+    def _latest_artifact(self, case_id: str, artifact_type: str) -> Any | None:
+        try:
+            with get_engine().begin() as conn:
+                return conn.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM patent_disclosure.artifacts
+                        WHERE case_id = :case_id AND artifact_type = :artifact_type
+                        ORDER BY version_no DESC, created_at DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"case_id": case_id, "artifact_type": artifact_type},
+                ).mappings().first()
+        except SQLAlchemyError as exc:
+            raise _db_error(exc) from exc
+
     def _next_version(self, case_id: str) -> int:
         try:
             with get_engine().begin() as conn:
@@ -1212,6 +1399,7 @@ def _job_from_row(row: Any) -> dict[str, Any]:
     return {
         "id": str(row["id"]),
         "caseId": str(row["case_id"]),
+        "jobType": row.get("job_type") or "generate_disclosure",
         "status": row.get("status") or "pending",
         "step": row.get("step") or "pending",
         "currentStep": row.get("step") or "pending",
@@ -1252,6 +1440,7 @@ def _artifact_kind(artifact_type: str) -> str:
         "cnipa_prior_art_notes": "prior_art",
         "patent_points": "patent_points",
         "self_check": "self_check",
+        "revision_log": "revision_log",
     }.get(artifact_type, artifact_type)
 
 

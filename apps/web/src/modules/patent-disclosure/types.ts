@@ -56,6 +56,7 @@ export type GenerateSettings = {
 export type PatentGenerationJob = {
   id: string;
   caseId: string;
+  jobType?: "generate_disclosure" | "revise_disclosure" | string;
   status: "pending" | "running" | "succeeded" | "failed" | string;
   progress?: number;
   step?: string;
@@ -105,6 +106,7 @@ export type PatentArtifact = {
   filename?: string;
   artifactType?: string;
   kind?: "markdown" | "docx" | "prior_art" | "log" | string;
+  versionNo?: number;
   mimeType?: string;
   size?: number;
   sizeBytes?: number;

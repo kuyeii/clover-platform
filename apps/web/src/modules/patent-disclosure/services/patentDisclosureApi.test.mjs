@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 
 const serviceSource = await readFile(new URL("./patentDisclosureApi.ts", import.meta.url), "utf8");
 const pageSource = await readFile(new URL("../PatentDisclosurePage.tsx", import.meta.url), "utf8");
-const generatePanelSource = await readFile(new URL("../components/GenerateSettingsPanel.tsx", import.meta.url), "utf8");
+const createPanelSource = await readFile(new URL("../components/CaseCreatePanel.tsx", import.meta.url), "utf8");
+const artifactListSource = await readFile(new URL("../components/ArtifactDownloadList.tsx", import.meta.url), "utf8");
 
 test("patent disclosure API prefix and health endpoint match Stage 10-G", () => {
   assert.match(serviceSource, /PATENT_DISCLOSURE_API_PREFIX = "\/patent-disclosure\/api"/);
@@ -18,16 +19,47 @@ test("patent disclosure progress uses EventSource without task polling", () => {
   assert.doesNotMatch(serviceSource, /setInterval\s*\(/);
 });
 
+test("patent disclosure progress log merges duplicate phase updates", () => {
+  assert.match(pageSource, /function mergeProgressEvent/);
+  assert.match(pageSource, /getProgressEventKey\(latest\) === getProgressEventKey\(event\)/);
+  assert.doesNotMatch(pageSource, /setEvents\(\(current\) => \[\.\.\.current,\s*event\]/);
+});
+
 test("patent disclosure generation is disabled by health status", () => {
   assert.match(pageSource, /getHealthBlockReason/);
   assert.match(pageSource, /fetchPatentDisclosureHealth/);
-  assert.match(pageSource, /Boolean\(healthBlockReason\)/);
-  assert.match(generatePanelSource, /disabledReason/);
+  assert.match(pageSource, /disabledReason=\{healthBlockReason\}/);
+  assert.match(createPanelSource, /disabledReason/);
 });
 
-test("patent disclosure UI does not expose unsupported workflows", () => {
-  const combined = `${serviceSource}\n${pageSource}\n${generatePanelSource}`;
+test("patent disclosure revision posts user instruction and reuses job stream", () => {
+  assert.match(serviceSource, /startPatentDisclosureRevision/);
+  assert.match(serviceSource, /\/revise/);
+  assert.match(serviceSource, /revisionInstruction/);
+  assert.match(pageSource, /生成修订版/);
+  assert.match(pageSource, /connectJobStream\(nextJob\.id, caseId\)/);
+});
+
+test("patent disclosure revision keeps document preview interactive while progress updates", () => {
+  assert.match(pageSource, /isRevisionJob = job\?\.jobType === "revise_disclosure"/);
+  assert.match(pageSource, /isGenerateJob = !job\?\.jobType \|\| job\.jobType === "generate_disclosure"/);
+  assert.match(pageSource, /isGeneratingDisclosurePreview = !isRevising && !isRevisionJob/);
+  assert.match(pageSource, /isBusy=\{isGeneratingDisclosurePreview && isLatestVersionSelected\}/);
+  assert.doesNotMatch(pageSource, /isBusy=\{isTaskRunning && isLatestVersionSelected\}/);
+  const reviseBody = pageSource.match(/async function handleRevise[\s\S]*?\n  }\n\n  function handleNewCase/)?.[0] || "";
+  assert.doesNotMatch(reviseBody, /setIsGenerating\(true\)/);
+});
+
+test("patent disclosure artifacts support latest and all-version result views", () => {
+  assert.match(serviceSource, /encodeURIComponent\(options\.scope\)/);
+  assert.match(pageSource, /buildDisclosureVersions/);
+  assert.match(pageSource, /下载 DOCX/);
+  assert.match(pageSource, /查看全部文件/);
+  assert.match(artifactListSource, /最终 Markdown 和 Word 文件/);
+});
+
+test("patent disclosure UI only exposes supported job workflows", () => {
+  const combined = `${serviceSource}\n${pageSource}\n${createPanelSource}`;
   assert.doesNotMatch(combined, /\/cancel\b|cancelJob|取消任务/);
-  assert.doesNotMatch(combined, /\/preview\b|previewArtifact|在线预览/);
   assert.doesNotMatch(combined, /\/iterate\b|iterateDisclosure|迭代修订/);
 });

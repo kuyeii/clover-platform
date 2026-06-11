@@ -28,6 +28,7 @@ from pathlib import Path
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
@@ -38,8 +39,9 @@ _DEFAULT_IMAGE_MAX_H_IN = 8.2
 _FORMULA_DISPLAY_MAX_H_IN = 0.17
 # 兼容旧名
 _FORMULA_INLINE_MAX_H_IN = _FORMULA_DISPLAY_MAX_H_IN
-_FORMULA_BLOCK_MAX_W_IN = 4.0  # 仅作块级超宽时的宽度上限（通常由固定高度约束）
-_FORMULA_BLOCK_MAX_H_IN = _FORMULA_DISPLAY_MAX_H_IN
+_FORMULA_INLINE_MAX_W_IN = 5.2
+_FORMULA_BLOCK_MAX_W_IN = 5.5  # 仅作块级超宽时的宽度上限（通常由固定高度约束）
+_FORMULA_BLOCK_MAX_H_IN = 0.35
 
 _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 _HIDDEN_MD_IMAGE_COMMENT_RE = re.compile(
@@ -182,6 +184,26 @@ def _span_overlaps(spans: list[tuple[int, int]], start: int, end: int) -> bool:
     return any(not (end <= s or start >= e) for s, e in spans)
 
 
+def _find_inline_paren_math_with_hidden_images(text: str) -> list[tuple[int, int, str, str]]:
+    r"""查找 ``\(...\)<!-- ![](...) -->``，允许公式内部包含普通 ``)``。"""
+    matches: list[tuple[int, int, str, str]] = []
+    pos = 0
+    while True:
+        start = text.find("\\(", pos)
+        if start == -1:
+            break
+        end = text.find("\\)", start + 2)
+        if end == -1:
+            break
+        hidden = _HIDDEN_MD_IMAGE_COMMENT_RE.match(text, end + 2)
+        if hidden is None:
+            pos = end + 2
+            continue
+        matches.append((start, hidden.end(), hidden.group(1), hidden.group(2).strip()))
+        pos = hidden.end()
+    return matches
+
+
 def _embed_from_image_ref(
     alt: str,
     src: str,
@@ -210,7 +232,12 @@ def _embed_from_image_ref(
             p.paragraph_format.space_after = Pt(6)
             p.paragraph_format.line_spacing = 1.15
         if p is not None:
-            _embed_picture_inline(p, ipath, max_h_in=_FORMULA_DISPLAY_MAX_H_IN)
+            _embed_picture_inline(
+                p,
+                ipath,
+                max_h_in=_FORMULA_INLINE_MAX_H_IN,
+                max_w_in=_FORMULA_INLINE_MAX_W_IN,
+            )
         return
 
     if doc is None:
@@ -257,6 +284,7 @@ def _maybe_render_math_md(md_text: str, base_dir: Path) -> str:
         md_text,
         out_md_path=stub,
         assets_rel="math_figures",
+        visible_images=False,
     )
     if ok or failed:
         print(
@@ -270,6 +298,19 @@ def _add_math_fallback_block(doc: Document, lines: list[str]) -> None:
     """未渲染成功的 ``$$ ... $$`` 以等宽原文写入 Word。"""
     body = [ln.rstrip("\n") for ln in lines]
     _add_code_block(doc, ["$$", *body, "$$"])
+
+
+def _next_hidden_image_comment(lines: list[str], index: int) -> tuple[tuple[str, str] | None, int]:
+    """读取紧随其后的隐藏图片注释，允许中间有空行。"""
+    j = index
+    while j < len(lines) and lines[j].strip() == "":
+        j += 1
+    if j >= len(lines):
+        return None, index
+    cm = _HIDDEN_MD_IMAGE_COMMENT_RE.match(lines[j].strip())
+    if not cm:
+        return None, index
+    return (cm.group(1), cm.group(2).strip()), j + 1
 
 
 def _embed_picture(
@@ -347,11 +388,11 @@ def _add_rich_content_to_paragraph(
         tokens.append((m.start(), m.end(), "math_img", (m.group(2), m.group(3).strip())))
         taken.append((m.start(), m.end()))
 
-    for m in _INLINE_MATH_PAREN_WITH_HIDDEN_IMG_RE.finditer(text):
-        if _span_overlaps(taken, m.start(), m.end()):
+    for start, end, alt, src in _find_inline_paren_math_with_hidden_images(text):
+        if _span_overlaps(taken, start, end):
             continue
-        tokens.append((m.start(), m.end(), "math_img", (m.group(2), m.group(3).strip())))
-        taken.append((m.start(), m.end()))
+        tokens.append((start, end, "math_img", (alt, src)))
+        taken.append((start, end))
 
     for m in _HIDDEN_MD_IMAGE_COMMENT_RE.finditer(text):
         if _span_overlaps(taken, m.start(), m.end()):
@@ -454,12 +495,7 @@ def _add_body_paragraph(
     p = doc.add_paragraph()
     p.paragraph_format.space_after = Pt(6)
     p.paragraph_format.line_spacing = 1.15
-    if (
-        _MD_IMAGE_RE.search(text)
-        or _HIDDEN_MD_IMAGE_COMMENT_RE.search(text)
-        or _INLINE_MATH_WITH_HIDDEN_IMG_RE.search(text)
-        or _INLINE_MATH_PAREN_WITH_HIDDEN_IMG_RE.search(text)
-    ):
+    if _line_has_embeddable_images(text):
         _add_rich_content_to_paragraph(
             p,
             text,
@@ -492,6 +528,7 @@ def _add_list_item(
     base_dir: Path | None,
     *,
     image_max_h_in: float = _DEFAULT_IMAGE_MAX_H_IN,
+    num_id: int | None = None,
 ):
     style = "List Number" if ordered else "List Bullet"
     try:
@@ -499,13 +536,10 @@ def _add_list_item(
     except (KeyError, ValueError):
         p = doc.add_paragraph()
         p.paragraph_format.left_indent = Inches(0.35)
+    if ordered and num_id is not None:
+        _set_paragraph_numbering(p, num_id)
     p.paragraph_format.space_after = Pt(3)
-    if (
-        _MD_IMAGE_RE.search(text)
-        or _HIDDEN_MD_IMAGE_COMMENT_RE.search(text)
-        or _INLINE_MATH_WITH_HIDDEN_IMG_RE.search(text)
-        or _INLINE_MATH_PAREN_WITH_HIDDEN_IMG_RE.search(text)
-    ):
+    if _line_has_embeddable_images(text):
         _add_rich_content_to_paragraph(
             p,
             text,
@@ -517,6 +551,74 @@ def _add_list_item(
         _add_inline_to_paragraph(p, text)
     for run in p.runs:
         _set_run_font(run, "宋体", 10.5)
+
+
+def _list_number_abstract_id(doc: Document) -> int | None:
+    """Return the abstract numbering template used by Word's ``List Number`` style."""
+    try:
+        style = doc.styles["List Number"]
+    except (KeyError, ValueError):
+        return None
+    ppr = style.element.find(qn("w:pPr"))
+    if ppr is None:
+        return None
+    num_pr = ppr.find(qn("w:numPr"))
+    if num_pr is None:
+        return None
+    num_id_el = num_pr.find(qn("w:numId"))
+    if num_id_el is None:
+        return None
+    num_id_raw = num_id_el.get(qn("w:val"))
+    if not num_id_raw:
+        return None
+    try:
+        num = doc.part.numbering_part.element.num_having_numId(int(num_id_raw))
+    except (AttributeError, ValueError):
+        return None
+    abstract_id_el = num.find(qn("w:abstractNumId"))
+    if abstract_id_el is None:
+        return None
+    abstract_id_raw = abstract_id_el.get(qn("w:val"))
+    if not abstract_id_raw:
+        return None
+    try:
+        return int(abstract_id_raw)
+    except ValueError:
+        return None
+
+
+def _new_ordered_list_num_id(doc: Document) -> int | None:
+    """Create a fresh numbering instance so a logical Markdown list starts at 1."""
+    abstract_id = _list_number_abstract_id(doc)
+    if abstract_id is None:
+        return None
+    num = doc.part.numbering_part.element.add_num(abstract_id)
+    override = num.add_lvlOverride(ilvl=0)
+    override.add_startOverride(val=1)
+    try:
+        return int(num.numId)
+    except (TypeError, ValueError):
+        return None
+
+
+def _set_paragraph_numbering(paragraph, num_id: int, ilvl: int = 0) -> None:
+    ppr = paragraph._p.get_or_add_pPr()
+    num_pr = ppr.find(qn("w:numPr"))
+    if num_pr is None:
+        num_pr = OxmlElement("w:numPr")
+        ppr.append(num_pr)
+
+    ilvl_el = num_pr.find(qn("w:ilvl"))
+    if ilvl_el is None:
+        ilvl_el = OxmlElement("w:ilvl")
+        num_pr.append(ilvl_el)
+    ilvl_el.set(qn("w:val"), str(ilvl))
+
+    num_id_el = num_pr.find(qn("w:numId"))
+    if num_id_el is None:
+        num_id_el = OxmlElement("w:numId")
+        num_pr.append(num_id_el)
+    num_id_el.set(qn("w:val"), str(num_id))
 
 
 def _is_table_row(line: str) -> bool:
@@ -669,7 +771,7 @@ def _line_has_embeddable_images(line: str) -> bool:
         _MD_IMAGE_RE.search(line)
         or _HIDDEN_MD_IMAGE_COMMENT_RE.search(line)
         or _INLINE_MATH_WITH_HIDDEN_IMG_RE.search(line)
-        or _INLINE_MATH_PAREN_WITH_HIDDEN_IMG_RE.search(line)
+        or bool(_find_inline_paren_math_with_hidden_images(line))
     )
 
 
@@ -718,6 +820,11 @@ def convert_md_to_docx(
     lines = md_text.splitlines()
     i = 0
     para_buf: list[str] = []
+    current_ordered_num_id: int | None = None
+
+    def reset_ordered_list():
+        nonlocal current_ordered_num_id
+        current_ordered_num_id = None
 
     def flush_paragraph():
         nonlocal para_buf
@@ -746,6 +853,7 @@ def convert_md_to_docx(
 
         # 围栏代码块
         if line.strip().startswith("```"):
+            reset_ordered_list()
             flush_paragraph()
             fence_lang = line.strip()[3:].strip()
             i += 1
@@ -769,6 +877,7 @@ def convert_md_to_docx(
 
         # 块级公式：\[ ... \] + 可选 HTML 注释
         if line.strip() == "\\[":
+            reset_ordered_list()
             flush_paragraph()
             i += 1
             math_lines: list[str] = []
@@ -798,8 +907,32 @@ def convert_md_to_docx(
             _add_math_fallback_block(doc, ["\\[", *math_lines, "\\]"])
             continue
 
+        # 单行块级公式：\[ ... \] + 可选 HTML 注释
+        stripped = line.strip()
+        if stripped.startswith("\\[") and stripped.endswith("\\]") and len(stripped) > 4:
+            reset_ordered_list()
+            flush_paragraph()
+            hidden, next_i = _next_hidden_image_comment(lines, i + 1)
+            if hidden and _formula_image_kind(*hidden):
+                ipath = _resolve_image_path(hidden[1], base_dir)
+                if ipath:
+                    _embed_from_image_ref(
+                        hidden[0],
+                        hidden[1],
+                        base_dir,
+                        doc=doc,
+                        image_max_w_in=image_max_w_in,
+                        image_max_h_in=image_max_h_in,
+                    )
+                    i = next_i
+                    continue
+            _add_math_fallback_block(doc, [stripped])
+            i += 1
+            continue
+
         # 块级公式：$$ ... $$ + 可选 HTML 注释（Word 嵌 PNG；预览见 LaTeX 原文）
         if line.strip() == "$$":
+            reset_ordered_list()
             flush_paragraph()
             i += 1
             math_lines: list[str] = []
@@ -831,6 +964,7 @@ def convert_md_to_docx(
 
         # 独立 HTML 注释行（公式图 / mermaid 框图引用）
         if _HIDDEN_MD_IMAGE_COMMENT_RE.fullmatch(line.strip()):
+            reset_ordered_list()
             flush_paragraph()
             _try_embed_hidden_comment_line(
                 doc,
@@ -842,8 +976,22 @@ def convert_md_to_docx(
             i += 1
             continue
 
+        # 表格块必须先于“含隐藏图片的段落”处理，否则含公式的表格行会被拆成普通段落。
+        if _is_table_row(line):
+            reset_ordered_list()
+            flush_paragraph()
+            table_rows: list[list[str]] = []
+            while i < len(lines) and _is_table_row(lines[i]):
+                row = _parse_table_row(lines[i])
+                if not _is_table_sep(row):
+                    table_rows.append(row)
+                i += 1
+            _add_table(doc, table_rows, base_dir)
+            continue
+
         # 图片行或含行内公式/注释的段落
         if _line_has_embeddable_images(line):
+            reset_ordered_list()
             flush_paragraph()
             stripped = line.strip()
             if _MD_IMAGE_RE.fullmatch(stripped) or (
@@ -869,6 +1017,7 @@ def convert_md_to_docx(
 
         # 水平线
         if re.match(r"^[\s\-*_]{3,}\s*$", line) and set(line.strip()) <= {"-", "*", "_", " "}:
+            reset_ordered_list()
             flush_paragraph()
             _add_horizontal_rule(doc)
             i += 1
@@ -877,6 +1026,7 @@ def convert_md_to_docx(
         # 标题
         m = re.match(r"^(#{1,6})\s+(.+)$", line)
         if m:
+            reset_ordered_list()
             flush_paragraph()
             level = len(m.group(1))
             title = m.group(2).strip()
@@ -887,6 +1037,7 @@ def convert_md_to_docx(
 
         # 引用
         if line.lstrip().startswith("> "):
+            reset_ordered_list()
             flush_paragraph()
             quote = line.lstrip()[2:].strip()
             p = doc.add_paragraph()
@@ -898,21 +1049,10 @@ def convert_md_to_docx(
             i += 1
             continue
 
-        # 表格块
-        if _is_table_row(line):
-            flush_paragraph()
-            table_rows: list[list[str]] = []
-            while i < len(lines) and _is_table_row(lines[i]):
-                row = _parse_table_row(lines[i])
-                if not _is_table_sep(row):
-                    table_rows.append(row)
-                i += 1
-            _add_table(doc, table_rows, base_dir)
-            continue
-
         # 无序列表
         um = re.match(r"^(\s*)[-*+]\s+(.+)$", line)
         if um:
+            reset_ordered_list()
             flush_paragraph()
             _add_list_item(
                 doc,
@@ -928,16 +1068,20 @@ def convert_md_to_docx(
         om = re.match(r"^(\s*)\d+\.\s+(.+)$", line)
         if om:
             flush_paragraph()
+            if current_ordered_num_id is None:
+                current_ordered_num_id = _new_ordered_list_num_id(doc)
             _add_list_item(
                 doc,
                 om.group(2).strip(),
                 ordered=True,
                 base_dir=base_dir,
                 image_max_h_in=image_max_h_in,
+                num_id=current_ordered_num_id,
             )
             i += 1
             continue
 
+        reset_ordered_list()
         para_buf.append(line)
         i += 1
 

@@ -35,6 +35,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 
@@ -418,8 +419,28 @@ def try_write_docx(out_md: Path, docx_out: Path) -> bool:
         _print_manual_docx_hint(out_md, docx_out, base_dir, md_script)
         return False
 
+    if not _is_valid_docx(docx_out):
+        try:
+            docx_out.unlink(missing_ok=True)
+        except OSError:
+            pass
+        print("警告：md_to_docx 生成的文件不是有效 Word .docx。", file=sys.stderr)
+        _print_manual_docx_hint(out_md, docx_out, base_dir, md_script)
+        return False
+
     print(f"已写入 Word: {docx_out}", file=sys.stderr)
     return True
+
+
+def _is_valid_docx(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        with zipfile.ZipFile(path) as docx:
+            names = set(docx.namelist())
+            return "[Content_Types].xml" in names and "word/document.xml" in names
+    except zipfile.BadZipFile:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:

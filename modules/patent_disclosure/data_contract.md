@@ -74,3 +74,4 @@ disclosure_docx
 self_check
 ```
 
+`cnipa_prior_art_notes` 为查新记录产物名，内容包含国知局优先查新结果及必要时的降级公开来源检索结果。

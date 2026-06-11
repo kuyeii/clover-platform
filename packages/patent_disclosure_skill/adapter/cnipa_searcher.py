@@ -16,11 +16,12 @@ class CnipaSearchError(RuntimeError):
 @dataclass(frozen=True)
 class CnipaPriorArtSearcher:
     skill_dir: Path
+    enabled: bool = True
     timeout_seconds: int = 300
     max_results: int = 20
 
     def available(self) -> bool:
-        return (self.skill_dir / "tools" / "cnipa_epub_search.py").is_file()
+        return self.enabled and (self.skill_dir / "tools" / "cnipa_epub_search.py").is_file()
 
     def search(self, terms: list[str], *, work_dir: Path) -> list[dict[str, Any]]:
         if not self.available():
@@ -49,7 +50,7 @@ class CnipaPriorArtSearcher:
                 if len(hits_by_key) >= self.max_results:
                     break
         if not hits_by_key:
-            raise CnipaSearchError("国知局查新未返回可用结果，已按 Stage 10-G 要求终止生成。")
+            raise CnipaSearchError("国知局查新未返回可用结果，将进入降级查新。")
         return list(hits_by_key.values())[: self.max_results]
 
 

@@ -18,7 +18,7 @@ export function ArtifactDownloadList({ artifacts, isDownloadingId, onDownload }:
       </div>
       <div className="pd-artifact-list">
         {artifacts.length === 0 ? (
-          <div className="pd-empty">生成完成后会展示 Markdown、Word 和查新记录等文件。</div>
+          <div className="pd-empty">生成完成后会展示最终 Markdown 和 Word 文件。</div>
         ) : (
           artifacts.map((artifact) => (
             <div className="pd-artifact-row" key={artifact.id}>
@@ -46,6 +46,7 @@ function formatKind(kind?: string) {
   if (kind === "markdown") return "Markdown";
   if (kind === "docx") return "Word";
   if (kind === "prior_art") return "查新记录";
+  if (kind === "revision_log") return "修订记录";
   return kind || "文件";
 }
 

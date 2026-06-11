@@ -4,56 +4,73 @@ type Props = {
   cases: PatentCase[];
   activeCaseId?: string;
   isLoading: boolean;
+  onCreateNew: () => void;
   onSelect: (caseId: string) => void;
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "草稿",
-  ready: "材料就绪",
-  running: "生成中",
-  succeeded: "已完成",
-  failed: "失败",
-  archived: "已归档",
-};
+export function CaseList({ cases, activeCaseId, isLoading, onCreateNew, onSelect }: Props) {
+  const historyCount = cases.length;
 
-export function CaseList({ cases, activeCaseId, isLoading, onSelect }: Props) {
   return (
-    <section className="pd-panel pd-case-list" aria-labelledby="pd-case-list-title">
-      <div className="pd-panel-header">
-        <div>
-          <p className="pd-eyebrow">案件队列</p>
-          <h2 id="pd-case-list-title">最近案件</h2>
+    <section className="pd-case-list" aria-labelledby="pd-case-list-title">
+      <button type="button" className="pd-sidebar-new-button" onClick={onCreateNew}>
+        <span className="pd-sidebar-plus" aria-hidden />
+        <span>新建案件</span>
+      </button>
+
+      <div className="pd-sidebar-history-box">
+        <div className="pd-sidebar-history-title">
+          <h2 id="pd-case-list-title">历史记录</h2>
+          <span>{historyCount}</span>
         </div>
-        <span className="pd-count">{cases.length}</span>
-      </div>
+
       {isLoading ? (
-        <div className="pd-empty">正在加载案件列表</div>
+        <div className="pd-sidebar-loading">
+          <div className="loading-spinner" aria-hidden />
+          <span>加载记录...</span>
+        </div>
       ) : cases.length === 0 ? (
-        <div className="pd-empty">暂无案件，先创建一个工作单。</div>
+        <div className="pd-sidebar-empty">
+          <span className="pd-sidebar-empty-icon" aria-hidden />
+          <strong>暂无案件</strong>
+          <small>点击“新建案件”开始</small>
+        </div>
       ) : (
-        <div className="pd-list" role="list">
+        <div className="pd-sidebar-history-list" role="list">
           {cases.map((item) => (
             <button
-              className={`pd-case-row ${item.id === activeCaseId ? "is-active" : ""}`}
+              className={`pd-sidebar-history-entry ${item.id === activeCaseId ? "is-active" : ""} ${isRunningStatus(item.status) ? "is-running" : ""}`}
               key={item.id}
               type="button"
               onClick={() => onSelect(item.id)}
             >
-              <span className="pd-case-row-main">
-                <strong>{item.title}</strong>
-                <small>{item.technicalField || item.technicalTopic || "未填写技术领域"}</small>
-              </span>
-              <span className={`pd-status pd-status-${normalizeStatus(item.status)}`}>
-                {STATUS_LABELS[item.status] || item.status || "未知"}
-              </span>
+              <strong title={item.title}>{item.title}</strong>
+              <span>{formatCaseTime(item.updatedAt || item.createdAt)}</span>
             </button>
           ))}
         </div>
       )}
+      </div>
     </section>
   );
 }
 
-function normalizeStatus(status: string) {
-  return String(status || "draft").replace(/[^a-z0-9_-]/gi, "_");
+function isRunningStatus(status?: string) {
+  return status === "running" || status === "pending";
+}
+
+function formatCaseTime(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  return `${pick("year")}-${pick("month")}-${pick("day")} ${pick("hour")}:${pick("minute")}`;
 }
