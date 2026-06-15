@@ -10,6 +10,8 @@ config/config.local.yaml
 runtime/*
 !runtime/.gitkeep
 data/patent_disclosure/
+outputs/
+output/
 __pycache__/
 *.py[cod]
 .venv/
