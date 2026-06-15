@@ -10,6 +10,7 @@ const BUSINESS_API_PREFIX_BY_APP: Record<ModuleCode, string> = {
   "bid-generator": "/bid-generator",
   "competitor-analysis": "/competitor-analysis",
   "contract-review": "/contract-review",
+  "patent-disclosure": "/patent-disclosure",
   "rag-web-search": "/rag",
 };
 

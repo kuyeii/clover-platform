@@ -4,7 +4,6 @@ import { LayoutGroup, motion } from "framer-motion";
 import {
   BookOpen,
   ChevronLeft,
-  Globe2,
   LayoutGrid,
   LogOut,
   MessageSquare,
@@ -32,6 +31,7 @@ const legacyAppRoutes: Record<PortalModule["code"], string> = {
   "bid-generator": "/apps/bid-generator",
   "contract-review": "/apps/contract-review",
   "competitor-analysis": "/apps/competitor-analysis",
+  "patent-disclosure": "/apps/patent-disclosure",
   "rag-web-search": "/apps/rag-web-search",
 };
 
@@ -39,13 +39,13 @@ const modulePathAliases: Record<PortalModule["code"], string[]> = {
   "bid-generator": ["/apps/bid-generator", "/modules/bid-generator"],
   "contract-review": ["/apps/contract-review", "/modules/contract-review"],
   "competitor-analysis": ["/apps/competitor-analysis", "/modules/competitor-analysis"],
+  "patent-disclosure": ["/apps/patent-disclosure", "/modules/patent-disclosure"],
   "rag-web-search": ["/apps/rag-web-search", "/apps/rag", "/modules/rag"],
 };
 
 const secondaryNavItems = [
   { to: "/knowledge", label: "知识库", icon: BookOpen, aliases: ["/knowledge"] },
   { to: "/settings", label: "用户管理", icon: Settings2, aliases: ["/settings", "/users", "/admin/users"] },
-  { to: "/bid-reference-sites", label: "招投标网址", icon: Globe2, aliases: ["/bid-reference-sites"] },
   { to: "/feedback", label: "用户反馈", icon: MessageSquare, aliases: ["/feedback"] },
 ];
 
@@ -200,7 +200,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
               >
                 <motion.span
                   initial={false}
-                  animate={isEmbeddedModuleView ? { x: -2 } : { x: 0 }}
+                  animate={isEmbeddedModuleView ? { x: -14 } : { x: 0 }}
                   transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
                   className="inline-flex min-w-0 items-center justify-center"
                 >
@@ -208,7 +208,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                     href={primaryNavTarget}
                     onClick={(event) => onNavigate(event, primaryNavTarget)}
                     className={[
-                      "inline-flex min-w-0 items-center justify-center gap-2 transition-colors",
+                      "inline-flex min-w-0 items-center justify-center gap-3 transition-colors",
                       shouldShowPrimaryIndicator
                         ? "text-brand-500"
                         : activeModule

@@ -10,9 +10,10 @@ import { AppUsageBadge } from "./AppUsageBadge";
 interface AppCardProps {
   app: ToolkitApp;
   navigate: NavigateFn;
+  ctaLabelOverride?: string;
 }
 
-export function AppCard({ app, navigate }: AppCardProps) {
+export function AppCard({ app, navigate, ctaLabelOverride }: AppCardProps) {
   const { canAccessApp } = useAuth();
   const { enterApp, getAppUsage } = useAppUsage();
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -95,7 +96,7 @@ export function AppCard({ app, navigate }: AppCardProps) {
                   : "cursor-not-allowed border-border text-muted",
               ].join(" ")}
             >
-              {hasPermission ? app.ctaLabel : "暂无权限"}
+              {hasPermission ? ctaLabelOverride ?? app.ctaLabel : "暂无权限"}
               {hasPermission ? (
                 <ArrowRight className="h-4 w-4 md:h-5 md:w-5" strokeWidth={2} />
               ) : (

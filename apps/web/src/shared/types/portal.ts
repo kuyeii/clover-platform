@@ -6,7 +6,8 @@ export type ModuleCode =
   | "competitor-analysis"
   | "rag-web-search"
   | "contract-review"
-  | "bid-generator";
+  | "bid-generator"
+  | "patent-disclosure";
 
 export interface PortalUser {
   id: string;
@@ -22,14 +23,14 @@ export interface PortalUser {
 
 export interface PortalModule {
   code: ModuleCode;
-  slug: "competitor-analysis" | "rag" | "contract-review" | "bid-generator";
+  slug: "competitor-analysis" | "rag" | "contract-review" | "bid-generator" | "patent-disclosure";
   name: string;
   shortName: string;
   description: string;
   route: string;
   iframeRoute?: string;
   apiPrefix: string;
-  legacyFrontend: string;
+  legacyFrontend?: string;
   status: AppStatus;
 }
 

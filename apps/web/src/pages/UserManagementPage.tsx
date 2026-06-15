@@ -16,6 +16,7 @@ const permissionModules: Array<{ code: ModuleCode; name: string; shortName: stri
   { code: "contract-review", name: "合同审查", shortName: "合同" },
   { code: "competitor-analysis", name: "企业竞品分析", shortName: "竞品" },
   { code: "rag-web-search", name: "RAG 问答", shortName: "问答" },
+  { code: "patent-disclosure", name: "专利交底书", shortName: "专利" },
 ];
 const allAppIds = permissionModules.map((module) => module.code);
 const emptyCreateForm = { name: "", account: "", password: "", appPermissions: allAppIds };

@@ -47,6 +47,16 @@ export const moduleEntries: PortalModule[] = [
     description: "标书项目、需求提取、内容生成、文档组装和导出能力。",
     status: "running",
   },
+  {
+    slug: "patent-disclosure",
+    code: "patent-disclosure",
+    name: "专利交底书",
+    shortName: "专利",
+    route: "/modules/patent-disclosure",
+    apiPrefix: "/api/v1/patent-disclosure",
+    description: "基于项目资料自动挖掘专利点、执行国知局查新并生成技术交底书。",
+    status: "running",
+  },
 ];
 
 export function getModuleEntry(slug: PortalModule["slug"]): PortalModule {

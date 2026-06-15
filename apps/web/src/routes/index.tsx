@@ -3,6 +3,7 @@ import { ReactElement } from "react";
 import { BidGeneratorPage } from "../modules/bid-generator/BidGeneratorPage";
 import { CompetitorAnalysisPage } from "../modules/competitor-analysis/CompetitorAnalysisPage";
 import { ContractReviewPage } from "../modules/contract-review/ContractReviewPage";
+import { PatentDisclosurePage } from "../modules/patent-disclosure/PatentDisclosurePage";
 import { RagPage } from "../modules/rag/RagPage";
 import { BidReferenceSitesPage } from "../pages/BidReferenceSitesPage";
 import { FeedbackPage } from "../pages/FeedbackPage";
@@ -131,6 +132,16 @@ export const appRoutes: AppRoute[] = [
     path: "/modules/bid-generator",
     label: "标书生成",
     render: (context) => protectedPage(context, <BidGeneratorPage />),
+  },
+  {
+    path: "/apps/patent-disclosure",
+    label: "专利交底书",
+    render: (context) => protectedPage(context, <PatentDisclosurePage />),
+  },
+  {
+    path: "/modules/patent-disclosure",
+    label: "专利交底书",
+    render: (context) => protectedPage(context, <PatentDisclosurePage />),
   },
 ];
 

@@ -1,0 +1,8 @@
+**/node_modules
+**/.vite
+**/dist
+bin
+data
+.DS_Store
+__MACOSX
+*.log
