@@ -105,7 +105,7 @@ export function CaseCreatePanel({
                     <Icon name="upload" />
                   </span>
                   <strong>拖拽文件至此或点击导入</strong>
-                  <small>支持 .docx · .pdf · .pptx · .md · .txt 格式，单文件不超过 100MB</small>
+                  <small>支持 .docx · .pdf · .pptx · .md · .txt · .zip 代码仓库，单文件不超过 100MB</small>
                 </>
               )}
             </label>

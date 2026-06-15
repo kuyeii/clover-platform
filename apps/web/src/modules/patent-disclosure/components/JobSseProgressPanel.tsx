@@ -11,6 +11,7 @@ export function JobSseProgressPanel({ job, events, connected }: Props) {
   const progress = clampProgress(latest?.progress ?? job?.progress ?? 0);
   const status = latest?.status || job?.status || "idle";
   const currentStep = latest?.currentStep || latest?.step || job?.currentStep || "等待任务";
+  const currentLabel = latest?.message || job?.message || currentStep;
   const steps = buildWorkflowSteps(currentStep, progress, status, events);
 
   return (
@@ -26,7 +27,7 @@ export function JobSseProgressPanel({ job, events, connected }: Props) {
       <div className="pd-progress-summary">
         <div>
           <strong>{formatStatus(status)} {progress}%</strong>
-          <span>{currentStep}</span>
+          <span>{currentLabel}</span>
         </div>
         <b>{progress}%</b>
       </div>
@@ -63,31 +64,31 @@ const WORKFLOW_STEPS = [
     key: "scan",
     title: "扫描项目",
     description: "解析技术方案与相关源代码",
-    tokens: ["扫描", "项目", "文档", "材料", "解析"],
+    tokens: ["material_parse", "project_scan", "扫描", "项目", "文档", "材料", "解析"],
   },
   {
     key: "mine",
     title: "提取专利点",
     description: "识别和归纳技术创新特征",
-    tokens: ["专利点", "挖掘", "创新", "特征", "候选"],
+    tokens: ["patent_points", "专利点", "挖掘", "创新", "特征", "候选"],
   },
   {
     key: "search",
     title: "联网查新与对比",
     description: "检索公开专利并整理差异",
-    tokens: ["查新", "检索", "对比", "现有技术", "CNIPA", "国知局"],
+    tokens: ["cnipa_prior_art", "prior_art", "查新", "检索", "对比", "现有技术", "CNIPA", "国知局"],
   },
   {
     key: "draft",
     title: "撰写交底书",
     description: "生成结构化文档及 Mermaid 图表",
-    tokens: ["撰写", "交底书", "初稿", "生成", "Mermaid", "文档"],
+    tokens: ["build_disclosure", "disclosure", "撰写", "交底书", "初稿", "生成", "Mermaid"],
   },
   {
     key: "check",
     title: "生成 DOCX",
     description: "导出最终 Word 文档",
-    tokens: ["自检", "校验", "优化", "一致性", "导出", "完成", "docx", "word", "export"],
+    tokens: ["self_check", "export_docx", "自检", "校验", "优化", "一致性", "导出", "完成", "docx", "word", "export"],
   },
 ];
 
@@ -97,16 +98,12 @@ function buildWorkflowSteps(
   status: string,
   events: PatentProgressEvent[],
 ) {
-  const haystack = [
-    currentStep,
-    ...events.flatMap((event) => [event.step, event.currentStep, event.message, event.error]),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  const matchedIndex = WORKFLOW_STEPS.findIndex((step) =>
-    step.tokens.some((token) => haystack.includes(token.toLowerCase())),
-  );
+  const currentMatchedIndex = matchWorkflowStepIndex(currentStep);
+  const recentMatchedIndex = [...events]
+    .reverse()
+    .map((event) => matchWorkflowStepIndex([event.step, event.currentStep, event.message, event.error].filter(Boolean).join(" ")))
+    .find((index) => index >= 0) ?? -1;
+  const matchedIndex = currentMatchedIndex >= 0 ? currentMatchedIndex : recentMatchedIndex;
   const fallbackIndex = Math.min(WORKFLOW_STEPS.length - 1, Math.floor(progress / 20));
   const activeIndex = matchedIndex >= 0 ? matchedIndex : fallbackIndex;
   const isFailed = status === "failed";
@@ -120,6 +117,14 @@ function buildWorkflowSteps(
     if (isFailed && index < activeIndex) state = "done";
     return { ...step, state };
   });
+}
+
+function matchWorkflowStepIndex(text: string) {
+  const haystack = text.toLowerCase();
+  if (!haystack) return -1;
+  return WORKFLOW_STEPS.findIndex((step) =>
+    step.tokens.some((token) => haystack.includes(token.toLowerCase())),
+  );
 }
 
 function formatStatus(status: string) {

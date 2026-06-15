@@ -35,7 +35,7 @@ from packages.patent_disclosure_skill.adapter import (
 from packages.patent_disclosure_skill.adapter.cnipa_searcher import CnipaPriorArtSearcher
 from packages.patent_disclosure_skill.adapter.docx_exporter import DocxExporter
 from packages.patent_disclosure_skill.adapter.fallback_searcher import FallbackPriorArtSearcher
-from packages.patent_disclosure_skill.adapter.material_reader import MaterialReader, validate_zip_safe
+from packages.patent_disclosure_skill.adapter.material_reader import MaterialReader, repomix_cli_available, validate_zip_safe
 from packages.patent_disclosure_skill.adapter.openai_compatible_llm import PatentLlmError
 from packages.py_common.db.session import get_engine
 
@@ -383,6 +383,7 @@ class PatentDisclosureService:
         skill_found = (self.settings.skill_dir / "SKILL.md").is_file()
         cnipa_available = self.settings.cnipa_enabled and (self.settings.skill_dir / "tools" / "cnipa_epub_search.py").is_file()
         docx_available = (self.settings.skill_dir / "tools" / "md_to_docx.py").is_file()
+        repo_pack_available = repomix_cli_available(self.settings.skill_dir)
         mermaid_available = (
             (self.settings.skill_dir / "tools" / "mermaid_render.py").is_file()
             and (
@@ -399,6 +400,7 @@ class PatentDisclosureService:
             "openaiCompatibleConfigured": self.settings.llm.configured,
             "cnipaAvailable": cnipa_available,
             "docxExportAvailable": docx_available,
+            "repoPackAvailable": repo_pack_available,
             "mermaidRenderAvailable": mermaid_available,
             "sseEnabled": True,
         }

@@ -6,6 +6,7 @@ const serviceSource = await readFile(new URL("./patentDisclosureApi.ts", import.
 const pageSource = await readFile(new URL("../PatentDisclosurePage.tsx", import.meta.url), "utf8");
 const createPanelSource = await readFile(new URL("../components/CaseCreatePanel.tsx", import.meta.url), "utf8");
 const artifactListSource = await readFile(new URL("../components/ArtifactDownloadList.tsx", import.meta.url), "utf8");
+const progressPanelSource = await readFile(new URL("../components/JobSseProgressPanel.tsx", import.meta.url), "utf8");
 
 test("patent disclosure API prefix and health endpoint match Stage 10-G", () => {
   assert.match(serviceSource, /PATENT_DISCLOSURE_API_PREFIX = "\/patent-disclosure\/api"/);
@@ -32,6 +33,17 @@ test("patent disclosure generation is disabled by health status", () => {
   assert.match(createPanelSource, /disabledReason/);
 });
 
+test("patent disclosure upload copy advertises zip code repositories", () => {
+  assert.match(createPanelSource, /\.zip 代码仓库/);
+});
+
+test("patent disclosure workflow maps backend generation steps to visible milestones", () => {
+  assert.match(progressPanelSource, /build_disclosure/);
+  assert.match(progressPanelSource, /export_docx/);
+  assert.match(progressPanelSource, /\[\.\.\.events\]\s*\n\s*\.reverse\(\)/);
+  assert.match(progressPanelSource, /latest\?\.message \|\| job\?\.message \|\| currentStep/);
+});
+
 test("patent disclosure revision posts user instruction and reuses job stream", () => {
   assert.match(serviceSource, /startPatentDisclosureRevision/);
   assert.match(serviceSource, /\/revise/);
@@ -56,6 +68,15 @@ test("patent disclosure artifacts support latest and all-version result views", 
   assert.match(pageSource, /下载 DOCX/);
   assert.match(pageSource, /查看全部文件/);
   assert.match(artifactListSource, /最终 Markdown 和 Word 文件/);
+});
+
+test("patent disclosure preview hides delivery metadata from generated documents", () => {
+  assert.match(pageSource, /stripDisclosureDeliveryMetadataFromPreview/);
+  assert.match(pageSource, /DISCLOSURE_DELIVERY_MARKERS/);
+  assert.match(pageSource, /交付文件路径/);
+  assert.match(pageSource, /若您希望权利要求\/保护点表述/);
+  const previewRenderBody = pageSource.match(/await renderAsync[\s\S]*?setPreviewState\("ready"\)/)?.[0] || "";
+  assert.match(previewRenderBody, /stripDisclosureDeliveryMetadataFromPreview\(previewRef\.current\)/);
 });
 
 test("patent disclosure UI only exposes supported job workflows", () => {

@@ -125,6 +125,7 @@ class GenerationPipeline:
         else:
             content_warnings.append("自检未返回可提取的修订后交底书正文，已保留生成稿。")
 
+        disclosure = _strip_delivery_metadata(disclosure)
         disclosure = self._ensure_flow_structure(
             case=case,
             disclosure=disclosure,
@@ -491,6 +492,7 @@ def _normalize_disclosure_body(text: str) -> str:
     candidate = _strip_outer_fence(candidate)
     candidate = _trim_to_disclosure_start(candidate)
     candidate = _strip_unmatched_trailing_fence(candidate)
+    candidate = _strip_delivery_metadata(candidate)
     return candidate.strip()
 
 
@@ -537,6 +539,26 @@ def _strip_unmatched_trailing_fence(text: str) -> str:
     if fence_count % 2 == 1:
         return "\n".join(lines[:last_non_empty] + lines[last_non_empty + 1 :]).strip()
     return text
+
+
+_DELIVERY_METADATA_PATTERNS = (
+    r"(?ms)\n-{3,}\s*\n\s*\*\*交付文件路径\*\*：.*\Z",
+    r"(?ms)\n\s*\*\*交付文件路径\*\*：.*\Z",
+    r"(?ms)\n-{3,}\s*\n\s*若您希望权利要求/保护点表述.*\Z",
+    r"(?ms)\n\s*若您希望权利要求/保护点表述.*\Z",
+    r"(?ms)\n-{3,}\s*\n\s*##\s*(?:合并摘要|纠正摘要)（留档）.*\Z",
+    r"(?ms)\n\s*##\s*(?:合并摘要|纠正摘要)（留档）.*\Z",
+)
+
+
+def _strip_delivery_metadata(text: str) -> str:
+    candidate = (text or "").strip()
+    previous = None
+    while previous != candidate:
+        previous = candidate
+        for pattern in _DELIVERY_METADATA_PATTERNS:
+            candidate = re.sub(pattern, "", candidate).strip()
+    return candidate
 
 
 def _is_valid_disclosure_body(text: str) -> bool:

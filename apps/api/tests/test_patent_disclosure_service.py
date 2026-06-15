@@ -21,7 +21,7 @@ from packages.patent_disclosure_skill.adapter.fallback_searcher import (
     _parse_google_patents_payload,
 )
 from packages.patent_disclosure_skill.adapter.generation_pipeline import GenerationPipeline, PipelineOptions
-from packages.patent_disclosure_skill.adapter.material_reader import MaterialParseError, validate_zip_safe
+from packages.patent_disclosure_skill.adapter.material_reader import MaterialParseError, MaterialReader, validate_zip_safe
 from packages.patent_disclosure_skill.adapter.openai_compatible_llm import PatentLlmConfig
 from packages.patent_disclosure_skill.adapter.prompt_loader import PromptLoader
 from packages.patent_disclosure_skill.adapter.revision_pipeline import (
@@ -106,6 +106,98 @@ class PatentDisclosureServiceTests(unittest.TestCase):
 
             with self.assertRaises(MaterialParseError):
                 validate_zip_safe(archive)
+
+    def test_material_reader_packs_zip_code_repository_with_repomix(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            skill_dir = root / "skill"
+            bin_dir = skill_dir / "tools" / "node_modules" / ".bin"
+            bin_dir.mkdir(parents=True)
+            repomix = bin_dir / "repomix"
+            repomix.write_text(
+                "\n".join(
+                    [
+                        "#!/usr/bin/env python3",
+                        "import pathlib, sys",
+                        "out = pathlib.Path(sys.argv[sys.argv.index('--output') + 1])",
+                        "repo = pathlib.Path(sys.argv[1])",
+                        "main = repo / 'src' / 'main.py'",
+                        "out.write_text('# Directory Structure\\n\\n- src/main.py\\n\\n# Files\\n\\n```python\\n' + main.read_text() + '\\n```', encoding='utf-8')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            repomix.chmod(0o755)
+            archive = root / "repo.zip"
+            with zipfile.ZipFile(archive, "w") as zf:
+                zf.writestr("repo/package.json", '{"name":"demo"}')
+                zf.writestr("repo/src/main.py", "def patent_flow():\n    return 'ok'\n")
+
+            parsed = MaterialReader(skill_dir=skill_dir, timeout_seconds=5).parse(
+                source_path=archive,
+                parsed_dir=root / "parsed",
+                work_dir=root / "work",
+            )
+
+            self.assertEqual(parsed.status, "parsed")
+            self.assertIsNotNone(parsed.parsed_path)
+            self.assertIn("Directory Structure", parsed.text)
+            self.assertIn("src/main.py", parsed.text)
+            self.assertIn("def patent_flow", parsed.text)
+            self.assertEqual(parsed.parsed_path.read_text(encoding="utf-8"), parsed.text)
+
+    def test_material_reader_zip_text_fallback_without_repomix(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            skill_dir = root / "skill"
+            archive = root / "notes.zip"
+            with zipfile.ZipFile(archive, "w") as zf:
+                zf.writestr("README.md", "# 技术说明\n\n只有文本材料")
+
+            with patch("packages.patent_disclosure_skill.adapter.material_reader.shutil.which", return_value=None):
+                parsed = MaterialReader(skill_dir=skill_dir, timeout_seconds=1).parse(
+                    source_path=archive,
+                    parsed_dir=root / "parsed",
+                    work_dir=root / "work",
+                )
+
+            self.assertIn("# README.md", parsed.text)
+            self.assertIn("只有文本材料", parsed.text)
+
+    def test_pipeline_uses_packed_zip_material_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "repo.zip"
+            archive.write_bytes(b"fake zip handled by reader")
+            pipeline = GenerationPipeline(
+                skill_dir=REPO_ROOT / "packages" / "patent_disclosure_skill" / "upstream",
+                material_reader=_ZipMaterialReader(),
+                llm=_MaterialCaptureLlm(),
+                cnipa_searcher=_FakeCnipaSearcher(),
+                docx_exporter=_FakeDocxExporter(),
+            )
+
+            result = pipeline.run(
+                case={"id": "case-1", "title": "测试案件", "technical_topic": "检索增强"},
+                materials=[{"id": "material-1", "filename": "repo.zip", "storage_path": str(archive)}],
+                output_dir=root / "outputs",
+                parsed_dir=root / "parsed",
+                tmp_dir=root / "tmp",
+                safe_case_title="公式测试",
+                timestamp="v1",
+                options=PipelineOptions(
+                    output_formats=["md", "docx"],
+                    include_mermaid=True,
+                    render_mermaid_png=True,
+                    anonymize=False,
+                    extra_instruction="",
+                ),
+                emit=lambda progress: None,
+            )
+
+            self.assertIn("repomix-output", pipeline.llm.project_scan_prompt)
+            self.assertIn("src/main.py", pipeline.llm.project_scan_prompt)
+            self.assertTrue(result.disclosure_md.is_file())
 
     def test_file_store_rejects_mismatched_mime_type(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -301,6 +393,25 @@ class PatentDisclosureServiceTests(unittest.TestCase):
             self.assertIn("原始合格稿", final_md)
             self.assertIn("自检未返回可提取的修订后交底书正文，已保留生成稿。", result.warnings)
 
+    def test_pipeline_strips_delivery_metadata_from_final_disclosure(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            pipeline = GenerationPipeline(
+                skill_dir=REPO_ROOT / "packages" / "patent_disclosure_skill" / "upstream",
+                material_reader=_FakeMaterialReader(),
+                llm=_DeliveryMetadataDisclosureLlm(),
+                cnipa_searcher=_FakeCnipaSearcher(),
+                docx_exporter=_FakeDocxExporter(),
+            )
+
+            result = _run_pipeline(pipeline, root)
+
+            final_md = result.disclosure_md.read_text(encoding="utf-8")
+            self.assertIn("带交付尾巴", final_md)
+            self.assertNotIn("交付文件路径", final_md)
+            self.assertNotIn("outputs/case-1/", final_md)
+            self.assertNotIn("若您希望权利要求/保护点表述", final_md)
+
     def test_pipeline_warns_when_flow_repair_fails(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -482,6 +593,61 @@ class PatentDisclosureServiceTests(unittest.TestCase):
             self.assertTrue(final_md.startswith("# 技术交底书"))
             self.assertIn("修订后流程", final_md)
             self.assertNotIn("纠正摘要", final_md)
+
+    def test_revision_pipeline_accepts_base_and_output_with_delivery_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            base_md = root / "base.md"
+            base_md.write_text(_with_delivery_metadata(_valid_disclosure("污染基准稿")), encoding="utf-8")
+            pipeline = RevisionPipeline(
+                skill_dir=REPO_ROOT / "packages" / "patent_disclosure_skill" / "upstream",
+                llm=_RevisionWithMetadataLlm(),
+                docx_exporter=_FakeDocxExporter(),
+            )
+
+            result = pipeline.run(
+                case={"id": "case-1", "title": "测试案件", "technical_topic": "检索增强"},
+                base_disclosure_md=base_md,
+                output_dir=root / "outputs",
+                tmp_dir=root / "tmp",
+                safe_case_title="公式测试",
+                timestamp="v2",
+                revision_instruction="可以把现有技术这一章节里面的一些技术再多描述一点",
+                options=RevisionOptions(render_mermaid_png=True),
+                emit=lambda progress: None,
+            )
+
+            final_md = result.disclosure_md.read_text(encoding="utf-8")
+            self.assertTrue(final_md.startswith("# 技术交底书"))
+            self.assertIn("扩展现有技术", final_md)
+            self.assertNotIn("交付文件路径", final_md)
+            self.assertNotIn("outputs/case-1/", final_md)
+            self.assertNotIn("若您希望权利要求/保护点表述", final_md)
+            self.assertNotIn("合并摘要", final_md)
+
+    def test_revision_pipeline_still_fails_when_model_returns_summary_only(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            base_md = root / "base.md"
+            base_md.write_text(_with_delivery_metadata(_valid_disclosure("污染基准稿")), encoding="utf-8")
+            pipeline = RevisionPipeline(
+                skill_dir=REPO_ROOT / "packages" / "patent_disclosure_skill" / "upstream",
+                llm=_SummaryOnlyRevisionLlm(),
+                docx_exporter=_FakeDocxExporter(),
+            )
+
+            with self.assertRaises(ValueError):
+                pipeline.run(
+                    case={"id": "case-1", "title": "测试案件", "technical_topic": "检索增强"},
+                    base_disclosure_md=base_md,
+                    output_dir=root / "outputs",
+                    tmp_dir=root / "tmp",
+                    safe_case_title="公式测试",
+                    timestamp="v2",
+                    revision_instruction="可以把现有技术这一章节里面的一些技术再多描述一点",
+                    options=RevisionOptions(render_mermaid_png=True),
+                    emit=lambda progress: None,
+                )
 
     def test_list_artifacts_returns_latest_disclosure_md_and_docx_only(self) -> None:
         case_id = "11111111-1111-4111-8111-111111111111"
@@ -665,6 +831,16 @@ class _FakeMaterialReader:
         return SimpleNamespace(source_path=source_path, text="项目材料", status="parsed", parsed_path=parsed_path)
 
 
+class _ZipMaterialReader:
+    def parse(self, *, source_path: Path, parsed_dir: Path, work_dir: Path):
+        _ = work_dir
+        parsed_dir.mkdir(parents=True, exist_ok=True)
+        parsed_path = parsed_dir / "repo.md"
+        text = "# repomix-output\n\n## Directory Structure\n\n- src/main.py\n\n```python\ndef patent_flow(): pass\n```"
+        parsed_path.write_text(text, encoding="utf-8")
+        return SimpleNamespace(source_path=source_path, text=text, status="parsed", parsed_path=parsed_path)
+
+
 class _FakeLlm:
     def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
         _ = messages, kwargs
@@ -706,6 +882,16 @@ class _PriorArtCaptureLlm(_ScriptedPatentLlm):
         return super().chat(messages, **kwargs)
 
 
+class _MaterialCaptureLlm(_ScriptedPatentLlm):
+    project_scan_prompt = ""
+
+    def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
+        content = messages[-1]["content"]
+        if "项目技术扫描摘要" in content:
+            self.project_scan_prompt = content
+        return super().chat(messages, **kwargs)
+
+
 class _SelfCheckRevisionLlm(_ScriptedPatentLlm):
     def disclosure(self) -> str:
         return _bad_flow_disclosure("符号先行坏稿")
@@ -738,6 +924,11 @@ class _NoRevisionLlm(_ScriptedPatentLlm):
         return "仅自检摘要，没有完整正文。"
 
 
+class _DeliveryMetadataDisclosureLlm(_NoRevisionLlm):
+    def disclosure(self) -> str:
+        return _with_delivery_metadata(_valid_disclosure("带交付尾巴"))
+
+
 class _FailedFlowRepairLlm(_FlowRepairLlm):
     def disclosure(self) -> str:
         return _bad_flow_disclosure("修复失败坏稿")
@@ -753,6 +944,24 @@ class _RevisionLlm:
         if "请输出“纠正摘要" in content or "请输出“合并摘要" in content:
             return "修改了第三章系统流程说明，依据用户要求将回退逻辑调整为先灰度再全量。该修订影响流程表述，不改变查新结论。"
         return "```markdown\n" + _valid_disclosure("修订后流程") + "\n```"
+
+
+class _RevisionWithMetadataLlm:
+    revision_prompt = ""
+
+    def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
+        _ = kwargs
+        content = messages[-1]["content"]
+        if "请输出“纠正摘要" in content or "请输出“合并摘要" in content:
+            return "扩展了第一章现有技术描述，不改变保护点和检索结论。"
+        self.revision_prompt = content
+        return _with_merge_summary(_with_delivery_metadata(_valid_disclosure("扩展现有技术")))
+
+
+class _SummaryOnlyRevisionLlm:
+    def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
+        _ = messages, kwargs
+        return "## 合并摘要（留档）\n\n已扩展现有技术描述。"
 
 
 class _ErrorCnipaSearcher:
@@ -846,6 +1055,38 @@ def _valid_disclosure(marker: str) -> str:
             "## 四、与现有技术相比，本发明具有哪些优点？",
             "",
             "具有优点。",
+        ]
+    )
+
+
+def _with_delivery_metadata(disclosure: str) -> str:
+    return "\n".join(
+        [
+            disclosure,
+            "",
+            "---",
+            "",
+            "**交付文件路径**：",
+            "- `outputs/case-1/公式测试_v1.md`",
+            "- `outputs/case-1/公式测试_v1.docx`",
+            "",
+            "---",
+            "",
+            "若您希望权利要求/保护点表述更偏「方法流程步骤」或更偏「系统装置模块」，请说明侧重点。",
+        ]
+    )
+
+
+def _with_merge_summary(disclosure: str) -> str:
+    return "\n".join(
+        [
+            disclosure,
+            "",
+            "---",
+            "",
+            "## 合并摘要（留档）",
+            "",
+            "已扩展第一章现有技术描述，不改变保护点或检索结论。",
         ]
     )
 

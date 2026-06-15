@@ -553,6 +553,7 @@ function DocumentPreviewPanel({
           ignoreHeight: false,
           ignoreLastRenderedPageBreak: false,
         });
+        stripDisclosureDeliveryMetadataFromPreview(previewRef.current);
         if (!cancelled) {
           setPreviewState("ready");
         }
@@ -625,6 +626,48 @@ function DocumentPreviewPanel({
       </div>
     </section>
   );
+}
+
+const DISCLOSURE_DELIVERY_MARKERS = [
+  "交付文件路径",
+  "若您希望权利要求/保护点表述",
+];
+
+function stripDisclosureDeliveryMetadataFromPreview(container: HTMLElement) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let markerNode: Text | null = null;
+  while (!markerNode) {
+    const current = walker.nextNode();
+    if (!current) break;
+    const text = current.textContent || "";
+    if (DISCLOSURE_DELIVERY_MARKERS.some((marker) => text.includes(marker))) {
+      markerNode = current as Text;
+    }
+  }
+  if (!markerNode) return;
+
+  const block = closestPreviewBlock(markerNode);
+  if (!block) return;
+  block.textContent = "";
+
+  let sibling = block.nextSibling;
+  while (sibling) {
+    const next = sibling.nextSibling;
+    sibling.parentNode?.removeChild(sibling);
+    sibling = next;
+  }
+}
+
+function closestPreviewBlock(node: Node): HTMLElement | null {
+  let current: Node | null = node.parentNode;
+  while (current && current instanceof HTMLElement && !current.classList.contains("docx-wrapper")) {
+    const tagName = current.tagName.toLowerCase();
+    if (["p", "div", "section", "article", "table"].includes(tagName)) {
+      return current;
+    }
+    current = current.parentNode;
+  }
+  return node.parentElement;
 }
 
 function VersionRecordPanel({

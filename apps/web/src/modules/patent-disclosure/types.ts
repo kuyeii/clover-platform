@@ -81,6 +81,7 @@ export type PatentDisclosureHealth = {
   openaiCompatibleConfigured: boolean;
   cnipaAvailable: boolean;
   docxExportAvailable: boolean;
+  repoPackAvailable?: boolean;
   mermaidRenderAvailable?: boolean;
   sseEnabled: boolean;
 };

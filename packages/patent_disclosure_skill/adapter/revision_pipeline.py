@@ -13,6 +13,7 @@ from .generation_pipeline import (
     _has_required_flow_structure,
     _is_valid_disclosure_body,
     _normalize_disclosure_body,
+    _strip_delivery_metadata,
 )
 from .openai_compatible_llm import OpenAICompatibleLLMClient
 from .prompt_loader import PromptLoader
@@ -65,7 +66,7 @@ class RevisionPipeline:
         tmp_dir.mkdir(parents=True, exist_ok=True)
 
         emit(PipelineProgress("revision_read_base", 10, "正在读取最新交底书"))
-        base_disclosure = base_disclosure_md.read_text(encoding="utf-8")
+        base_disclosure = _strip_delivery_metadata(base_disclosure_md.read_text(encoding="utf-8"))
         kind = classify_revision_kind(revision_instruction)
 
         emit(PipelineProgress("revision_llm", 45, "正在根据用户意见修订交底书"))
@@ -145,6 +146,8 @@ class RevisionPipeline:
                                 "根据用户修改意见修订基准交底书。输出必须是完整 Markdown 交底书正文，"
                                 "以“# 技术交底书”开始，保留未涉及章节，不要输出路径、对话记录、"
                                 f"不要输出“{summary_title}（留档）”或任何解释性小节。"
+                                "合并摘要、纠正摘要、交付文件路径和权利要求偏向点引导由平台单独处理，"
+                                "禁止写入 Markdown 正文。"
                             ),
                             "# 案件信息",
                             _json(case),
