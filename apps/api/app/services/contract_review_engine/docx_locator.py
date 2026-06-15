@@ -213,11 +213,11 @@ def locate_risk(
     return locator, target_text
 
 
-def get_or_create_reviewed_risks(run_id: str, run_root: Path) -> dict[str, Any]:
+def get_or_create_reviewed_risks(run_id: str, run_root: Path, reviewed_path: Path | None = None) -> dict[str, Any]:
     run_dir = run_root / run_id
     if not run_dir.exists():
         raise FileNotFoundError(f"run_id 不存在: {run_id}")
-    reviewed_path = run_dir / "risk_result_reviewed.json"
+    reviewed_path = reviewed_path or run_dir / "risk_result_reviewed.json"
     validated_path = run_dir / "risk_result_validated.json"
     if reviewed_path.exists():
         payload = _load_json(reviewed_path)
@@ -231,19 +231,25 @@ def get_or_create_reviewed_risks(run_id: str, run_root: Path) -> dict[str, Any]:
     return payload
 
 
-def enrich_reviewed_risks_with_locators(run_id: str, run_root: Path = Path("data/runs")) -> dict[str, Any]:
+def enrich_reviewed_risks_with_locators(
+    run_id: str,
+    run_root: Path = Path("data/runs"),
+    *,
+    clauses_path: Path | None = None,
+    reviewed_path: Path | None = None,
+) -> dict[str, Any]:
     run_dir = run_root / run_id
     source_docx = run_dir / "source.docx"
-    clauses_path = run_dir / "merged_clauses.json"
+    clauses_path = clauses_path or run_dir / "merged_clauses.json"
     paragraphs_path = run_dir / "document_paragraphs.json"
-    reviewed_path = run_dir / "risk_result_reviewed.json"
+    reviewed_path = reviewed_path or run_dir / "risk_result_reviewed.json"
 
     if not source_docx.exists():
         raise FileNotFoundError(f"source.docx 不存在: {source_docx}")
     if not clauses_path.exists():
         raise FileNotFoundError(f"merged_clauses.json 不存在: {clauses_path}")
 
-    reviewed_payload = get_or_create_reviewed_risks(run_id, run_root=run_root)
+    reviewed_payload = get_or_create_reviewed_risks(run_id, run_root=run_root, reviewed_path=reviewed_path)
     clauses = _unwrap_clauses(_load_json(clauses_path))
     paragraphs = build_paragraph_index(source_docx)
     _write_json(paragraphs_path, paragraphs)

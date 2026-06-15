@@ -245,7 +245,7 @@ workflow:
                   value:
                     type: constant
                     value: 10
-              provider_name: d2b614af-62c9-492f-8595-c0e86ca33704
+              provider_name: cc8b0feb-7f7e-4eb3-8ebc-8efe543a5c70
               provider_show_name: 阿里云联网搜索
               settings: {}
               tool_description: '使用阿里云开放平台联网检索。返回中包含 result.search_result 列表， 每条含

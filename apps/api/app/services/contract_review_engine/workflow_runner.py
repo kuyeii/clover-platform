@@ -80,6 +80,18 @@ class WorkflowRunner:
         self.fast_screen_checkpoint_path = self.run_dir / "risk_checkpoints" / "fast_screen.json"
         self.fast_screen_enabled = bool(getattr(settings, "fast_screen_enabled", False))
         self.fast_screen_max_candidates = str(getattr(settings, "fast_screen_max_candidates", "12"))
+        self.pipt_workflow_fields: dict[str, Any] = {}
+
+    def set_pipt_workflow_fields(self, fields: dict[str, Any] | None) -> None:
+        self.pipt_workflow_fields = dict(fields or {})
+
+    def _with_pipt_fields(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        if not self.pipt_workflow_fields:
+            return inputs
+        next_inputs = dict(inputs)
+        for key, value in self.pipt_workflow_fields.items():
+            next_inputs.setdefault(key, value)
+        return next_inputs
 
     def _anchored_clauses_fingerprint(self, clauses: list[dict[str, Any]]) -> str:
         joined = "||".join(str(c.get("clause_uid", "") or "") for c in clauses)
@@ -124,11 +136,11 @@ class WorkflowRunner:
 
     def run_clause_splitter(self, segment: dict[str, str]) -> list[dict[str, Any]]:
         response = self.clause_client.run_workflow(
-            inputs={
+            inputs=self._with_pipt_fields({
                 "segment_id": segment["segment_id"],
                 "segment_title": segment["segment_title"],
                 "segment_text": segment["segment_text"],
-            },
+            }),
             user=self.user_id,
             response_mode="blocking",
         )
@@ -260,7 +272,7 @@ class WorkflowRunner:
 
             try:
                 response = self.fast_screen_client.run_workflow(
-                    inputs=inputs,
+                    inputs=self._with_pipt_fields(inputs),
                     user=self.user_id,
                     response_mode="blocking",
                 )
@@ -351,7 +363,7 @@ class WorkflowRunner:
         # Current phase may still use one Dify workflow key; split stream boundary in Python first.
         inputs["risk_stream"] = stream
         response = client.run_workflow(
-            inputs=inputs,
+            inputs=self._with_pipt_fields(inputs),
             user=self.user_id,
             response_mode="blocking",
         )
@@ -374,7 +386,7 @@ class WorkflowRunner:
         print(f"[anchored-parallel] start {job.segment_id}")
         try:
             response = self.anchored_risk_client.run_workflow(
-                inputs=inputs,
+                inputs=self._with_pipt_fields(inputs),
                 user=self.user_id,
                 response_mode="blocking",
             )
@@ -580,7 +592,7 @@ class WorkflowRunner:
                 outputs: dict[str, Any] | None = None
                 try:
                     response = self.anchored_risk_client.run_workflow(
-                        inputs=inputs,
+                        inputs=self._with_pipt_fields(inputs),
                         user=self.user_id,
                         response_mode="blocking",
                     )

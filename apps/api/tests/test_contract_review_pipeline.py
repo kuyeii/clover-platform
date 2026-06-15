@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import sys
 import unittest
@@ -14,6 +15,8 @@ if API_ROOT_VALUE not in sys.path:
 
 from app.services import contract_review_service as service
 from app.services import pipt_gateway_service
+from app.services.contract_review_engine.split_segments import split_into_segments, validate_pipt_token_boundaries
+from app.services.contract_review_engine.workflow_runner import WorkflowRunner
 
 
 DIFY_CONNECT_TRACEBACK = """Traceback (most recent call last):
@@ -28,17 +31,226 @@ src.dify_client.DifyWorkflowError: Workflow request could not connect after 3 at
 
 
 class ContractReviewPipelineTests(unittest.TestCase):
+    def test_document_level_pipt_context_redacts_once_and_segments_keep_token(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            with patch.object(
+                service,
+                "preprocess_internal_payload",
+                return_value={
+                    "mode": "strong",
+                    "text": f"一、主体\n联系人 {token}\n二、付款\n{token} 收款",
+                    "desensitized_text": f"一、主体\n联系人 {token}\n二、付款\n{token} 收款",
+                    "input_text_hash": "in",
+                    "output_text_hash": "out",
+                    "mapping_table": {token: "张三"},
+                    "mapping_table_count": 1,
+                    "mapping_vault_persisted": True,
+                    "placeholder_manifest": {token: {"entity_type": "name"}},
+                    "placeholder_policy": {"protocol": "pipt"},
+                    "workflow_fields": {
+                        "placeholder_manifest": "{}",
+                        "placeholder_policy": "{}",
+                        "pipt_gateway_enabled": "true",
+                        "pipt_gateway_mode": "strong",
+                    },
+                    "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                },
+            ) as preprocess:
+                review_text, context = service._prepare_contract_review_document_pipt(
+                    run_id="run_doc_pipt",
+                    run_dir=run_dir,
+                    cleaned_text="一、主体\n联系人 张三\n二、付款\n张三 收款",
+                )
+
+            segments = split_into_segments(review_text)
+            report = validate_pipt_token_boundaries(review_text, list(segments["segments"]))
+            context_exists = (run_dir / "pipt_context.json").exists()
+
+        self.assertEqual(preprocess.call_count, 1)
+        self.assertNotIn("张三", review_text)
+        self.assertEqual(context["strategy"], "document_level")
+        self.assertEqual(context["mapping_table_count"], 1)
+        self.assertTrue(report["valid"])
+        self.assertEqual(report["token_count"], 1)
+        self.assertTrue(context_exists)
+
+    def test_workflow_runner_injects_document_pipt_fields_without_field_level_redaction(self) -> None:
+        captured_inputs: dict[str, object] = {}
+
+        class FakeClient:
+            def run_workflow(self, *, inputs, user, response_mode="blocking"):
+                captured_inputs.update(inputs)
+                return {"data": {"status": "succeeded", "outputs": {"clauses": []}}}
+
+        settings = SimpleNamespace(
+            dify_base_url="http://dify/v1",
+            dify_clause_workflow_api_key="clause",
+            dify_risk_workflow_api_key="risk",
+            anchored_risk_api_key=lambda: "risk",
+            missing_multi_risk_api_key=lambda: "risk",
+            dify_fast_screen_workflow_api_key="fast",
+            request_timeout_seconds=5,
+            review_side="甲方",
+            contract_type_hint="服务合同",
+            fast_screen_enabled=False,
+            fast_screen_max_candidates="12",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            runner = WorkflowRunner(settings=settings, run_dir=Path(td), user_id="u")
+            runner.clause_client = FakeClient()
+            runner.set_pipt_workflow_fields(
+                {
+                    "placeholder_manifest": '{"@@PIPT:v1:e000001:k11111111@@": {"entity_type": "name"}}',
+                    "placeholder_policy": '{"protocol": "pipt"}',
+                    "pipt_gateway_enabled": "true",
+                    "pipt_gateway_mode": "strong",
+                }
+            )
+            with patch.object(service, "_contract_review_pipt_preprocess") as field_preprocess:
+                runner.run_clause_splitter(
+                    {
+                        "segment_id": "segment_1",
+                        "segment_title": "一、主体",
+                        "segment_text": "联系人 @@PIPT:v1:e000001:k11111111@@",
+                    }
+                )
+
+        self.assertEqual(field_preprocess.call_count, 0)
+        self.assertEqual(captured_inputs["pipt_gateway_mode"], "strong")
+        self.assertNotIn("张三", str(captured_inputs))
+        self.assertEqual(captured_inputs["segment_text"], "联系人 @@PIPT:v1:e000001:k11111111@@")
+
+    def test_validate_pipt_token_boundaries_detects_broken_token(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        report = validate_pipt_token_boundaries(
+            f"联系人 {token}",
+            [
+                {"segment_id": "segment_1", "segment_text": "联系人 @@PIPT:v1:e000001:k"},
+                {"segment_id": "segment_2", "segment_text": "11111111@@"},
+            ],
+        )
+
+        self.assertFalse(report["valid"])
+        self.assertIn(token, report["broken_tokens"])
+
+    def test_restore_payload_for_source_docx_restores_clause_lists_with_document_manifest(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                '{"placeholder_manifest": {"@@PIPT:v1:e000001:k11111111@@": {"entity_type": "name"}}}',
+                encoding="utf-8",
+            )
+            with (
+                patch.object(service, "_contract_review_pipt_enabled", return_value=True),
+                patch.object(
+                    service,
+                    "postprocess_payload",
+                    side_effect=lambda payload: {
+                        "text": str(payload["text"]).replace(token, "张三"),
+                        "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                    },
+                ) as postprocess,
+            ):
+                restored = service._contract_review_restore_payload_for_source_docx(
+                    [{"clause_text": f"联系人 {token}", "source_excerpt": token}],
+                    run_id="run_restore",
+                    run_dir=run_dir,
+                )
+
+        self.assertEqual(restored[0]["clause_text"], "联系人 张三")
+        self.assertEqual(restored[0]["source_excerpt"], "张三")
+        self.assertEqual(postprocess.call_args.args[0]["placeholder_manifest"], {token: {"entity_type": "name"}})
+
+    def test_export_docx_uses_restored_for_docx_payloads(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):
+            calls.append([str(item) for item in cmd])
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            upload_root = root / "uploads"
+            run_id = "run_export_restore"
+            run_dir = run_root / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "source.docx").write_bytes(b"docx")
+            (run_dir / "merged_clauses.json").write_text(
+                f'[{{"clause_uid":"c1","clause_text":"联系人 {token}","source_excerpt":"{token}"}}]',
+                encoding="utf-8",
+            )
+            (run_dir / "risk_result_validated.json").write_text(
+                f'{{"is_valid":true,"risk_result":{{"risk_items":[{{"risk_id":"r1","status":"accepted","clause_uid":"c1","target_text":"{token}"}}]}}}}',
+                encoding="utf-8",
+            )
+            (run_dir / "pipt_context.json").write_text(
+                f'{{"placeholder_manifest": {{"{token}": {{"entity_type": "name"}}}}}}',
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "UPLOAD_ROOT", upload_root),
+                patch.object(service, "_contract_review_pipt_enabled", return_value=True),
+                patch.object(
+                    service,
+                    "postprocess_payload",
+                    side_effect=lambda payload: {
+                        "text": str(payload["text"]).replace(token, "张三"),
+                        "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                    },
+                ),
+                patch.object(service, "enrich_reviewed_risks_with_locators", return_value={"located_success": 1}) as locator,
+                patch.object(service.subprocess, "run", side_effect=fake_run),
+            ):
+                output = service._export_docx_with_reviewed_risks(run_id)
+
+            reviewed_for_docx = (run_dir / "risk_result_reviewed.for_docx.json").read_text(encoding="utf-8")
+            clauses_for_docx = (run_dir / "merged_clauses.for_docx.json").read_text(encoding="utf-8")
+
+        self.assertEqual(output.name, "reviewed_comments.docx")
+        self.assertIn("张三", reviewed_for_docx)
+        self.assertIn("张三", clauses_for_docx)
+        self.assertNotIn(token, reviewed_for_docx)
+        self.assertNotIn(token, clauses_for_docx)
+        self.assertEqual(locator.call_args.kwargs["reviewed_path"].name, "risk_result_reviewed.for_docx.json")
+        self.assertTrue(any("risk_result_reviewed.for_docx.json" in " ".join(call) for call in calls))
+
     def test_rewrite_inputs_include_pipt_gateway_fields_by_default_enabled_strong(self) -> None:
+        token = "@@PIPT:v1:e000001:k1a2b3c4d@@"
         with tempfile.TemporaryDirectory() as td:
             run_dir = Path(td)
             (run_dir / "merged_clauses.json").write_text(
-                '[{"clause_uid":"c1","clause_text":"联系人 @@PIPT:v1:e000001:k1a2b3c4d@@"}]',
+                f'[{{"clause_uid":"c1","clause_text":"联系人 {token}"}}]',
+                encoding="utf-8",
+            )
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps(
+                    {
+                        "enabled": True,
+                        "mode": "strong",
+                        "placeholder_manifest": {token: {"entity_type": "name"}},
+                        "placeholder_policy": {"protocol": "pipt"},
+                        "workflow_fields": {
+                            "pipt_gateway_enabled": "true",
+                            "pipt_gateway_mode": "strong",
+                            "placeholder_manifest": json.dumps({token: {"entity_type": "name"}}, ensure_ascii=False),
+                            "placeholder_policy": '{"protocol": "pipt"}',
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
                 encoding="utf-8",
             )
             risk = {
                 "risk_id": "r1",
                 "clause_uid": "c1",
-                "target_text": "@@PIPT:v1:e000001:k1a2b3c4d@@",
+                "target_text": token,
                 "suggestion": "保留联系人",
                 "issue": "测试",
                 "risk_label": "测试风险",
@@ -71,25 +283,14 @@ class ContractReviewPipelineTests(unittest.TestCase):
             }
             with (
                 patch.object(service, "_read_meta", return_value={"review_side": "甲方", "contract_type_hint": "服务合同"}),
-                patch.object(service, "preprocess_internal_payload", return_value={
-                    "text": "张三",
-                    "workflow_fields": {
-                        "pipt_gateway_enabled": "false",
-                        "pipt_gateway_mode": "compatibility",
-                        "placeholder_manifest": "{}",
-                        "placeholder_policy": "{}",
-                    },
-                    "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
-                }) as preprocess,
+                patch.object(service, "preprocess_internal_payload") as preprocess,
                 patch.dict(service.os.environ, {"CONTRACT_REVIEW_PIPT_GATEWAY_ENABLED": "false"}),
             ):
                 inputs = service._build_rewrite_inputs(run_id="rewrite_pipt_enabled", run_dir=run_dir, risk=risk)
 
         self.assertEqual(inputs["pipt_gateway_enabled"], "false")
         self.assertEqual(inputs["pipt_gateway_mode"], "compatibility")
-        call_payload = preprocess.call_args.args[0]
-        self.assertEqual(call_payload["mode"], "compatibility")
-        self.assertFalse(call_payload["enabled"])
+        self.assertEqual(preprocess.call_count, 0)
 
     def test_pipeline_retries_retryable_dify_connect_failure_with_resume(self) -> None:
         writes: list[tuple[str, dict]] = []

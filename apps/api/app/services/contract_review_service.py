@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 from dataclasses import replace
 from difflib import SequenceMatcher
 import os
@@ -43,7 +45,7 @@ from app.services.contract_review_engine.review_store import (
     store_json_artifact_by_path,
     upsert_review_meta,
 )
-from app.services.contract_review_engine.split_segments import split_into_segments
+from app.services.contract_review_engine.split_segments import split_into_segments, validate_pipt_token_boundaries
 from app.services.contract_review_engine.validate_risks import validate_risk_result
 from app.services.contract_review_engine.workflow_runner import WorkflowRunner
 from app.services.contract_review_engine import workflow_runner as contract_workflow_runner_module
@@ -67,6 +69,7 @@ _ACTIVE_REVIEW_RUN_ID: str | None = None
 _AI_REWRITE_LOCK = threading.Lock()
 _AI_REWRITE_IN_FLIGHT: set[str] = set()
 _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,96}$")
+logger = logging.getLogger(__name__)
 
 
 def _contract_review_pipt_enabled() -> bool:
@@ -107,6 +110,161 @@ def _contract_review_pipt_workflow_fields(text: str = "", mapping_table: dict[st
         "target_entities": _contract_review_pipt_target_entities(),
     })
     return dict(payload.get("workflow_fields") or {})
+
+
+def _hash_text(value: str) -> str:
+    return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+
+def _pipt_context_path(run_dir: Path) -> Path:
+    return run_dir / "pipt_context.json"
+
+
+def _contract_review_document_pipt_request_id(run_id: str) -> str:
+    return f"{run_id}:contract_review_document"
+
+
+def _contract_review_pipt_restore_text(
+    text: str,
+    *,
+    run_id: str,
+    purpose: str,
+    placeholder_manifest: dict[str, Any] | None = None,
+) -> str:
+    if not text or not _contract_review_pipt_enabled():
+        return str(text or "")
+    payload = postprocess_payload(
+        {
+            "text": str(text or ""),
+            "module_code": "contract-review",
+            "purpose": purpose,
+            "request_id": _contract_review_document_pipt_request_id(run_id),
+            "mode": "strong",
+            "placeholder_manifest": placeholder_manifest or {},
+        }
+    )
+    return str(payload.get("text") or text or "")
+
+
+def _contract_review_pipt_restore_json(
+    value: Any,
+    *,
+    run_id: str,
+    purpose: str,
+    placeholder_manifest: dict[str, Any] | None = None,
+) -> Any:
+    def restore_text(text_value: str, _field_path: str) -> str:
+        return _contract_review_pipt_restore_text(
+            text_value,
+            run_id=run_id,
+            purpose=purpose,
+            placeholder_manifest=placeholder_manifest,
+        )
+
+    return _contract_review_pipt_transform_json_texts(
+        value,
+        transform=restore_text,
+        path_prefix="root",
+        text_keys=_CONTRACT_REVIEW_PIPT_RECURSIVE_TEXT_KEYS | _CONTRACT_REVIEW_PIPT_OUTPUT_TEXT_FIELDS,
+        warnings=[],
+    )
+
+
+def _contract_review_restore_payload_for_source_docx(payload: Any, *, run_id: str, run_dir: Path | None = None) -> Any:
+    if not isinstance(payload, (dict, list)):
+        return payload
+    context = _load_contract_review_pipt_context(run_dir or (RUN_ROOT / run_id))
+    manifest = context.get("placeholder_manifest") if isinstance(context, dict) else {}
+    return _contract_review_pipt_restore_json(
+        payload,
+        run_id=run_id,
+        purpose="contract_review_document_preprocess",
+        placeholder_manifest=manifest if isinstance(manifest, dict) else {},
+    )
+
+
+def _contract_review_pipt_workflow_fields_from_context(context: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(context, dict):
+        return {
+            "placeholder_manifest": "{}",
+            "placeholder_policy": json.dumps({"protocol": "pipt", "version": "v1", "preserve_exact": True}, ensure_ascii=False),
+            "pipt_gateway_enabled": "false",
+            "pipt_gateway_mode": "compatibility",
+        }
+    workflow_fields = context.get("workflow_fields")
+    if isinstance(workflow_fields, dict):
+        return {str(key): value for key, value in workflow_fields.items()}
+    return {
+        "placeholder_manifest": json.dumps(context.get("placeholder_manifest") or {}, ensure_ascii=False),
+        "placeholder_policy": json.dumps(context.get("placeholder_policy") or {}, ensure_ascii=False),
+        "pipt_gateway_enabled": "true" if bool(context.get("enabled")) else "false",
+        "pipt_gateway_mode": str(context.get("mode") or "compatibility"),
+    }
+
+
+def _load_contract_review_pipt_context(run_dir: Path) -> dict[str, Any] | None:
+    payload = _safe_json(_pipt_context_path(run_dir))
+    return payload if isinstance(payload, dict) else None
+
+
+def _prepare_contract_review_document_pipt(*, run_id: str, run_dir: Path, cleaned_text: str) -> tuple[str, dict[str, Any]]:
+    request_id = _contract_review_document_pipt_request_id(run_id)
+    enabled = _contract_review_pipt_enabled()
+    mode = "strong" if enabled else "compatibility"
+    try:
+        payload = preprocess_internal_payload(
+            {
+                "text": cleaned_text,
+                "module_code": "contract-review",
+                "purpose": "contract_review_document_preprocess",
+                "request_id": request_id,
+                "mode": mode,
+                "enabled": enabled,
+                "target_entities": _contract_review_pipt_target_entities(),
+            }
+        )
+        review_text = str(payload.get("text") or payload.get("desensitized_text") or cleaned_text or "")
+        workflow_fields = dict(payload.get("workflow_fields") or {})
+        context = {
+            "version": 1,
+            "strategy": "document_level",
+            "enabled": enabled,
+            "mode": str(payload.get("mode") or mode),
+            "request_id": request_id,
+            "purpose": "contract_review_document_preprocess",
+            "input_text_hash": payload.get("input_text_hash") or _hash_text(cleaned_text),
+            "output_text_hash": payload.get("output_text_hash") or _hash_text(review_text),
+            "mapping_table_count": int(payload.get("mapping_table_count") or len(payload.get("mapping_table") or {})),
+            "mapping_vault_persisted": bool(payload.get("mapping_vault_persisted", True)),
+            "placeholder_manifest": payload.get("placeholder_manifest") or {},
+            "placeholder_policy": payload.get("placeholder_policy") or {},
+            "workflow_fields": workflow_fields,
+            "validation": payload.get("validation") or {},
+            "warnings": [],
+        }
+    except Exception as exc:
+        logger.exception("Contract review document-level PIPT preprocess failed; falling back to plain text.")
+        review_text = str(cleaned_text or "")
+        workflow_fields = _contract_review_pipt_workflow_fields_from_context(None)
+        context = {
+            "version": 1,
+            "strategy": "document_level",
+            "enabled": enabled,
+            "mode": "fallback_plain_text",
+            "request_id": request_id,
+            "purpose": "contract_review_document_preprocess",
+            "input_text_hash": _hash_text(cleaned_text),
+            "output_text_hash": _hash_text(review_text),
+            "mapping_table_count": 0,
+            "mapping_vault_persisted": False,
+            "placeholder_manifest": {},
+            "placeholder_policy": {},
+            "workflow_fields": workflow_fields,
+            "validation": {},
+            "warnings": [{"stage": "document_preprocess", "error": str(exc), "fallback": "plain_text"}],
+        }
+    _write_json_artifact(_pipt_context_path(run_dir), context)
+    return review_text, context
 
 
 def _contract_review_pipt_preprocess(
@@ -4074,6 +4232,7 @@ def _extract_target_text(risk: dict[str, Any]) -> str:
 def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -> dict[str, Any]:
     aggregate_group = _load_ai_aggregation_group(run_dir, risk)
     meta = _read_meta(run_id)
+    pipt_fields = _contract_review_pipt_workflow_fields_from_context(_load_contract_review_pipt_context(run_dir))
 
     if _is_effective_aggregate_group(aggregate_group):
         preserve_full_clause = _use_full_clause_target(aggregate_group)
@@ -4108,12 +4267,8 @@ def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -
         }
         if len(multi_clause_risks) == 1 and isinstance(multi_clause_risks[0], dict):
             inputs["multi_clause_risk_json"] = json.dumps(multi_clause_risks[0], ensure_ascii=False)
-        prepared_inputs, _ = _contract_review_pipt_prepare_inputs(
-            inputs=inputs,
-            purpose="contract_ai_rewrite",
-            run_id=run_id,
-        )
-        return prepared_inputs
+        inputs.update(pipt_fields)
+        return inputs
 
     target_text = _extract_target_text(risk)
     merged_path = run_dir / "merged_clauses.json"
@@ -4142,12 +4297,8 @@ def _build_rewrite_inputs(*, run_id: str, run_dir: Path, risk: dict[str, Any]) -
         "review_side": meta.get("review_side"),
         "contract_type_hint": meta.get("contract_type_hint"),
     }
-    prepared_inputs, _ = _contract_review_pipt_prepare_inputs(
-        inputs=inputs,
-        purpose="contract_ai_rewrite",
-        run_id=run_id,
-    )
-    return prepared_inputs
+    inputs.update(pipt_fields)
+    return inputs
 
 
 def _generate_ai_rewrite(
@@ -4296,13 +4447,16 @@ def _build_result_payload(run_id: str) -> dict[str, Any]:
     if clauses is None:
         raise HTTPException(status_code=404, detail="结果尚未生成完成")
     validated, raw_validated = _load_reviewed_risks_for_result(run_id)
+    display_clauses = _contract_review_restore_payload_for_source_docx(clauses, run_id=run_id, run_dir=run_dir) if isinstance(clauses, list) else clauses
+    validated = _contract_review_restore_payload_for_source_docx(validated, run_id=run_id, run_dir=run_dir)
     if isinstance(clauses, list):
-        _sanitize_reviewed_display_payload(validated, clauses)
+        _sanitize_reviewed_display_payload(validated, display_clauses if isinstance(display_clauses, list) else clauses)
     meta = _read_meta(run_id)
     can_export_reviewed_docx = _can_export_reviewed_docx(run_id)
     aggregation = _safe_json(_aggregation_file_path(run_dir))
     if not isinstance(aggregation, dict):
         aggregation = _build_ai_aggregation_payload(run_dir=run_dir, validated=raw_validated, reviewed=validated)
+    aggregation = _contract_review_restore_payload_for_source_docx(aggregation, run_id=run_id, run_dir=run_dir)
     return {
         "run_id": run_id,
         "status": meta.get("status"),
@@ -4311,7 +4465,7 @@ def _build_result_payload(run_id: str) -> dict[str, Any]:
         "contract_type_hint": meta.get("contract_type_hint"),
         "analysis_scope": meta.get("analysis_scope"),
         "analysis_scope_label": meta.get("analysis_scope_label"),
-        "merged_clauses": clauses,
+        "merged_clauses": display_clauses,
         "risk_result_validated": validated,
         "risk_result_ai_aggregated": aggregation,
         "download_ready": can_export_reviewed_docx,
@@ -4549,10 +4703,21 @@ def _contract_review_runtime_settings(*, review_side: str, contract_type_hint: s
     )
 
 
-def _save_pipeline_stage_outputs(run_dir: Path, extracted_text: str, cleaned_text: str, segment_bundle: dict[str, Any]) -> None:
+def _save_pipeline_stage_outputs(
+    run_dir: Path,
+    extracted_text: str,
+    cleaned_text: str,
+    review_text: str,
+    segment_bundle: dict[str, Any],
+    token_boundary_report: dict[str, Any],
+) -> None:
     _atomic_write_text(run_dir / "extracted_text.txt", extracted_text)
-    _atomic_write_text(run_dir / "cleaned_text.txt", cleaned_text)
+    _atomic_write_text(run_dir / "cleaned_text.original.txt", cleaned_text)
+    _atomic_write_text(run_dir / "cleaned_text.desensitized.txt", review_text)
+    _atomic_write_text(run_dir / "cleaned_text.txt", review_text)
+    _write_json_artifact(run_dir / "segments.desensitized.json", segment_bundle)
     _write_json_artifact(run_dir / "segments.json", segment_bundle)
+    _write_json_artifact(run_dir / "pipt_token_boundary_report.json", token_boundary_report)
 
 
 def _attach_contract_review_pipt_clients(runner: WorkflowRunner, *, run_id: str) -> None:
@@ -4604,13 +4769,21 @@ def _run_contract_review_native_pipeline(
     runtime_settings.validate_for_live_call()
     _attach_contract_review_native_writers()
     runner = WorkflowRunner(settings=runtime_settings, run_dir=run_dir, user_id=f"contract-review-{run_id}")
-    _attach_contract_review_pipt_clients(runner, run_id=run_id)
 
     _write_meta(run_id, {"status": "running", "step": "正在解析合同文本", "progress": 32})
     extracted_text = extract_docx_text(source_docx)
     cleaned_text = clean_contract_text(extracted_text)
-    segment_bundle = split_into_segments(cleaned_text)
-    _save_pipeline_stage_outputs(run_dir, extracted_text, cleaned_text, segment_bundle)
+    review_text, pipt_context = _prepare_contract_review_document_pipt(
+        run_id=run_id,
+        run_dir=run_dir,
+        cleaned_text=cleaned_text,
+    )
+    runner.set_pipt_workflow_fields(_contract_review_pipt_workflow_fields_from_context(pipt_context))
+    segment_bundle = split_into_segments(review_text)
+    token_boundary_report = validate_pipt_token_boundaries(review_text, list(segment_bundle.get("segments") or []))
+    if not token_boundary_report.get("valid", False):
+        raise ValueError(f"PIPT token 被合同分段切断: {token_boundary_report}")
+    _save_pipeline_stage_outputs(run_dir, extracted_text, cleaned_text, review_text, segment_bundle, token_boundary_report)
 
     _write_meta(run_id, {"status": "running", "step": "正在解析与拆分合同", "progress": 40})
     merged_clauses_path = run_dir / "merged_clauses.json"
@@ -4799,9 +4972,9 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
             "pipt_gateway": {
                 "enabled": _contract_review_pipt_enabled(),
                 "mode": _contract_review_pipt_mode(),
-                "stage": "field_level_redaction",
+                "stage": "document_level_redaction",
                 "failure_policy": "plain_text_fallback",
-                "scope": "external_llm_inputs",
+                "scope": "contract_review_document",
             },
             "run_dir": str(run_dir),
             "step": "排队完成，准备开始审查",
@@ -5175,15 +5348,29 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
 
     reviewed_payload = get_or_create_reviewed_risks(run_id)
     merged_clauses = _safe_json(merged_path)
-    if isinstance(merged_clauses, list):
-        _sanitize_reviewed_display_payload(reviewed_payload, merged_clauses)
+    docx_clauses = _contract_review_restore_payload_for_source_docx(merged_clauses, run_id=run_id, run_dir=run_dir) if isinstance(merged_clauses, list) else merged_clauses
+    reviewed_payload_for_docx = _contract_review_restore_payload_for_source_docx(reviewed_payload, run_id=run_id, run_dir=run_dir)
+    if isinstance(docx_clauses, list):
+        _sanitize_reviewed_display_payload(reviewed_payload_for_docx, docx_clauses)
     reviewed_path = run_dir / "risk_result_reviewed.json"
     _write_json_artifact(reviewed_path, reviewed_payload)
+    reviewed_docx_path = run_dir / "risk_result_reviewed.for_docx.json"
+    clauses_docx_path = run_dir / "merged_clauses.for_docx.json"
+    _write_json_artifact(reviewed_docx_path, reviewed_payload_for_docx)
+    if isinstance(docx_clauses, list):
+        _write_json_artifact(clauses_docx_path, docx_clauses)
+    else:
+        clauses_docx_path = merged_path
 
     locator_stdout = ""
     locator_stderr = ""
     try:
-        locator_report = enrich_reviewed_risks_with_locators(run_id, run_root=RUN_ROOT)
+        locator_report = enrich_reviewed_risks_with_locators(
+            run_id,
+            run_root=RUN_ROOT,
+            clauses_path=clauses_docx_path,
+            reviewed_path=reviewed_docx_path,
+        )
         locator_stdout = json.dumps(locator_report, ensure_ascii=False, indent=2)
     except Exception as exc:
         locator_stderr = str(exc)
@@ -5194,7 +5381,7 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
         "-m",
         "app.services.contract_review_engine.docx_apply_patches",
         str(source_doc),
-        str(reviewed_path),
+        str(reviewed_docx_path),
         "--out",
         str(patched_docx),
         "--author",
@@ -5214,8 +5401,8 @@ def _export_docx_with_reviewed_risks(run_id: str) -> Path:
         "-m",
         "app.services.contract_review_engine.docx_comments",
         str(patched_docx),
-        str(merged_path),
-        str(reviewed_path),
+        str(clauses_docx_path),
+        str(reviewed_docx_path),
         "--out",
         str(out_path),
         "--author",

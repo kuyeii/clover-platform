@@ -207,7 +207,7 @@ workflow:
       width: 242
     - data:
         dataset_ids:
-        - 3abde7a1-67dc-4f75-bb32-3388d985ea82
+        - 2366c7ad-cb42-4c51-a840-ec07346a94ce
         multiple_retrieval_config:
           reranking_enable: true
           reranking_mode: reranking_model
