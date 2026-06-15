@@ -14,6 +14,7 @@ if API_ROOT_VALUE not in sys.path:
 
 from app.services import pipt_gateway_service as service
 from app.services import pipt_recognition_adapter
+from app.api import pipt_gateway as pipt_gateway_api
 from app.services.pipt_redaction_service import apply_current_document_global_redactions
 
 
@@ -215,6 +216,42 @@ class PiptGatewayServiceTests(unittest.TestCase):
         self.assertFalse(hasattr(pipt_recognition_adapter, "_ensure_legacy_runtime"))
         self.assertFalse(hasattr(pipt_recognition_adapter, "_legacy_desensitize_engine"))
         self.assertFalse(hasattr(pipt_recognition_adapter, "LegacyPiptRecognitionProvider"))
+
+    def test_warmup_recognition_provider_initializes_cached_engine(self) -> None:
+        fake_engine = Mock()
+        fake_provider = Mock()
+
+        with (
+            patch.object(pipt_recognition_adapter, "get_recognition_provider", return_value=fake_provider),
+            patch.object(pipt_recognition_adapter, "_native_desensitize_engine", return_value=fake_engine),
+        ):
+            pipt_recognition_adapter.warmup_recognition_provider(load_ner=False)
+
+        fake_engine.warmup.assert_called_once_with(load_ner=False)
+
+    def test_reload_recognition_provider_clears_cache_and_warms_new_engine(self) -> None:
+        pipt_recognition_adapter.get_recognition_provider()
+
+        with patch.object(pipt_recognition_adapter, "warmup_recognition_provider") as warmup:
+            pipt_recognition_adapter.reload_recognition_provider(load_ner=False)
+
+        self.assertEqual(pipt_recognition_adapter.get_recognition_provider.cache_info().currsize, 0)
+        warmup.assert_called_once_with(load_ner=False)
+
+    def test_pipt_config_change_schedules_provider_reload(self) -> None:
+        background_tasks = Mock()
+
+        pipt_gateway_api._schedule_pipt_provider_reload(background_tasks)
+
+        background_tasks.add_task.assert_called_once_with(
+            pipt_gateway_api._reload_pipt_provider_after_config_change
+        )
+
+    def test_pipt_config_reload_task_calls_adapter_reload(self) -> None:
+        with patch.object(pipt_gateway_api, "reload_recognition_provider") as reload_provider:
+            pipt_gateway_api._reload_pipt_provider_after_config_change()
+
+        reload_provider.assert_called_once_with(load_ner=False)
 
     def test_unified_redaction_service_replaces_current_document_missed_same_entity_globally(self) -> None:
         token = "@@PIPT:v1:e000001:k11111111@@"

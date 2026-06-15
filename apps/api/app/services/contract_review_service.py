@@ -207,6 +207,159 @@ def _load_contract_review_pipt_context(run_dir: Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _extract_pipt_tokens_from_text(value: Any) -> set[str]:
+    return set(re.findall(r"@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@", str(value or "")))
+
+
+def _risk_has_conflicting_pipt_tokens(risk: dict[str, Any], allowed_tokens: set[str]) -> bool:
+    def collect(value: Any, key: str = "") -> set[str]:
+        if key == "redaction_tokens":
+            return set()
+        if isinstance(value, str):
+            return _extract_pipt_tokens_from_text(value)
+        if isinstance(value, dict):
+            found_tokens: set[str] = set()
+            for child_key, child_value in value.items():
+                found_tokens.update(collect(child_value, str(child_key)))
+            return found_tokens
+        if isinstance(value, list):
+            found_tokens: set[str] = set()
+            for child_value in value:
+                found_tokens.update(collect(child_value))
+            return found_tokens
+        return set()
+
+    found = collect(risk)
+    return bool(found - allowed_tokens)
+
+
+def _risk_visible_text_contains_token(risk: dict[str, Any], token: str) -> bool:
+    text_fields = (
+        "risk_label",
+        "issue",
+        "basis",
+        "basis_summary",
+        "factual_basis",
+        "reasoning_basis",
+        "suggestion",
+        "suggestion_minimal",
+        "suggestion_optimized",
+        "evidence_text",
+        "anchor_text",
+        "target_text",
+        "main_text",
+        "clause_text",
+        "redaction_note",
+    )
+    for field in text_fields:
+        if token in str(risk.get(field) or ""):
+            return True
+    for nested_key in ("ai_rewrite", "ai_apply", "accepted_patch"):
+        nested = risk.get(nested_key)
+        if isinstance(nested, dict) and any(token in str(value or "") for value in nested.values()):
+            return True
+    return False
+
+
+def _risk_related_clause_text_contains_token(risk: dict[str, Any], clauses: list[dict[str, Any]], token: str) -> bool:
+    if not isinstance(risk, dict) or not clauses:
+        return False
+    alias_map = _build_clause_uid_alias_map(clauses)
+    clause_keys = _collect_risk_clause_keys(risk, alias_map)
+    if not clause_keys:
+        return False
+    for clause in clauses:
+        if not isinstance(clause, dict):
+            continue
+        uid = str(clause.get("clause_uid") or "").strip()
+        refs = {
+            uid,
+            str(clause.get("clause_id") or "").strip(),
+            str(clause.get("display_clause_id") or "").strip(),
+            str(clause.get("local_clause_id") or "").strip(),
+            str(clause.get("source_clause_id") or "").strip(),
+        }
+        if not (clause_keys & {ref for ref in refs if ref}):
+            continue
+        clause_texts = [
+            str(clause.get("source_excerpt") or ""),
+            str(clause.get("clause_text") or ""),
+        ]
+        if any(token in text for text in clause_texts):
+            return True
+    return False
+
+
+def _risk_redaction_tokens_have_evidence(
+    risk: dict[str, Any],
+    clauses: list[dict[str, Any]],
+    tokens: list[str],
+) -> bool:
+    return all(
+        _risk_visible_text_contains_token(risk, token)
+        or _risk_related_clause_text_contains_token(risk, clauses, token)
+        for token in tokens
+    )
+
+
+def _filter_redaction_artifact_risks(
+    payload: dict[str, Any],
+    *,
+    run_dir: Path,
+    analysis_scope: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not isinstance(payload, dict):
+        return payload, []
+    risk_items = payload.get("risk_items")
+    if not isinstance(risk_items, list):
+        return payload, []
+    context = _load_contract_review_pipt_context(run_dir) or {}
+    manifest = context.get("placeholder_manifest") if isinstance(context, dict) else {}
+    if not isinstance(manifest, dict) or not manifest:
+        return payload, []
+    clauses = _load_run_clauses(run_dir)
+
+    kept: list[dict[str, Any]] = []
+    filtered: list[dict[str, Any]] = []
+    for item in risk_items:
+        if not isinstance(item, dict):
+            kept.append(item)
+            continue
+        reviewability = str(item.get("reviewability") or "substantive_risk").strip()
+        caused_by_redaction = item.get("caused_by_redaction") is True
+        redaction_tokens = [
+            str(token).strip()
+            for token in (item.get("redaction_tokens") or [])
+            if str(token).strip()
+        ]
+        token_set = set(redaction_tokens)
+        hideable = (
+            reviewability in {"redaction_artifact", "redaction_limited_verification"}
+            and caused_by_redaction
+            and bool(redaction_tokens)
+            and all(token in manifest for token in redaction_tokens)
+            and not _risk_has_conflicting_pipt_tokens(item, token_set)
+            and _risk_redaction_tokens_have_evidence(item, clauses, redaction_tokens)
+        )
+        if hideable:
+            filtered.append(
+                {
+                    "analysis_scope": analysis_scope,
+                    "filter_reason": reviewability,
+                    "redaction_tokens": redaction_tokens,
+                    "risk": item,
+                }
+            )
+            continue
+        kept.append(item)
+
+    if not filtered:
+        return payload, []
+    next_payload = dict(payload)
+    next_payload["risk_items"] = kept
+    return next_payload, filtered
+
+
 def _prepare_contract_review_document_pipt(*, run_id: str, run_dir: Path, cleaned_text: str) -> tuple[str, dict[str, Any]]:
     request_id = _contract_review_document_pipt_request_id(run_id)
     enabled = _contract_review_pipt_enabled()
@@ -319,7 +472,9 @@ _CONTRACT_REVIEW_PIPT_INPUT_TEXT_FIELDS = {
 }
 
 _CONTRACT_REVIEW_PIPT_RECURSIVE_TEXT_KEYS = {
+    "accepted_text",
     "clause_text",
+    "deleted_text",
     "source_excerpt",
     "clause_context",
     "clause_text_excerpt",
@@ -336,6 +491,11 @@ _CONTRACT_REVIEW_PIPT_RECURSIVE_TEXT_KEYS = {
     "reasoning_basis",
     "normative_basis",
     "contract_outline",
+    "inserted_text",
+    "revised_text",
+    "comment_text",
+    "rationale",
+    "redaction_note",
 }
 
 _CONTRACT_REVIEW_PIPT_OUTPUT_TEXT_FIELDS = {
@@ -344,6 +504,9 @@ _CONTRACT_REVIEW_PIPT_OUTPUT_TEXT_FIELDS = {
     "clauses",
     "risk_items",
     "contract_risk_report",
+    "ai_rewrite",
+    "ai_apply",
+    "accepted_patch",
 }
 
 
@@ -4921,6 +5084,11 @@ def _run_contract_review_native_pipeline(
     )
     normalized_scope = normalize_analysis_scope(analysis_scope)
     scoped_risk_payload = apply_analysis_scope(normalized_risk_payload, normalized_scope)
+    scoped_risk_payload, redaction_filtered_risks = _filter_redaction_artifact_risks(
+        scoped_risk_payload,
+        run_dir=run_dir,
+        analysis_scope=normalized_scope,
+    )
     _write_json_artifact(
         run_dir / "risk_result_raw.json",
         {
@@ -4929,10 +5097,20 @@ def _run_contract_review_native_pipeline(
             "unified": normalized_risk_payload,
             "scoped": scoped_risk_payload,
             "analysis_scope": normalized_scope,
+            "redaction_filtered_count": len(redaction_filtered_risks),
         },
     )
     _write_json_artifact(run_dir / "risk_result_normalized.full.json", normalized_risk_payload)
     _write_json_artifact(run_dir / "risk_result_normalized.json", scoped_risk_payload)
+    _write_json_artifact(
+        run_dir / "redaction_filtered_risks.json",
+        {
+            "version": 1,
+            "analysis_scope": normalized_scope,
+            "filtered_count": len(redaction_filtered_risks),
+            "items": redaction_filtered_risks,
+        },
+    )
 
     _write_meta(run_id, {"status": "running", "step": "风险识别完成，正在校验结果", "progress": 85})
     is_valid, error_message = validate_risk_result(scoped_risk_payload)

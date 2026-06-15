@@ -55,6 +55,7 @@ _WEAK_BASIS_PHRASES = {
 
 _ALLOWED_RISK_LEVELS = {"high", "medium", "low"}
 _RISK_LEVEL_ALIASES = ("risk_level_level", "risk_level_candidate")
+ALLOWED_REVIEWABILITY = {"substantive_risk", "redaction_artifact", "redaction_limited_verification"}
 logger = logging.getLogger(__name__)
 
 
@@ -211,6 +212,8 @@ def _review_reason(item: dict[str, Any], clause_metas: list[dict[str, Any]]) -> 
 def _signature(item: dict[str, Any], clause_uids: list[str]) -> str:
     parts = [
         str(item.get("risk_source_type", "anchored")),
+        str(item.get("reviewability", "substantive_risk")),
+        "|".join(sorted(_ensure_string_list(item.get("redaction_tokens")))),
         "|".join(sorted(clause_uids)),
         normalize_text(str(item.get("dimension", ""))).lower(),
         normalize_text(str(item.get("risk_label", ""))).lower(),
@@ -225,6 +228,14 @@ def _ensure_string_list(value: Any) -> list[str]:
     return [str(v).strip() for v in value if str(v).strip()]
 
 
+def _to_bool(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return False
+
+
 def _to_optional_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -235,6 +246,16 @@ def _to_optional_float(value: Any) -> float | None:
         return float(text)
     except Exception:
         return None
+
+
+def _normalize_reviewability_fields(item: dict[str, Any]) -> None:
+    reviewability = str(item.get("reviewability", "") or "").strip()
+    if reviewability not in ALLOWED_REVIEWABILITY:
+        reviewability = "substantive_risk"
+    item["reviewability"] = reviewability
+    item["caused_by_redaction"] = _to_bool(item.get("caused_by_redaction"))
+    item["redaction_tokens"] = _ensure_string_list(item.get("redaction_tokens"))
+    item["redaction_note"] = normalize_text(str(item.get("redaction_note", "") or ""))
 
 
 def _normalize_risk_source_type(item: dict[str, Any]) -> str:
@@ -570,6 +591,7 @@ def normalize_and_dedupe_risks(
 
         item = _map_external_risk_item(raw_item)
         _normalize_risk_level_fields(item)
+        _normalize_reviewability_fields(item)
         clause_ref = str(item.get("clause_id", "") or "").strip()
         anchor_text = str(item.get("anchor_text", "") or "")
         evidence_text = str(item.get("evidence_text", "") or "")

@@ -12,6 +12,7 @@ import hashlib
 import os
 import re
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 
 from app.core.config import get_api_settings
@@ -25,6 +26,7 @@ from .pipt_protocol import (
 from .recognition_rules import apply_entity_rules
 
 logger = logging.getLogger(__name__)
+_NER_LOAD_LOCK = Lock()
 
 DEFAULT_TARGET_ENTITIES = ["name", "phone", "id_number", "email", "addr", "bank", "car_id", "ip", "org", "credit_code"]
 FALLBACK_IDENTIFY_INFO_TO_CHINESE = {
@@ -164,47 +166,56 @@ class DesensitizeEngine:
         # NER 模型（可选，需要模型文件）
         self._ner_model = None
 
-        # 占位符全局计数器
-        self._placeholder_counter: dict[str, int] = {}
-
         logger.info(f"脱敏引擎初始化完成: 正则规则 {len(self.regex_patterns)} 种, mask 方法 {len(self.mask_functions)} 种")
+
+    def warmup(self, *, load_ner: bool = True) -> None:
+        """
+        预热本地脱敏引擎。
+
+        仅加载规则和可选 NER 模型，不发起 LLM 校验请求；避免启动预热误打外部模型服务。
+        """
+        if load_ner:
+            self._try_load_ner_model()
 
     def _try_load_ner_model(self):
         """尝试加载 NER 模型（用于姓名、地址、机构等无正则规则的实体）"""
         if self._ner_model is not None:
             return
 
-        try:
-            import hanlp
+        with _NER_LOAD_LOCK:
+            if self._ner_model is not None:
+                return
+            try:
+                import hanlp
 
-            # 优先使用 PIPT_ASSETS_DIR；未配置时只按文件路径复用旧资产目录，不导入 legacy 包。
-            assets_dir = _default_assets_dir()
-            ner_model_dir = str((assets_dir / "ner_model").resolve())
-            tok_model_dir = str((assets_dir / "tok_model").resolve())
+                # 优先使用 PIPT_ASSETS_DIR；未配置时只按文件路径复用旧资产目录，不导入 legacy 包。
+                assets_dir = _default_assets_dir()
+                ner_model_dir = str((assets_dir / "ner_model").resolve())
+                tok_model_dir = str((assets_dir / "tok_model").resolve())
 
-            loaded_local = False
-            if Path(ner_model_dir).exists() and Path(tok_model_dir).exists():
-                logger.info(f"正在从本地离线目录加载模型: {ner_model_dir}")
-                self._ner_model = {
-                    "tok": hanlp.load(tok_model_dir),
-                    "ner": hanlp.load(ner_model_dir),
-                }
-                loaded_local = True
+                loaded_local = False
+                if Path(ner_model_dir).exists() and Path(tok_model_dir).exists():
+                    logger.info(f"正在从本地离线目录加载模型: {ner_model_dir}")
+                    self._ner_model = {
+                        "tok": hanlp.load(tok_model_dir),
+                        "ner": hanlp.load(ner_model_dir),
+                    }
+                    loaded_local = True
 
-            if not loaded_local:
-                logger.info("未检测到本地 models/ 目录的文件，正在从远程加载/缓存 HanLP 预训练模型(默认使用 GPU 提取)...")
-                # 当您跑过第一次后，hanlp 会自动把它缓存在 ~/.hanlp 下面，以后也就是离线秒开了。
-                self._ner_model = {
-                    "tok": hanlp.load(hanlp.pretrained.tok.COARSE_ELECTRA_SMALL_ZH),
-                    "ner": hanlp.load(hanlp.pretrained.ner.MSRA_NER_ELECTRA_SMALL_ZH),
-                }
+                if not loaded_local:
+                    logger.info("未检测到本地 models/ 目录的文件，正在从远程加载/缓存 HanLP 预训练模型(默认使用 GPU 提取)...")
+                    # 当您跑过第一次后，hanlp 会自动把它缓存在 ~/.hanlp 下面，以后也就是离线秒开了。
+                    self._ner_model = {
+                        "tok": hanlp.load(hanlp.pretrained.tok.COARSE_ELECTRA_SMALL_ZH),
+                        "ner": hanlp.load(hanlp.pretrained.ner.MSRA_NER_ELECTRA_SMALL_ZH),
+                    }
 
-            logger.info("NER 模型加载成功，正准备通过 PyTorch/GPU 推理。")
+                logger.info("NER 模型加载成功，正准备通过 PyTorch/GPU 推理。")
 
-        except ImportError:
-            logger.warning("hanlp 未安装，仅使用正则识别。请执行 pip install hanlp>=2.1")
-        except Exception as e:
-            logger.warning(f"NER 模型加载失败: {e}，仅使用正则识别")
+            except ImportError:
+                logger.warning("hanlp 未安装，仅使用正则识别。请执行 pip install hanlp>=2.1")
+            except Exception as e:
+                logger.warning(f"NER 模型加载失败: {e}，仅使用正则识别")
 
     def recognize(
         self,
@@ -1017,6 +1028,7 @@ class DesensitizeEngine:
         text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         stateless_placeholders: dict[str, str] = {}
         stateless_legacy_indices: dict[str, int] = {}
+        legacy_type_counters: dict[str, int] = {}
         _ = (db_session, audit_source, audit_session_id, audit_project_id, audit_task_id)
 
         for entity in sorted_entities:
@@ -1049,8 +1061,8 @@ class DesensitizeEngine:
             else:
                 counter = stateless_legacy_indices.get(ekey)
                 if counter is None:
-                    counter = self._placeholder_counter.get(entity_type, 0) + 1
-                    self._placeholder_counter[entity_type] = counter
+                    counter = legacy_type_counters.get(entity_type, 0) + 1
+                    legacy_type_counters[entity_type] = counter
                     stateless_legacy_indices[ekey] = counter
                 placeholder = placeholder_format.replace("{type}", entity_type).replace("{index}", str(counter))
 
@@ -1099,4 +1111,4 @@ class DesensitizeEngine:
 
     def reset_counter(self):
         """重置占位符计数器（每次新任务时调用）"""
-        self._placeholder_counter.clear()
+        return None

@@ -266,6 +266,305 @@ class ContractReviewPipelineTests(unittest.TestCase):
         self.assertIn("placeholder_policy", inputs)
         self.assertIn("placeholder_manifest", inputs)
 
+    def test_redaction_artifact_risk_is_filtered_only_when_manifest_tokens_match(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        unknown_token = "@@PIPT:v1:e000002:k22222222@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "org", "role": "机构名称"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            payload = {
+                "risk_items": [
+                    {
+                        "risk_id": 1,
+                        "reviewability": "redaction_artifact",
+                        "caused_by_redaction": True,
+                        "redaction_tokens": [token],
+                        "issue": f"仲裁机构名称缺失：提交{token}申请仲裁",
+                    },
+                    {
+                        "risk_id": 2,
+                        "reviewability": "redaction_artifact",
+                        "caused_by_redaction": True,
+                        "redaction_tokens": [unknown_token],
+                        "issue": f"未知 token 不能过滤：{unknown_token}",
+                    },
+                    {
+                        "risk_id": 3,
+                        "reviewability": "substantive_risk",
+                        "caused_by_redaction": False,
+                        "redaction_tokens": [],
+                        "issue": "真实合同风险保留",
+                    },
+                ]
+            }
+
+            filtered_payload, filtered_items = service._filter_redaction_artifact_risks(
+                payload,
+                run_dir=run_dir,
+                analysis_scope="full_detail",
+            )
+
+        self.assertEqual([item["risk_id"] for item in filtered_payload["risk_items"]], [2, 3])
+        self.assertEqual(len(filtered_items), 1)
+        self.assertEqual(filtered_items[0]["redaction_tokens"], [token])
+
+    def test_redaction_artifact_filter_requires_token_evidence(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "org", "role": "机构名称"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "merged_clauses.json").write_text(
+                '[{"clause_uid":"c1","clause_id":"1","display_clause_id":"1","clause_text":"普通争议解决条款"}]',
+                encoding="utf-8",
+            )
+            payload = {
+                "risk_items": [
+                    {
+                        "risk_id": 1,
+                        "reviewability": "redaction_artifact",
+                        "caused_by_redaction": True,
+                        "redaction_tokens": [token],
+                        "clause_uid": "c1",
+                        "clause_uids": ["c1"],
+                        "issue": "真实风险不应仅因引用任意合法 token 被过滤",
+                    }
+                ]
+            }
+
+            filtered_payload, filtered_items = service._filter_redaction_artifact_risks(
+                payload,
+                run_dir=run_dir,
+                analysis_scope="full_detail",
+            )
+
+        self.assertEqual([item["risk_id"] for item in filtered_payload["risk_items"]], [1])
+        self.assertEqual(filtered_items, [])
+
+    def test_redaction_artifact_filter_accepts_token_in_related_clause_text(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "org", "role": "机构名称"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "clause_uid": "c1",
+                            "clause_id": "1",
+                            "display_clause_id": "1",
+                            "clause_text": f"提交{token}申请仲裁",
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            payload = {
+                "risk_items": [
+                    {
+                        "risk_id": 1,
+                        "reviewability": "redaction_artifact",
+                        "caused_by_redaction": True,
+                        "redaction_tokens": [token],
+                        "clause_uid": "c1",
+                        "clause_uids": ["c1"],
+                        "issue": "仲裁机构名称缺失导致条款无效",
+                    }
+                ]
+            }
+
+            filtered_payload, filtered_items = service._filter_redaction_artifact_risks(
+                payload,
+                run_dir=run_dir,
+                analysis_scope="full_detail",
+            )
+
+        self.assertEqual(filtered_payload["risk_items"], [])
+        self.assertEqual(len(filtered_items), 1)
+
+    def test_redaction_artifact_filter_checks_clause_text_when_excerpt_omits_token(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "org", "role": "机构名称"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "clause_uid": "c1",
+                            "clause_id": "1",
+                            "display_clause_id": "1",
+                            "source_excerpt": "争议解决条款摘要",
+                            "clause_text": f"提交{token}申请仲裁",
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            payload = {
+                "risk_items": [
+                    {
+                        "risk_id": 1,
+                        "reviewability": "redaction_artifact",
+                        "caused_by_redaction": True,
+                        "redaction_tokens": [token],
+                        "clause_uid": "c1",
+                        "clause_uids": ["c1"],
+                        "issue": "仲裁机构名称缺失导致条款无效",
+                    }
+                ]
+            }
+
+            filtered_payload, filtered_items = service._filter_redaction_artifact_risks(
+                payload,
+                run_dir=run_dir,
+                analysis_scope="full_detail",
+            )
+
+        self.assertEqual(filtered_payload["risk_items"], [])
+        self.assertEqual(len(filtered_items), 1)
+
+    def test_redaction_artifact_filter_rejects_nested_undeclared_token(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        undeclared_token = "@@PIPT:v1:e000002:k22222222@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "org", "role": "机构名称"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "clause_uid": "c1",
+                            "clause_id": "1",
+                            "display_clause_id": "1",
+                            "clause_text": f"提交{token}申请仲裁",
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            payload = {
+                "risk_items": [
+                    {
+                        "risk_id": 1,
+                        "reviewability": "redaction_artifact",
+                        "caused_by_redaction": True,
+                        "redaction_tokens": [token],
+                        "clause_uid": "c1",
+                        "clause_uids": ["c1"],
+                        "issue": "仲裁机构名称缺失导致条款无效",
+                        "normative_basis": {"basis_detail": f"嵌套未知 token {undeclared_token}"},
+                    }
+                ]
+            }
+
+            filtered_payload, filtered_items = service._filter_redaction_artifact_risks(
+                payload,
+                run_dir=run_dir,
+                analysis_scope="full_detail",
+            )
+
+        self.assertEqual([item["risk_id"] for item in filtered_payload["risk_items"]], [1])
+        self.assertEqual(filtered_items, [])
+
+    def test_caused_by_redaction_string_false_does_not_filter(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "org", "role": "机构名称"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            payload = {
+                "risk_items": [
+                    {
+                        "risk_id": 1,
+                        "reviewability": "redaction_artifact",
+                        "caused_by_redaction": "false",
+                        "redaction_tokens": [token],
+                        "issue": f"字符串 false 不能触发过滤：{token}",
+                    }
+                ]
+            }
+
+            normalized = service.merge_risk_results(
+                anchored_payload=payload,
+                missing_multi_payload={"risk_items": []},
+                clauses=[{"clause_uid": "c1", "clause_id": "1", "display_clause_id": "1", "clause_text": f"提交{token}申请仲裁"}],
+            )
+            filtered_payload, filtered_items = service._filter_redaction_artifact_risks(
+                normalized,
+                run_dir=run_dir,
+                analysis_scope="full_detail",
+            )
+
+        self.assertEqual(len(filtered_payload["risk_items"]), 1)
+        self.assertFalse(filtered_payload["risk_items"][0]["caused_by_redaction"])
+        self.assertEqual(filtered_items, [])
+
+    def test_restore_payload_for_result_restores_ai_visible_fields(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td)
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "name"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            payload = {
+                "risk_result": {
+                    "risk_items": [
+                        {
+                            "risk_id": "r1",
+                            "ai_rewrite": {
+                                "target_text": token,
+                                "revised_text": f"{token}应补充授权",
+                                "comment_text": f"将{token}改写",
+                                "rationale": f"{token}相关说明",
+                            },
+                        }
+                    ]
+                }
+            }
+            with (
+                patch.object(service, "_contract_review_pipt_enabled", return_value=True),
+                patch.object(
+                    service,
+                    "postprocess_payload",
+                    side_effect=lambda payload: {
+                        "text": str(payload["text"]).replace(token, "张三"),
+                        "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                    },
+                ),
+            ):
+                restored = service._contract_review_restore_payload_for_source_docx(
+                    payload,
+                    run_id="run_restore_ai",
+                    run_dir=run_dir,
+                )
+
+        ai_rewrite = restored["risk_result"]["risk_items"][0]["ai_rewrite"]
+        self.assertEqual(ai_rewrite["target_text"], "张三")
+        self.assertEqual(ai_rewrite["revised_text"], "张三应补充授权")
+        self.assertEqual(ai_rewrite["comment_text"], "将张三改写")
+        self.assertEqual(ai_rewrite["rationale"], "张三相关说明")
+
     def test_contract_review_pipt_can_be_disabled_to_compatibility_mode(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             run_dir = Path(td)

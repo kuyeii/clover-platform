@@ -35,15 +35,28 @@ REQUIRED_RISK_FIELDS = {
     "quality_flags",
     "related_clause_ids",
     "related_clause_uids",
+    "reviewability",
+    "caused_by_redaction",
+    "redaction_tokens",
+    "redaction_note",
 }
 
 ALLOWED_RISK_SOURCE_TYPES = {"anchored", "missing_clause", "multi_clause"}
+ALLOWED_REVIEWABILITY = {"substantive_risk", "redaction_artifact", "redaction_limited_verification"}
 
 
 def _ensure_list_of_strings(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _to_bool(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return False
 
 
 def _infer_risk_source_type(item: dict[str, Any]) -> str:
@@ -63,6 +76,11 @@ def _apply_v2_defaults(item: dict[str, Any]) -> None:
     item["quality_flags"] = _ensure_list_of_strings(item.get("quality_flags"))
     item["related_clause_ids"] = _ensure_list_of_strings(item.get("related_clause_ids"))
     item["related_clause_uids"] = _ensure_list_of_strings(item.get("related_clause_uids"))
+    reviewability = str(item.get("reviewability", "") or "").strip()
+    item["reviewability"] = reviewability if reviewability in ALLOWED_REVIEWABILITY else "substantive_risk"
+    item["caused_by_redaction"] = _to_bool(item.get("caused_by_redaction"))
+    item["redaction_tokens"] = _ensure_list_of_strings(item.get("redaction_tokens"))
+    item["redaction_note"] = str(item.get("redaction_note", "") or "")
     if item.get("evidence_confidence") in ("", None):
         item["evidence_confidence"] = None
 
@@ -89,6 +107,12 @@ def validate_risk_result(payload: dict[str, Any]) -> tuple[bool, str]:
             return False, f"第 {idx} 条风险 review_required_reason 必须为非空数组"
         if item.get("evidence_confidence") is not None and not isinstance(item.get("evidence_confidence"), (int, float)):
             return False, f"第 {idx} 条风险 evidence_confidence 必须为数值或 null"
+        if str(item.get("reviewability") or "") not in ALLOWED_REVIEWABILITY:
+            return False, f"第 {idx} 条风险 reviewability 非法: {item.get('reviewability')}"
+        if not isinstance(item.get("caused_by_redaction"), bool):
+            return False, f"第 {idx} 条风险 caused_by_redaction 必须为布尔值"
+        if not isinstance(item.get("redaction_tokens"), list):
+            return False, f"第 {idx} 条风险 redaction_tokens 必须为数组"
         risk_source_type = str(item.get("risk_source_type", "anchored") or "anchored").strip()
         if risk_source_type == "anchored":
             if not str(item.get("clause_uid", "")).strip():

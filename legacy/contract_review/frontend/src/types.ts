@@ -43,6 +43,10 @@ export type RiskItem = {
   dimension: string
   risk_label: string
   risk_level: 'high' | 'medium' | 'low' | string
+  reviewability?: 'substantive_risk' | 'redaction_artifact' | 'redaction_limited_verification' | string
+  caused_by_redaction?: boolean
+  redaction_tokens?: string[]
+  redaction_note?: string
   issue: string
   basis: string
   basis_minimal?: string

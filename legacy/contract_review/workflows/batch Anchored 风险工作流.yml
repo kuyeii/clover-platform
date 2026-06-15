@@ -141,7 +141,39 @@ workflow:
           required: false
           type: text-input
           variable: clause_count
-      height: 239
+        - default: '{}'
+          hint: ''
+          label: placeholder_manifest
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: placeholder_manifest
+        - default: '{}'
+          hint: ''
+          label: placeholder_policy
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: placeholder_policy
+        - default: 'false'
+          hint: ''
+          label: pipt_gateway_enabled
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: pipt_gateway_enabled
+        - default: compatibility
+          hint: ''
+          label: pipt_gateway_mode
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: pipt_gateway_mode
+      height: 343
       id: '1773302896479'
       position:
         x: 82.03037499580529
@@ -235,7 +267,7 @@ workflow:
             \ clause_text）\n\n输出必须是严格 JSON（不要 markdown / 不要解释 / 不要 <think> 标签），格式如下：\n\
             {\n  \"risk_items\": [\n    {\n      \"risk_code\": \"snake_case_english\"\
             ,\n      \"risk_source_type\": \"anchored\",\n      \"dimension\": \"\
-            以下10类之一\",\n      \"risk_level\": \"high|medium|low\",\n      \"risk_label\"\
+            以下10类之一\",\n      \"risk_level\": \"high|medium|low\",\n      \"reviewability\": \"substantive_risk\",\n      \"caused_by_redaction\": false,\n      \"redaction_tokens\": [],\n      \"redaction_note\": \"\",\n      \"risk_label\"\
             : \"一句话概括\",\n      \"issue\": \"具体指出条款哪句话+什么问题\",\n      \"evidence_text\"\
             : \"必须是 clause_text 中的原文片段（逐字摘录）\",\n      \"anchor_text\": \"更短的原文片段（逐字摘录，必须是\
             \ evidence_text 的子串或同源短摘录）\",\n\n      \"factual_basis\": \"用事实描述：条款中哪句表述\
@@ -265,8 +297,8 @@ workflow:
             - medium：关键标准、条件、边界、程序不清，较大概率引发履约争议、延期、返工、结算争议或责任扩大；\n- low：存在一定歧义或执行摩擦，但短期内不必然造成重大损失，且可通过小幅补充修正。\n\
             \n硬性约束：\n1) 每条 clause 最多输出 2 个真正独立的 anchored 风险；同类问题要合并。\n2) clause_kind\
             \ != contract_clause（placeholder_clause / note_clause）默认不输出风险（除非其本身包含实质约定且明确可直接触发风险）。\n\
-            3) evidence_text 与 anchor_text 必须是原文逐字摘录，不得改写。\n4) 若该 clause 不构成明确 anchored\
-            \ 风险，则不要输出该 clause 的风险项。\n5）遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）\n\n你必须只输出 JSON，不得输出任何推理过程或\
+            3) evidence_text 与 anchor_text 必须是原文逐字摘录，不得改写。\n4) placeholder_manifest 中列出的 @@PIPT:v1:e000001:kxxxxxxxx@@ 是已存在但被脱敏的实体，不是空值、缺失值或未填写内容；不得仅因 token 外观输出“名称缺失/主体缺失/机构未填写”等风险。\n5) 如果问题完全由脱敏 token 外观触发，必须输出 reviewability=redaction_artifact、caused_by_redaction=true，并把相关 token 写入 redaction_tokens；如果只能说明因脱敏无法核验具体名称/编号/主体是否合法，输出 reviewability=redaction_limited_verification。\n6) reviewability 只能输出 substantive_risk、redaction_artifact、redaction_limited_verification 三者之一，禁止输出带 | 的联合字符串。对真实合同风险输出 reviewability=substantive_risk、caused_by_redaction=false、redaction_tokens=[]。\n7) 若该 clause 不构成明确 anchored\
+            \ 风险，则不要输出该 clause 的风险项。\n8）遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）\n\n你必须只输出 JSON，不得输出任何推理过程或\
             \ <think>...</think>。你的输出必须以第一个字符 “{” 开始，并以最后一个字符 “}” 结束。"
         - id: a8ca68e5-6ea3-46d9-ab9a-9cc106b0c6dd
           role: user
@@ -284,7 +316,7 @@ workflow:
             - “segment_title”只用于帮助理解当前条款主题和选择更准确的 dimension，不得作为 evidence_text 或 anchor_text\
             \ 的来源。\n- 即使提供了审查视角和合同类型，anchored 风险仍必须满足“仅凭单条 clause_text 即可成立”的条件。\n\
             - 在满足 anchored 条件的前提下，优先识别与当前合同类型强相关、后果明确、对审查视角一方影响更直接的风险；不要为追求覆盖率而扩大解释。\n\
-            \n\n候选条款 clauses_json（JSON 数组字符串）：\n{{#1773302896479.clauses_json#}}\n\
+            \n\nPIPT 脱敏上下文：\n- pipt_gateway_enabled: {{#1773302896479.pipt_gateway_enabled#}}\n- pipt_gateway_mode: {{#1773302896479.pipt_gateway_mode#}}\n- placeholder_manifest: {{#1773302896479.placeholder_manifest#}}\n- placeholder_policy: {{#1773302896479.placeholder_policy#}}\n\n候选条款 clauses_json（JSON 数组字符串）：\n{{#1773302896479.clauses_json#}}\n\
             \n【输出前自检】\n在写出每一个 risk_item 前，先确认以下四点：\n1) 我能否指出 clause_text 中的具体原句？\n\
             2) 我能否无需依赖其他条款、附件、定义或背景事实，就说明该风险成立？\n3) 我能否说明该问题为什么会对 {{#1773302896479.review_side#}}\
             \ 不利？\n4) 我能否给出与该缺陷直接对应的修改方向？\n只要有一项不能明确回答“能”，就不要输出该风险。\n\n\n请仅输出 JSON：\n\

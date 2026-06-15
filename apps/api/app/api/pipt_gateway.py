@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request
 
 from app.core.deps import extract_token, get_current_user, require_admin
 from app.core.responses import ok
@@ -29,8 +30,10 @@ from app.services.pipt_config_service import (
     update_task_configs_payload,
     upsert_custom_entity_type_payload,
 )
+from app.services.pipt_recognition_adapter import reload_recognition_provider
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def require_pipt_gateway_admin_access(
@@ -137,31 +140,40 @@ def get_pipt_gateway_config(
 @router.put("/pipt-gateway/config/tasks", name="update_pipt_gateway_task_config")
 async def update_pipt_gateway_task_config(
     request: Request,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
 ):
     _ = user
     body = await _read_json_body(request)
-    return ok(request, update_task_configs_payload(body.get("items")))
+    payload = update_task_configs_payload(body.get("items"))
+    _schedule_pipt_provider_reload(background_tasks)
+    return ok(request, payload)
 
 
 @router.post("/pipt-gateway/config/custom-types", name="upsert_pipt_gateway_custom_entity_type")
 async def upsert_pipt_gateway_custom_entity_type(
     request: Request,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
 ):
     _ = user
     body = await _read_json_body(request)
-    return ok(request, upsert_custom_entity_type_payload(body))
+    payload = upsert_custom_entity_type_payload(body)
+    _schedule_pipt_provider_reload(background_tasks)
+    return ok(request, payload)
 
 
 @router.delete("/pipt-gateway/config/custom-types/{code}", name="delete_pipt_gateway_custom_entity_type")
 def delete_pipt_gateway_custom_entity_type(
     code: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
 ):
     _ = user
-    return ok(request, delete_custom_entity_type_payload(code))
+    payload = delete_custom_entity_type_payload(code)
+    _schedule_pipt_provider_reload(background_tasks)
+    return ok(request, payload)
 
 
 @router.post("/pipt-gateway/config/custom-types/test", name="test_pipt_gateway_custom_entity_type_regex")
@@ -247,3 +259,19 @@ async def _read_json_body(request: Request) -> dict[str, Any]:
     except Exception:
         return {}
     return body if isinstance(body, dict) else {}
+
+
+def _schedule_pipt_provider_reload(background_tasks: BackgroundTasks) -> None:
+    """
+    配置写库后异步刷新当前进程内 PIPT 引擎。
+
+    仅覆盖当前 API 进程；多 worker/多实例部署需要外层广播或版本轮询。
+    """
+    background_tasks.add_task(_reload_pipt_provider_after_config_change)
+
+
+def _reload_pipt_provider_after_config_change() -> None:
+    try:
+        reload_recognition_provider(load_ner=False)
+    except Exception:
+        logger.exception("PIPT 配置更新后的识别引擎重载失败。")

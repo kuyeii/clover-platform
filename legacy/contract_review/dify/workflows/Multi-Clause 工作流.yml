@@ -147,7 +147,39 @@ workflow:
           required: true
           type: text-input
           variable: clause_count
-      height: 213
+        - default: '{}'
+          hint: ''
+          label: placeholder_manifest
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: placeholder_manifest
+        - default: '{}'
+          hint: ''
+          label: placeholder_policy
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: placeholder_policy
+        - default: 'false'
+          hint: ''
+          label: pipt_gateway_enabled
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: pipt_gateway_enabled
+        - default: compatibility
+          hint: ''
+          label: pipt_gateway_mode
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: pipt_gateway_mode
+      height: 317
       id: '1773311356642'
       position:
         x: 80
@@ -187,14 +219,14 @@ workflow:
           role: user
           text: "请基于以下合同全量条款，识别 missing_clause 和 multi_clause 风险。\n\n输入信息：\n- 审查视角：{{#1773311356642.review_side#}}\n\
             - 合同类型：{{#1773311356642.contract_type_hint#}}\n- 合同结构概览：\n{{#1773311356642.contract_outline#}}\n\
-            - 条款总数：{{#1773311356642.clause_count#}}\n- 全量条款 JSON：\n{{#1773311356642.clauses_json#}}\n\
+            - 条款总数：{{#1773311356642.clause_count#}}\n- PIPT 脱敏上下文：\n  - pipt_gateway_enabled: {{#1773311356642.pipt_gateway_enabled#}}\n  - pipt_gateway_mode: {{#1773311356642.pipt_gateway_mode#}}\n  - placeholder_manifest: {{#1773311356642.placeholder_manifest#}}\n  - placeholder_policy: {{#1773311356642.placeholder_policy#}}\n- 全量条款 JSON：\n{{#1773311356642.clauses_json#}}\n\
             \n请仅输出 JSON，格式如下：\n\n{\n  \"risk_items\": [\n    {\n      \"risk_code\"\
             : \"\",\n      \"risk_source_type\": \"missing_clause\",\n      \"risk_label\"\
             : \"\",\n      \"dimension\": \"\",\n      \"risk_level_candidate\": \"\
             medium\",\n      \"issue\": \"\",\n      \"evidence_text\": \"\",\n  \
             \    \"main_text\": \"\",\n      \"factual_basis\": \"\",\n      \"reasoning_basis\"\
             : \"\",\n      \"normative_basis_hint\": \"\",\n      \"related_clause_ids\"\
-            : [],\n      \"related_clause_uids\": [],\n      \"needs_human_review\"\
+            : [],\n      \"related_clause_uids\": [],\n      \"reviewability\": \"substantive_risk\",\n      \"caused_by_redaction\": false,\n      \"redaction_tokens\": [],\n      \"redaction_note\": \"\",\n      \"needs_human_review\"\
             : true\n    }\n  ]\n}\n\n输出要求：\n1. risk_source_type 只能是：\n   - missing_clause\n\
             \   - multi_clause\n2. 若没有明确的 missing_clause 或 multi_clause 风险，输出 {\"\
             risk_items\": []}。\n3. 不要输出 anchored 风险。\n4. risk_code 使用稳定的英文 snake_case\
@@ -213,7 +245,7 @@ workflow:
             \ 为空。\n12. 不要输出任何 JSON 之外的内容。\n13. 你必须只输出 JSON。\n14. main_text里面写你认为是联动条款里面最需要被改动的一项条款内容，比如你再evidence\
             \ text里面写了“条款 1：xxxxx，条款 2：xxxx”，如果你认为条款一是主要风险点，那么main_text里面就写条款一对应的原文内容，必须是原文内容，不能有任何改写！\n\
             15. 审查立场必须完全站在{{#1773311356642.review_side#}}的立场上，保护{{#1773311356642.review_side#}}的利益，不利于对方的条款不用修改。\n\
-            16.遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）"
+            16.遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）\n17. placeholder_manifest 中列出的 @@PIPT:v1:e000001:kxxxxxxxx@@ 是已存在但被脱敏的实体，不是空值、缺失值或未填写内容；不得仅因 token 外观输出“名称缺失/主体缺失/机构未填写”等风险。\n18. 如果问题完全由脱敏 token 外观触发，必须输出 reviewability=redaction_artifact、caused_by_redaction=true，并把相关 token 写入 redaction_tokens；如果只能说明因脱敏无法核验具体名称/编号/主体是否合法，输出 reviewability=redaction_limited_verification。\n19. reviewability 只能输出 substantive_risk、redaction_artifact、redaction_limited_verification 三者之一，禁止输出带 | 的联合字符串。对真实合同风险输出 reviewability=substantive_risk、caused_by_redaction=false、redaction_tokens=[]。"
         retry_config:
           max_retries: 1
           retry_enabled: true
@@ -271,11 +303,11 @@ workflow:
           role: user
           text: "请基于以下 missing_clause / multi_clause 风险候选结果和合同条款信息，输出完整的风险结果。\n\n\
             输入信息：\n- 审查视角：{{#1773311356642.review_side#}}\n- 合同类型：{{#1773311356642.contract_type_hint#}}\n\
-            - 合同结构概览：\n{{#1773311356642.contract_outline#}}\n- 全量条款 JSON：\n{{#1773311356642.clauses_json#}}\n\
+            - 合同结构概览：\n{{#1773311356642.contract_outline#}}\n- PIPT 脱敏上下文：\n  - pipt_gateway_enabled: {{#1773311356642.pipt_gateway_enabled#}}\n  - pipt_gateway_mode: {{#1773311356642.pipt_gateway_mode#}}\n  - placeholder_manifest: {{#1773311356642.placeholder_manifest#}}\n  - placeholder_policy: {{#1773311356642.placeholder_policy#}}\n- 全量条款 JSON：\n{{#1773311356642.clauses_json#}}\n\
             \n风险候选：\n{{#1773311420779.text#}}\n\n请仅输出 JSON，格式如下：\n\n{\n  \"risk_items\"\
             : [\n    {\n      \"risk_code\": \"\",\n      \"risk_source_type\": \"\
             missing_clause\",\n      \"risk_label\": \"\",\n      \"dimension\": \"\
-            \",\n      \"risk_level\": \"medium\",\n      \"issue\": \"\",\n     \
+            \",\n      \"risk_level\": \"medium\",\n      \"reviewability\": \"substantive_risk\",\n      \"caused_by_redaction\": false,\n      \"redaction_tokens\": [],\n      \"redaction_note\": \"\",\n      \"issue\": \"\",\n     \
             \ \"evidence_text\": \"\",\n      \"main_text\": \"\",\n      \"factual_basis\"\
             : \"\",\n      \"reasoning_basis\": \"\",\n      \"basis_minimal\": \"\
             \",\n      \"normative_basis\": {\n        \"basis_type\": \"legal_rule\"\
@@ -300,7 +332,7 @@ workflow:
             \ “{” 开始，并以最后一个字符 “}” 结束。\n15. main_text里面写你认为是联动条款里面最需要被改动的一项条款内容，比如你再evidence\
             \ text里面写了“条款 1：xxxxx，条款 2：xxxx”，如果你认为条款一是主要风险点，那么main_text里面就写条款一对应的原文内容，必须是原文内容，不能有任何改写！\n\
             16. basis_minimal字段：如果有法条依据的，只需要写对应的法条就行了，不用描述其他内容。如果没有对应的法条的话，把依据用几句话简洁概括的写出来。\n\
-            17.遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）\n18. 审查条款的时候，必须完全站在{{#1773311356642.review_side#}}的立场上审查条款，保护{{#1773311356642.review_side#}}的利益，不利于对方的条款不用修改。"
+            17.遇到带表格的条款请跳过，暂时不需要分析表格内容（重要！）\n18. 审查条款的时候，必须完全站在{{#1773311356642.review_side#}}的立场上审查条款，保护{{#1773311356642.review_side#}}的利益，不利于对方的条款不用修改。\n19. placeholder_manifest 中列出的 @@PIPT:v1:e000001:kxxxxxxxx@@ 是已存在但被脱敏的实体，不是空值、缺失值或未填写内容；不得仅因 token 外观输出“名称缺失/主体缺失/机构未填写”等风险。\n20. 如果问题完全由脱敏 token 外观触发，必须输出 reviewability=redaction_artifact、caused_by_redaction=true，并把相关 token 写入 redaction_tokens；如果只能说明因脱敏无法核验具体名称/编号/主体是否合法，输出 reviewability=redaction_limited_verification。\n21. reviewability 只能输出 substantive_risk、redaction_artifact、redaction_limited_verification 三者之一，禁止输出带 | 的联合字符串。对真实合同风险输出 reviewability=substantive_risk、caused_by_redaction=false、redaction_tokens=[]。"
         retry_config:
           max_retries: 1
           retry_enabled: true
