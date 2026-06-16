@@ -21,6 +21,8 @@ venv/
 .ruff_cache/
 .codex/
 **/.codex/
+.agents/
+_patent_work/
 node_modules/
 dist/
 build/
