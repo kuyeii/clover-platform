@@ -14,8 +14,12 @@ test("patent disclosure API prefix and health endpoint match Stage 10-G", () => 
   assert.match(serviceSource, /\/health/);
 });
 
-test("patent disclosure progress uses EventSource without task polling", () => {
-  assert.match(serviceSource, /new EventSource\(/);
+test("patent disclosure progress uses authenticated fetch stream without URL token", () => {
+  assert.doesNotMatch(serviceSource, /new EventSource\(/);
+  assert.doesNotMatch(serviceSource, /access_token/);
+  assert.match(serviceSource, /apiClient\.raw\("GET", path/);
+  assert.match(serviceSource, /Accept: "text\/event-stream"/);
+  assert.match(serviceSource, /AbortController/);
   assert.doesNotMatch(pageSource, /setInterval\s*\(/);
   assert.doesNotMatch(serviceSource, /setInterval\s*\(/);
 });

@@ -1,5 +1,4 @@
-import { apiClient, getApiBaseUrl } from "../../../shared/api/client";
-import { getAccessToken } from "../../../shared/auth/token";
+import { apiClient } from "../../../shared/api/client";
 import type {
   CreatePatentCaseInput,
   DownloadedBlob,
@@ -24,6 +23,15 @@ type EventSourceHandlers = {
   onEvent: (event: PatentProgressEvent) => void;
   onError?: (error: Event) => void;
   onOpen?: () => void;
+};
+
+type JobProgressStream = {
+  close: () => void;
+};
+
+type SseMessage = {
+  event: string;
+  data: string;
 };
 
 export function listPatentCases(options: RequestControl = {}) {
@@ -162,47 +170,23 @@ export function saveBlobToDisk(download: DownloadedBlob) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
-export function openJobProgressEventSource(jobId: string, handlers: EventSourceHandlers) {
-  const url = buildSseUrl(`${PATENT_DISCLOSURE_API_PREFIX}/jobs/${encodeURIComponent(jobId)}/stream`);
-  const source = new EventSource(url, { withCredentials: true });
+export function openJobProgressEventSource(jobId: string, handlers: EventSourceHandlers): JobProgressStream {
+  const controller = new AbortController();
+  const path = `${PATENT_DISCLOSURE_API_PREFIX}/jobs/${encodeURIComponent(jobId)}/stream`;
+  let closed = false;
 
-  source.onopen = () => handlers.onOpen?.();
-  source.onmessage = (message) => {
-    const event = parseProgressEvent(message.data);
-    if (event) {
-      handlers.onEvent(event);
+  void readJobProgressStream(path, handlers, controller).catch((error) => {
+    if (!closed && !isAbortError(error)) {
+      handlers.onError?.(toErrorEvent(error));
     }
+  });
+
+  return {
+    close: () => {
+      closed = true;
+      controller.abort();
+    },
   };
-  source.addEventListener("progress", (message) => {
-    const event = parseProgressEvent((message as MessageEvent).data);
-    if (event) {
-      handlers.onEvent(event);
-    }
-  });
-  source.addEventListener("done", (message) => {
-    const event = parseProgressEvent((message as MessageEvent).data) || { status: "completed", type: "done" };
-    handlers.onEvent(event);
-    source.close();
-  });
-  source.addEventListener("error", (message) => {
-    const event = parseProgressEvent((message as MessageEvent).data);
-    if (event) {
-      handlers.onEvent(event);
-    }
-  });
-  source.onerror = (error) => handlers.onError?.(error);
-
-  return source;
-}
-
-function buildSseUrl(path: string) {
-  const base = getApiBaseUrl();
-  const target = new URL(`${base}/${path.replace(/^\/+/, "")}`, window.location.origin);
-  const token = getAccessToken();
-  if (token) {
-    target.searchParams.set("access_token", token);
-  }
-  return target.toString();
 }
 
 function parseProgressEvent(data: string): PatentProgressEvent | null {
@@ -214,6 +198,113 @@ function parseProgressEvent(data: string): PatentProgressEvent | null {
   } catch {
     return { message: data };
   }
+}
+
+async function readJobProgressStream(
+  path: string,
+  handlers: EventSourceHandlers,
+  controller: AbortController,
+) {
+  const response = await apiClient.raw("GET", path, {
+    headers: { Accept: "text/event-stream" },
+    signal: controller.signal,
+  });
+  handlers.onOpen?.();
+
+  if (!response.body) {
+    throw new Error("专利交底书进度流不可用。");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      buffer = consumeSseBuffer(buffer, handlers, controller);
+      if (controller.signal.aborted) {
+        break;
+      }
+    }
+
+    buffer += decoder.decode();
+    consumeSseBuffer(`${buffer}\n\n`, handlers, controller);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function consumeSseBuffer(
+  buffer: string,
+  handlers: EventSourceHandlers,
+  controller: AbortController,
+) {
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const parts = normalized.split("\n\n");
+  const remainder = parts.pop() || "";
+  parts.forEach((part) => {
+    const message = parseSseMessage(part);
+    if (message) {
+      handleSseMessage(message, handlers, controller);
+    }
+  });
+  return remainder;
+}
+
+function parseSseMessage(raw: string): SseMessage | null {
+  const lines = raw.split("\n");
+  let event = "message";
+  const data: string[] = [];
+
+  lines.forEach((line) => {
+    if (!line || line.startsWith(":")) {
+      return;
+    }
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim() || "message";
+      return;
+    }
+    if (line.startsWith("data:")) {
+      data.push(line.slice("data:".length).replace(/^ /, ""));
+    }
+  });
+
+  if (!data.length) {
+    return null;
+  }
+  return { event, data: data.join("\n") };
+}
+
+function handleSseMessage(
+  message: SseMessage,
+  handlers: EventSourceHandlers,
+  controller: AbortController,
+) {
+  const event = parseProgressEvent(message.data);
+  if (message.event === "done") {
+    handlers.onEvent(event || { status: "completed", type: "done" });
+    controller.abort();
+    return;
+  }
+  if (event) {
+    handlers.onEvent(event);
+  }
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function toErrorEvent(error: unknown): Event {
+  if (error instanceof Event) {
+    return error;
+  }
+  return new CustomEvent("error", { detail: error });
 }
 
 function normalizeCaseInput(input: CreatePatentCaseInput) {

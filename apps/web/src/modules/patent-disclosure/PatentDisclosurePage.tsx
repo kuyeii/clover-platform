@@ -63,7 +63,7 @@ export function PatentDisclosurePage() {
   const [isArtifactsDrawerOpen, setIsArtifactsDrawerOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const eventSourceRef = useRef<{ close: () => void } | null>(null);
   const progressPollRef = useRef<number | null>(null);
   const progressJobIdRef = useRef<string | null>(null);
 

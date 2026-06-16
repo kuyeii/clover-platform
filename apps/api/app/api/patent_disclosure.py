@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_current_user
@@ -15,21 +15,6 @@ router = APIRouter(prefix="/patent-disclosure")
 
 
 def require_patent_disclosure_user(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
-    if not portal_store.can_access_app(user, APP_CODE):
-        raise PlatformError(
-            code="PATENT_PERMISSION_DENIED",
-            message="当前用户没有访问专利交底书模块的权限。",
-            status_code=403,
-        )
-    return user
-
-
-def _current_user_for_sse(request: Request, access_token: str | None) -> dict[str, Any]:
-    if access_token:
-        authorization = f"Bearer {access_token}"
-    else:
-        authorization = request.headers.get("Authorization")
-    user = get_current_user(authorization)
     if not portal_store.can_access_app(user, APP_CODE):
         raise PlatformError(
             code="PATENT_PERMISSION_DENIED",
@@ -131,11 +116,9 @@ async def get_patent_job(
 
 @router.get("/api/jobs/{job_id}/stream")
 async def stream_patent_job(
-    request: Request,
     job_id: str,
-    access_token: str | None = Query(default=None),
+    user: dict[str, Any] = Depends(require_patent_disclosure_user),
 ) -> StreamingResponse:
-    user = _current_user_for_sse(request, access_token)
     service = get_patent_disclosure_service()
     service.get_job(user, job_id)
     return StreamingResponse(
