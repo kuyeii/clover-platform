@@ -65,7 +65,7 @@ from app.services.bid_document_forge_service import (
     create_document_forge,
 )
 from app.services.bid_document_forge_engine.markdown_norm import normalize_generated_markdown
-from app.services.contract_review_engine.document_ingest import DocumentIngestError, normalize_upload_to_docx
+from app.services.contract_review_engine.document_ingest import DocumentIngestError, _find_libreoffice_binary, normalize_upload_to_docx
 from app.services.bid_outline_service import (
     build_outline_generation_bundle,
     build_seeded_outline_sections,
@@ -5794,6 +5794,7 @@ def _convert_to_pdf_and_cache_native(project_id: str, content_bytes: bytes, file
     except OSError as exc:
         raise PlatformError(code="BUSINESS_DIRECT_ERROR", message="创建 PDF 缓存目录失败。", status_code=500) from exc
 
+    pdf_url = f"/api/v1/bid-generator/api/projects/pdf/{normalized_id}"
     ext = Path(filename or "").suffix.lower().lstrip(".") or "docx"
     with tempfile.TemporaryDirectory() as tmp_dir:
         src_path = Path(tmp_dir) / f"source.{ext}"
@@ -5809,19 +5810,31 @@ def _convert_to_pdf_and_cache_native(project_id: str, content_bytes: bytes, file
 
             docx2pdf.convert(str(src_path), str(pdf_path))
             if pdf_path.exists() and pdf_path.stat().st_size > 0:
-                return f"/api/projects/pdf/{normalized_id}"
+                return pdf_url
         except Exception as exc:
             logger.debug("docx2pdf 不可用: %s", exc)
 
+        soffice = _find_libreoffice_binary()
+        if not soffice:
+            logger.warning("LibreOffice 未安装，DOCX/DOC 转 PDF 不可用")
+            logger.warning("所有 DOC/DOCX 转 PDF 方案均失败，project_id=%s", normalized_id)
+            return ""
+
+        profile_dir = Path(tempfile.mkdtemp(prefix="lo-pdf-profile-", dir=tmp_dir))
         try:
             env = os.environ.copy()
             env["SAL_USE_VCLPLUGIN"] = "svp"
             result = subprocess.run(
                 [
-                    "libreoffice",
+                    soffice,
+                    f"-env:UserInstallation={profile_dir.resolve().as_uri()}",
                     "--headless",
+                    "--nologo",
                     "--norestore",
                     "--nofirststartwizard",
+                    "--invisible",
+                    "--nodefault",
+                    "--nolockcheck",
                     "--convert-to",
                     "pdf:writer_pdf_Export",
                     "--outdir",
@@ -5836,13 +5849,15 @@ def _convert_to_pdf_and_cache_native(project_id: str, content_bytes: bytes, file
             converted_pdf = Path(tmp_dir) / "source.pdf"
             if result.returncode == 0 and converted_pdf.exists():
                 shutil.copy(str(converted_pdf), str(pdf_path))
-                return f"/api/projects/pdf/{normalized_id}"
+                return pdf_url
             stderr_text = result.stderr.decode("utf-8", errors="replace")[:200]
             logger.warning("LibreOffice 转换失败: %s", stderr_text)
         except FileNotFoundError:
-            logger.warning("LibreOffice 未安装，DOCX/DOC 转 PDF 不可用")
+            logger.warning("LibreOffice 不可执行，DOCX/DOC 转 PDF 不可用: %s", soffice)
         except Exception as exc:
             logger.warning("LibreOffice 转换异常: %s", exc)
+        finally:
+            shutil.rmtree(profile_dir, ignore_errors=True)
 
     logger.warning("所有 DOC/DOCX 转 PDF 方案均失败，project_id=%s", normalized_id)
     return ""

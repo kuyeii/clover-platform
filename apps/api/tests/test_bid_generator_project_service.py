@@ -2145,6 +2145,26 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "INVALID_REQUEST")
         self.assertIn("LibreOffice", ctx.exception.message)
 
+    def test_convert_to_pdf_uses_detected_libreoffice_binary_and_unified_url(self) -> None:
+        def fake_run(cmd, **kwargs):
+            outdir = Path(cmd[cmd.index("--outdir") + 1])
+            outdir.mkdir(parents=True, exist_ok=True)
+            (outdir / "source.pdf").write_bytes(b"%PDF-1.4\n")
+            return SimpleNamespace(returncode=0, stderr=b"", stdout=b"")
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service, "_pdf_cache_path", return_value=Path(temp_dir) / "proj-pdf.pdf"),
+            patch.object(service, "_find_libreoffice_binary", return_value="/opt/libreoffice/program/soffice"),
+            patch.dict("sys.modules", {"docx2pdf": None}),
+            patch.object(service.subprocess, "run", side_effect=fake_run) as run_cmd,
+        ):
+            pdf_url = service._convert_to_pdf_and_cache_native("proj-pdf", b"docx-bytes", "demo.docx")
+
+        self.assertEqual(pdf_url, "/api/v1/bid-generator/api/projects/pdf/proj-pdf")
+        self.assertEqual(run_cmd.call_args.args[0][0], "/opt/libreoffice/program/soffice")
+        self.assertIn("-env:UserInstallation=", run_cmd.call_args.args[0][1])
+
     def test_start_analyze_task_payload_runs_natively_and_sets_result(self) -> None:
         class FakeTaskManager:
             def __init__(self) -> None:
