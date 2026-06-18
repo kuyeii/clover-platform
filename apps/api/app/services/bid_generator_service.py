@@ -188,6 +188,14 @@ def _bid_generator_legacy_root() -> Path:
     return _repo_root() / "legacy" / "bid-generator"
 
 
+def _bid_generator_resource_root() -> Path:
+    return _repo_root() / "apps" / "api" / "app" / "resources" / "bid_generator"
+
+
+def _bid_generator_config_path() -> Path:
+    return _bid_generator_resource_root() / "config.yaml"
+
+
 def _legacy_app_package_path() -> Path:
     return _bid_generator_root() / "app"
 
@@ -377,15 +385,15 @@ def get_analysis_framework_payload() -> Any:
 
 
 def get_template_config_payload(template_name: str = "") -> dict[str, Any]:
-    """读取标书系统配置与大纲模板；入参为模板文件名，出参兼容 legacy config/template。"""
-    config_path = _bid_generator_legacy_root() / "config.yaml"
+    """读取标书系统配置与大纲模板；入参为模板文件名，出参为 config/template。"""
+    config_path = _bid_generator_config_path()
     templates_dir = _template_structures_dir()
     normalized_template_name = str(template_name or "").strip()
     if normalized_template_name and ("/" in normalized_template_name or "\\" in normalized_template_name):
         raise PlatformError(code="INVALID_REQUEST", message="Invalid template name", status_code=400)
 
     try:
-        available_templates = sorted(path.name for path in templates_dir.glob("*.yaml") if path.is_file()) if templates_dir.exists() else []
+        available_templates = _list_template_structure_names(templates_dir)
     except OSError as exc:
         raise PlatformError(code="BUSINESS_DIRECT_ERROR", message="读取模板目录失败。", status_code=500) from exc
 
@@ -4935,7 +4943,22 @@ def _write_yaml_mapping(path: Path, data: Mapping[str, Any]) -> None:
 
 
 def _template_structures_dir() -> Path:
-    return _bid_generator_legacy_root() / "data" / "templates" / "structures"
+    return _bid_generator_resource_root() / "templates" / "structures"
+
+
+_BUILTIN_TEMPLATE_NAMES: frozenset[str] = frozenset({"standard.yaml", "AI 专属大纲"})
+
+
+def _list_template_structure_names(templates_dir: Path) -> list[str]:
+    if not templates_dir.exists():
+        return []
+    names = []
+    for path in templates_dir.iterdir():
+        if not path.is_file():
+            continue
+        if path.suffix in {".yaml", ".yml"} or path.name in _BUILTIN_TEMPLATE_NAMES:
+            names.append(path.name)
+    return sorted(names)
 
 
 def _ensure_safe_template_name(template_name: str, *, allow_standard: bool) -> str:
@@ -4944,9 +4967,9 @@ def _ensure_safe_template_name(template_name: str, *, allow_standard: bool) -> s
         raise PlatformError(code="INVALID_REQUEST", message="Template name cannot be empty", status_code=400)
     if "/" in normalized or "\\" in normalized:
         raise PlatformError(code="INVALID_REQUEST", message="Invalid template name", status_code=400)
-    if not normalized.endswith(".yaml"):
+    if not (normalized.endswith(".yaml") or normalized.endswith(".yml") or normalized in _BUILTIN_TEMPLATE_NAMES):
         raise PlatformError(code="INVALID_REQUEST", message="Template name must end with .yaml", status_code=400)
-    if not allow_standard and normalized == "standard.yaml":
+    if not allow_standard and normalized in _BUILTIN_TEMPLATE_NAMES:
         raise PlatformError(
             code="INVALID_REQUEST",
             message=f"Cannot delete pre-configured template: {normalized}",
@@ -6015,7 +6038,7 @@ def _extract_raw_text_with_images_native(filename: str, content_bytes: bytes, *,
 
 
 def _load_desensitize_profile(profile_name: str) -> dict[str, Any]:
-    config = _read_yaml_mapping(_bid_generator_legacy_root() / "config.yaml")
+    config = _read_yaml_mapping(_bid_generator_config_path())
     pipt = config.get("pipt") if isinstance(config, dict) else {}
     profiles = pipt.get("profiles") if isinstance(pipt, dict) else {}
     if not isinstance(profiles, dict):
@@ -6085,6 +6108,8 @@ def _compose_runtime_writing_hint(
     if bridge_block:
         parts.append(bridge_block)
 
+    parts.append(_build_formal_response_style_block())
+
     core = _extract_core_writing_intent(writing_hint)
     if core:
         parts.append(core)
@@ -6099,7 +6124,9 @@ def _compose_runtime_writing_hint(
 
 _RUNTIME_HINT_BLOCK_TITLES: tuple[str, ...] = (
     "【本节目录层级定位（勿用 # 标题重复以下编号）】",
+    "【本节目录层级定位（只用于理解，不得输出）】",
     "【章内承接与开篇导入要求】",
+    "【正式应答文件行文范式】",
     "【招标文件解析参考（优先级最高，严格对应本章节要求）】",
     "【正文扩写与技术深度约束（必须遵守）】",
 )
@@ -6117,6 +6144,50 @@ def _normalize_hint_text(text_value: str) -> str:
 
 def _join_hint_segments(segments: list[str]) -> str:
     return "\n\n".join(part.strip() for part in segments if part and part.strip()).strip()
+
+
+def _normalize_response_writing_intent(text_value: str) -> str:
+    """将旧大纲里的评分说明式提示归一为正式应答文件写作意图。"""
+    normalized = _normalize_hint_text(text_value)
+    if not normalized:
+        return ""
+    normalized = re.sub(r"[“\"]([^”\"]+?)（\s*\d+\s*分\s*）[”\"]", r"“\1”", normalized)
+    normalized = re.sub(r"（\s*满分\s*\d+\s*分\s*）", "", normalized)
+    normalized = re.sub(r"（\s*\d+\s*分\s*）", "", normalized)
+    normalized = re.sub(
+        r"对标评分标准“([^”]+)”[，,]?",
+        r"围绕“\1”形成正式技术应答，",
+        normalized,
+    )
+    normalized = re.sub(
+        r"当前已识别的核心侧重点是：本章对应“([^”]+)”\s*\d*\s*分?评分项。?",
+        r"当前写作侧重点：围绕“\1”形成正式应答。",
+        normalized,
+    )
+    normalized = re.sub(
+        r"当前已识别的核心侧重点是：本章综合对应[^。]*。",
+        "当前写作侧重点：综合承接项目理解、重点难点、质量保障与技术能力要求。",
+        normalized,
+    )
+    normalized = normalized.replace("当前已识别的核心侧重点是：", "当前写作侧重点：")
+    normalized = re.sub(
+        r"围绕“([^”]+)”撰写本节内容，([^。]*?)，先说明本节要解决的问题和响应目标，"
+        r"再把招标文件或评分细则要求转化为可执行方案。",
+        r"围绕“\1”形成正式应答，\2，开篇直接进入项目理解、方案机制或实施安排，"
+        r"并将采购需求、技术条款与交付约束转化为可执行方案。",
+        normalized,
+    )
+    normalized = re.sub(r"围绕“([^”]+)”撰写本节内容，", r"围绕“\1”形成正式应答，", normalized)
+    normalized = normalized.replace(
+        "先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案",
+        "开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案",
+    )
+    normalized = normalized.replace("评分细则要求", "采购需求与评审关注点")
+    normalized = normalized.replace("评分标准", "评审关注点")
+    normalized = normalized.replace("评分项", "评审关注点")
+    normalized = re.sub(r"对应评审关注点（约\s*\d+\s*分）", "对应评审关注点", normalized)
+    normalized = re.sub(r"约\s*\d+\s*分", "对应权重", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def _find_hint_block_ranges(text_value: str) -> list[tuple[int, int]]:
@@ -6148,6 +6219,18 @@ def _build_analysis_context_block(analysis_context: str) -> str:
     if not context_text:
         return ""
     return "【招标文件解析参考（优先级最高，严格对应本章节要求）】\n" + context_text
+
+
+def _build_formal_response_style_block() -> str:
+    return (
+        "【正式应答文件行文范式】\n"
+        "- 写作身份：以投标人/响应人技术方案正文口吻成文，内容应可直接进入应答文件，不写提示词说明、任务说明或评分说明；\n"
+        "- 开篇方式：参考成熟应答文件，先进入项目事实、政策/业务背景、我方理解、技术路线或交付安排，再自然展开论证；\n"
+        "- 样例范式：第一段可从采购项目事实、政策依据或建设目标切入，第二段转入我方理解和交付路径；如章节需要总结，可用自然的“核心总结”式内容承接；\n"
+        "- 评审要求：评审细则只作为内部覆盖依据，不写成正文表述，不把评审条目作为首句主语；\n"
+        "- 叙述层次：优先采用“项目理解 → 方案机制 → 实施路径 → 交付/验收/风险控制”的连续论证，让段落服务于投标响应，不把写作动作本身写进正文；\n"
+        "- 语言风格：正式、克制、可验收，避免宣传稿、口号化、过度夸张和模板化自我解释。"
+    )
 
 
 def _parse_outline_lines(section_outline_slice: str) -> list[str]:
@@ -6196,9 +6279,9 @@ def _build_section_bridge_block(section_title: str, section_outline_slice: str) 
         return ""
     return (
         "【章内承接与开篇导入要求】\n"
-        "- 本节若是所在章节的第一个正文单元，开头仅写 1 个投标响应定位段，说明我方对采购需求、评分关注点、交付边界与响应策略的理解；\n"
-        "- 必须使用供应商/响应人视角，禁止把项目写成采购人战略宣传、城市宣传稿或立项报告，禁止使用“响应国家战略、关键举措、背景内涵、系统阐述”等宏大叙事套话；\n"
-        "- 导入段不得使用“本节主要介绍/该节将阐述”这类机械句式，不得直接罗列标题；\n"
+        "- 本节若是所在章节的第一个正文单元，开头写 1 个投标响应定位段：先交代项目事实、业务/政策背景和我方理解，再落到技术路线、交付边界或响应策略；\n"
+        "- 政策背景必须服务于本项目的技术判断、合规路径或交付安排，避免写成采购人宣传稿、城市宣传稿或立项报告；\n"
+        "- 导入段不得使用“本节主要介绍/该节将阐述/本节需系统回应”这类机械句式，不得直接罗列标题或评审条目；\n"
         "- 导入段之后立即进入具体响应内容，优先围绕需求理解、偏离控制、方案措施、交付物、验收与风险控制展开。"
     )
 
@@ -6257,7 +6340,7 @@ def _extract_core_writing_intent(writing_hint: str) -> str:
     ]
     if anchor_indexes:
         normalized = normalized[: min(anchor_indexes)].strip()
-    return normalized
+    return _normalize_response_writing_intent(normalized)
 
 
 def _validate_required_bidder_info(bidder_info: Mapping[str, Any] | None) -> None:
@@ -8086,13 +8169,13 @@ async def delete_template_config_payload(template_name: str) -> dict[str, Any]:
 
 
 async def update_global_config_payload(body: Mapping[str, Any]) -> dict[str, Any]:
-    """更新标书全局配置；入参为 config_dict，出参兼容 legacy config/global。"""
+    """更新标书全局配置；入参为 config_dict，出参为更新结果。"""
     payload = _json_object_body(body)
     config_dict = payload.get("config_dict")
     if not isinstance(config_dict, Mapping):
         raise PlatformError(code="INVALID_REQUEST", message="config_dict 必须是对象。", status_code=400)
     try:
-        _write_yaml_mapping(_bid_generator_legacy_root() / "config.yaml", dict(config_dict))
+        _write_yaml_mapping(_bid_generator_config_path(), dict(config_dict))
     except OSError as exc:
         raise PlatformError(code="GLOBAL_CONFIG_UPDATE_FAILED", message="Config updated failed", status_code=500) from exc
     return {"status": "success", "message": "Config updated successfully"}

@@ -23,6 +23,9 @@ const ANALYSIS_ID_LABEL_MAP: Record<string, string> = {
 
 const SYSTEM_BLOCK_TITLES = [
     '【本节目录层级定位（勿用 # 标题重复以下编号）】',
+    '【本节目录层级定位（只用于理解，不得输出）】',
+    '【章内承接与开篇导入要求】',
+    '【正式应答文件行文范式】',
     '【招标文件解析参考（优先级最高，严格对应本章节要求）】',
     '【正文扩写与技术深度约束（必须遵守）】',
 ] as const;
@@ -61,6 +64,36 @@ function joinNonEmptySegments(segments: string[]): string {
     return segments.map((segment) => segment.trim()).filter(Boolean).join('\n\n').trim();
 }
 
+function normalizeResponseWritingIntent(text: string): string {
+    let normalized = text.replace(/\s+/g, ' ').trim();
+    if (!normalized) return '';
+
+    normalized = normalized
+        .replace(/[“"]([^”"]+?)（\s*\d+\s*分\s*）[”"]/g, '“$1”')
+        .replace(/（\s*满分\s*\d+\s*分\s*）/g, '')
+        .replace(/（\s*\d+\s*分\s*）/g, '')
+        .replace(/对标评分标准“([^”]+)”[，,]?/g, '围绕“$1”形成正式技术应答，')
+        .replace(/当前已识别的核心侧重点是：本章对应“([^”]+)”\s*\d*\s*分?评分项。?/g, '当前写作侧重点：围绕“$1”形成正式应答。')
+        .replace(/当前已识别的核心侧重点是：本章综合对应[^。]*。/g, '当前写作侧重点：综合承接项目理解、重点难点、质量保障与技术能力要求。')
+        .replace(/当前已识别的核心侧重点是：/g, '当前写作侧重点：')
+        .replace(
+            /围绕“([^”]+)”撰写本节内容，([^。]*?)，先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案。/g,
+            '围绕“$1”形成正式应答，$2，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。',
+        )
+        .replace(/围绕“([^”]+)”撰写本节内容，/g, '围绕“$1”形成正式应答，')
+        .replace(
+            /先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案/g,
+            '开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案',
+        )
+        .replace(/评分细则要求/g, '采购需求与评审关注点')
+        .replace(/评分标准/g, '评审关注点')
+        .replace(/评分项/g, '评审关注点')
+        .replace(/对应评审关注点（约\s*\d+\s*分）/g, '对应评审关注点')
+        .replace(/约\s*\d+\s*分/g, '对应权重');
+
+    return normalized.replace(/\s+/g, ' ').trim();
+}
+
 /**
  * 提取用户真正应看到/编辑的核心写作意图。
  * 兼容两类旧数据：
@@ -94,5 +127,5 @@ export function extractCoreWritingIntent(raw?: string): string {
         core = core.slice(0, Math.min(...anchorIndexes)).trim();
     }
 
-    return core.trim();
+    return normalizeResponseWritingIntent(core);
 }

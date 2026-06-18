@@ -49,8 +49,16 @@ const secondaryNavItems = [
   { to: "/feedback", label: "用户反馈", icon: MessageSquare, aliases: ["/feedback"] },
 ];
 
+const workspaceFeatureRoutes = [
+  { path: "/bid-reference-sites", label: "招投标网址" },
+] as const;
+
 function getActiveModule(currentPath: string): PortalModule | undefined {
   return moduleEntries.find((entry) => modulePathAliases[entry.code].includes(currentPath));
+}
+
+function getActiveWorkspaceFeature(currentPath: string) {
+  return workspaceFeatureRoutes.find((item) => item.path === currentPath);
 }
 
 function ResponsiveNavLabel({
@@ -119,14 +127,19 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const isLogin = currentPath === "/login";
   const activeModule = getActiveModule(currentPath);
-  const isEmbeddedModuleView = Boolean(activeModule);
-  const primaryNavTarget = activeModule ? legacyAppRoutes[activeModule.code] : "/workspace";
-  const primaryNavLabel = activeModule?.name ?? "工作台";
+  const activeWorkspaceFeature = getActiveWorkspaceFeature(currentPath);
+  const isWorkspaceFeatureView = Boolean(activeModule || activeWorkspaceFeature);
+  const primaryNavTarget = activeModule
+    ? legacyAppRoutes[activeModule.code]
+    : activeWorkspaceFeature
+      ? activeWorkspaceFeature.path
+      : "/workspace";
+  const primaryNavLabel = activeModule?.name ?? activeWorkspaceFeature?.label ?? "工作台";
   const userDisplayName = currentUser?.name ?? currentUser?.account ?? "未登录";
   const navItemWidthClass = "w-11 sm:w-12 md:w-14 xl:w-36 2xl:w-40";
   const activeNavItemWidthClass = "w-28 sm:w-32 md:w-36 xl:w-36 2xl:w-40";
   const isDashboardRoute = currentPath === "/" || currentPath === "/workspace" || currentPath === "/dashboard";
-  const shouldShowPrimaryIndicator = isDashboardRoute || isEmbeddedModuleView;
+  const shouldShowPrimaryIndicator = isDashboardRoute || isWorkspaceFeatureView;
 
   const handleLogout = () => {
     leaveApp()
@@ -200,7 +213,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
               >
                 <motion.span
                   initial={false}
-                  animate={isEmbeddedModuleView ? { x: -14 } : { x: 0 }}
+                  animate={isWorkspaceFeatureView ? { x: -14 } : { x: 0 }}
                   transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
                   className="inline-flex min-w-0 items-center justify-center"
                 >
@@ -221,7 +234,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                   </a>
                 </motion.span>
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 md:right-1">
-                  <ReturnOverviewButton visible={isEmbeddedModuleView} navigate={navigate} />
+                  <ReturnOverviewButton visible={isWorkspaceFeatureView} navigate={navigate} />
                 </div>
                 {shouldShowPrimaryIndicator ? (
                   <motion.span

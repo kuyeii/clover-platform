@@ -30,6 +30,17 @@ def demote_markdown_headings(text: str) -> str:
     return "\n".join(_line_repl(line) for line in text.split("\n"))
 
 
+def strip_markdown_rule_lines(text: str) -> str:
+    """移除 Markdown 水平分割线，避免导出为 Word 中可见的 -- / --- 段落。"""
+    if not text:
+        return ""
+    return "\n".join(
+        line
+        for line in text.split("\n")
+        if not re.match(r"^\s*(?:-{2,}|\*{3,}|_{3,})\s*$", line)
+    )
+
+
 def demote_numbered_heading_like_lines(text: str) -> str:
     """
     将常见“标题样式编号行”降级为加粗普通段落，避免其被当作导出结构 heading。
@@ -128,6 +139,7 @@ def dedupe_consecutive_numbered_headings(text: str) -> str:
 def normalize_generated_markdown(content: str, section_title: str = "") -> str:
     """内容生成任务输出后的完整归一化管道。"""
     t = (content or "").strip()
+    t = strip_markdown_rule_lines(t)
     t = demote_markdown_headings(t)
     t = demote_numbered_heading_like_lines(t)
     if section_title:

@@ -1,0 +1,162 @@
+# ============================================================
+# ProEngine 全局配置
+# ============================================================
+
+# -------------------- 工作区与目录配置 --------------------
+workspace:
+  data_dir: "./data"
+  tender_documents_dir: "./data/tender_documents"
+  knowledge_base_dir: "./data/knowledge_base"
+  logs_dir: "./logs"
+  output_dir: "./output"
+
+# -------------------- 安全等级 --------------------
+security:
+  # Tier 1: 安全区 — 允许外传和联网搜索
+  # Tier 2: 红线区 — 内部财务/机密材料，必须脱敏后方可流出
+  default_tier: 2
+  # 根据文件来源目录自动赋予安全等级
+  tier_mapping:
+    tender_documents: 1  # 招标文件来自该目录，默认为 Tier 1
+    knowledge_base: 2    # 知识库，默认为 Tier 2
+  tier2_keywords:
+    - "内部"
+    - "机密"
+    - "财务"
+  # Tier 2 图片处理：强制剥离
+  strip_images_for_tier2: true
+
+# -------------------- pipt-flask 脱敏服务 --------------------
+pipt:
+  # pipt-flask 服务地址（pipt-lite 分支部署）
+  base_url: "http://localhost:5000"
+  timeout: 30  # 秒
+  
+  # 脱敏强度方案配置
+  profiles:
+    default:
+      # 默认方案：知识库等场景，最严苛的脱敏（包含结构和非结构敏感词）
+      target_entities:
+        - name        # 姓名
+        - phone       # 电话号码
+        - id_number   # 身份证号
+        - email       # 电子邮箱
+        #- addr        # 地址
+        - bank        # 银行账户
+        - car_id      # 车牌号
+        - ip          # IP 地址
+        - org         # 机构名称
+      method: "placeholder"
+    
+    tender:
+      # 招标文件方案：不需要过于严苛，仅针对高危信息
+      target_entities:
+        - name
+        - phone
+        - email
+        - id_number
+      method: "placeholder"
+
+  # 占位符格式 (全局)
+  placeholder_format: "{{__PIPT_{type}_{index}__}}"
+
+# -------------------- Dify 智能中枢 --------------------
+dify:
+  base_url: "http://localhost/v1"
+  api_key: "app-vHzVMpuKPY1APpzdvfhkwF7f"  # 请在 config.local.yaml 中配置，勿提交到版本控制
+  # 知识库 ID（在 Dify 平台创建后填入）
+  knowledge_base_id: ""
+  # 工作流 ID
+  workflow_id: ""
+  # 请求超时（秒）
+  timeout: 120
+  # 最大重试次数
+  max_retries: 3
+
+# -------------------- Dify 工作流配置 --------------------
+# API Keys 统一在 .env 中配置（DIFY_WORKFLOW_*），此处只保留开关和说明。
+# 当前 manifest/rewrite 自动治理只覆盖“当前纳管工作流”；
+# requirement_extractor / blueprint_generator / scoring_assistant /
+# attachment_generator / group_review_writer 仅保留为历史兼容链路。
+workflows:
+  # ===== 当前纳管工作流 =====
+
+  # 大纲生成
+  # .env key: DIFY_WORKFLOW_STRUCTURE_GENERATOR
+  structure_generator:
+    enabled: true
+
+  # 单章节正文生成
+  # .env key: DIFY_WORKFLOW_CONTENT_WRITER
+  content_writer:
+    enabled: true
+
+  # H2 分组正文生成（单个 H2 一次生成多个 H3）
+  # .env key: DIFY_WORKFLOW_CONTENT_GROUP_WRITER
+  content_group_writer:
+    enabled: true
+
+  # 单章节重生成（内部先 review，再 rewrite；只回传最终改写正文）
+  # .env key: DIFY_WORKFLOW_CONTENT_REWRITE
+  content_rewrite:
+    enabled: true
+
+  # 响应情况类章节生成
+  # .env key: DIFY_WORKFLOW_RESPONSE_CONTENT_WRITER
+  response_content_writer:
+    enabled: true
+
+  # 图表生成
+  # .env key: DIFY_WORKFLOW_DIAGRAM_GENERATOR
+  diagram_generator:
+    enabled: false
+
+  # 文档分析
+  # .env key: DIFY_WORKFLOW_DOC_ANALYSIS
+  doc_analysis:
+    enabled: true
+
+  # ===== 历史兼容链路 =====
+
+  # 招标文件需求提取（历史链路，当前不在清理后的 dify/workflows 中）
+  # .env key: DIFY_WORKFLOW_REQUIREMENT_EXTRACTOR
+  requirement_extractor:
+    enabled: true
+
+  # H2 章节手动评估（历史链路，当前前端不暴露）
+  # .env key: DIFY_WORKFLOW_GROUP_REVIEW_WRITER
+  group_review_writer:
+    enabled: false
+
+  # 自评评分 AI 助手（历史链路）
+  # .env key: DIFY_WORKFLOW_SCORING_ASSISTANT
+  scoring_assistant:
+    enabled: false
+
+  # 全局策略蓝图生成（历史链路）
+  # .env key: DIFY_WORKFLOW_BLUEPRINT_GENERATOR
+  blueprint_generator:
+    enabled: true
+
+  # 智能附件表单撰写（历史链路）
+  # .env key: DIFY_WORKFLOW_ATTACHMENT_GENERATOR
+  attachment_generator:
+    enabled: false
+
+# -------------------- 文件解析 --------------------
+parsing:
+  # 支持的招标文件格式
+  supported_formats:
+    - ".pdf"
+    - ".docx"
+    - ".doc"
+    - ".html"
+  # 单文件最大大小（MB）
+  max_file_size_mb: 100
+
+# -------------------- 输出配置 --------------------
+output:
+  # Word 模板路径
+  word_template: "./gateway-out/src/templates/bid_template.docx"
+  # 默认输出文件名格式
+  filename_format: "投标技术文件_{project_name}_{date}.docx"

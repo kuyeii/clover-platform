@@ -1,0 +1,599 @@
+id: standard_bid_structure
+name: AI 专属大纲
+description: 适用于绝大多数常规标书编排的通用划分结构。
+blocks:
+- id: tech_heading_1
+  title: 对本项目的理解
+  instruction: 围绕“对本项目的理解”形成正式技术应答，需建立在对招标文件深度解读的基础上，系统呈现投标人对江苏国际数据港跨境可信数据空间咨询规划项目的全面认知。应涵盖宏观政策与战略背景、中观业务需求与技术功能定位、微观实施目标与交付要求拆解三个递进层次。写作需体现专业咨询机构的方法论体系，将政策语言转化为技术语言。补充说明：本章需隐含覆盖“服务响应方案”与“售后服务方案”的前期需求对接逻辑，将服务承诺转化为可量化的交付指标与SLA基线。
+  keywords:
+  - 江苏国际数据港
+  - 跨境数据流动
+  - 数据要素市场化
+  - 合规审查机制
+  requires_search: false
+  block_kind: group
+  heading_level: 2
+  generation_strategy: general
+  generates_from_self: false
+- id: '1.1'
+  title: 1.1 政策环境与战略定位解析
+  instruction: 写作侧重点：深入阐述江苏国际数据港建设的国家战略背景，分析《数据出境安全评估办法》《个人信息出境标准合同办法》等政策法规对跨。围绕“1.1
+    政策环境与战略定位解析”形成正式应答，在“对本项目的理解”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：长三角一体化、数据出境安全评估办法、个人信息出境标准合同、数字贸易基础设施。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 长三角一体化
+  - 数据出境安全评估办法
+  - 个人信息出境标准合同
+  - 数字贸易基础设施
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2100
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_1
+  parent_heading_title: 对本项目的理解
+  generation_strategy: general
+  generates_from_self: false
+- id: '1.2'
+  title: 1.2 核心业务场景与技术功能映射
+  instruction: 写作侧重点：系统分析跨境可信数据空间的核心业务场景，包括跨境数据合规审查、数据可信流通、智能合约自动化执行等关键功能需求。深。围绕“1.2
+    核心业务场景与技术功能映射”形成正式应答，在“对本项目的理解”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：数据可用不可见、智能合约自动化、多方监管协同、数据主权保护。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 数据可用不可见
+  - 智能合约自动化
+  - 多方监管协同
+  - 数据主权保护
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2150
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_1
+  parent_heading_title: 对本项目的理解
+  generation_strategy: general
+  generates_from_self: false
+- id: '1.3'
+  title: 1.3 实施里程碑与验收交付拆解
+  instruction: 写作侧重点：全面梳理项目实施的总体目标与阶段性里程碑，重点解读合同签订后30日中期成果汇报、60日最终报告交付的时间节点要求。围绕“1.3
+    实施里程碑与验收交付拆解”形成正式应答，在“对本项目的理解”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：中期成果汇报、终期报告交付、专家评审验收、里程碑管控。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 中期成果汇报
+  - 终期报告交付
+  - 专家评审验收
+  - 里程碑管控
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2000
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_1
+  parent_heading_title: 对本项目的理解
+  generation_strategy: general
+  generates_from_self: false
+- id: tech_heading_2
+  title: 对本项目重点难点分析
+  instruction: 围绕“对本项目重点难点分析”形成正式技术应答，突破表面化的困难罗列，从技术实现、法律合规、项目管理三个维度构建难点分析体系。每个难点分析需遵循“现象描述-根因剖析-影响评估-应对策略”的逻辑链条，确保分析的专业深度与可操作性。难点识别应覆盖跨境数据合规、可信机制构建、咨询交付落地三大领域。补充说明：本章需在应对策略中融入“服务响应方案”与“售后服务方案”的资源调度模型与应急响应预案，形成全生命周期风险预判。
+  keywords:
+  - 法律域外适用冲突
+  - 可信执行环境TEE
+  - 隐私计算MPC
+  - 沙箱验证机制
+  requires_search: false
+  block_kind: group
+  heading_level: 2
+  generation_strategy: general
+  generates_from_self: false
+- id: '2.1'
+  title: 2.1 跨境数据合规复杂性剖析
+  instruction: 写作侧重点：深入剖析跨境数据流动面临的核心难点：一是法律域外适用冲突，包括欧盟GDPR长臂管辖、美国CLOUD法案数据调取权。围绕“2.1
+    跨境数据合规复杂性剖析”形成正式应答，在“对本项目重点难点分析”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：GDPR长臂管辖、CLOUD法案调取权、数据安全法交叉、合规成本优化。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - GDPR长臂管辖
+  - CLOUD法案调取权
+  - 数据安全法交叉
+  - 合规成本优化
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 1900
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_2
+  parent_heading_title: 对本项目重点难点分析
+  generation_strategy: general
+  generates_from_self: false
+- id: '2.2'
+  title: 2.2 可信机制构建技术挑战
+  instruction: 写作侧重点：系统分析构建跨境可信数据空间的技术挑战：一是信任根建立难题，如何在不同法域、不同技术体系间建立互认的信任锚点；二。围绕“2.2
+    可信机制构建技术挑战”形成正式应答，在“对本项目重点难点分析”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：信任根互认锚点、细粒度数据管控、跨链智能合约执行、IDS国际标准适配。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 信任根互认锚点
+  - 细粒度数据管控
+  - 跨链智能合约执行
+  - IDS国际标准适配
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 1950
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_2
+  parent_heading_title: 对本项目重点难点分析
+  generation_strategy: general
+  generates_from_self: false
+- id: '2.3'
+  title: 2.3 咨询交付落地与场景验证难点
+  instruction: 写作侧重点：聚焦咨询规划类项目的特有难点：一是理论与实践的衔接，规划报告需具备可落地性，避免沦为纸上谈兵；二是专家评审的不确。围绕“2.3
+    咨询交付落地与场景验证难点”形成正式应答，在“对本项目重点难点分析”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：原型验证沙箱、专家预评审机制、利益相关方协调、交付风险预案。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 原型验证沙箱
+  - 专家预评审机制
+  - 利益相关方协调
+  - 交付风险预案
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 1900
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_2
+  parent_heading_title: 对本项目重点难点分析
+  generation_strategy: general
+  generates_from_self: false
+- id: tech_heading_3
+  title: 技术质量保障措施
+  instruction: 围绕“技术质量保障措施”形成正式技术应答，以认证体系为基座、过程控制为手段、验收通过为目标，构建三层质量保障架构。写作需体现咨询行业的专业方法论，引入CMMI、ISO系列标准的最佳实践，同时紧密结合本项目60日交付周期、专家评审验收的硬性约束，制定针对性的质量保障策略。补充说明：本章需专项设计“服务响应方案”与“售后服务方案”的质量回溯机制、SLA监控指标与持续改进闭环，确保服务履约全过程可追溯、可量化。
+  keywords:
+  - ISO9001质量体系
+  - PDCA循环控制
+  - 专家预评审机制
+  - 配置基线管理
+  requires_search: false
+  block_kind: group
+  heading_level: 2
+  generation_strategy: general
+  generates_from_self: false
+- id: '3.1'
+  title: 3.1 质量管理体系与标准规范落地
+  instruction: 写作侧重点：系统阐述本项目采用的质量管理体系架构，以ISO 9001质量管理体系认证为基础，构建覆盖咨询规划全生命周期的质量。围绕“3.1
+    质量管理体系与标准规范落地”形成正式应答，在“技术质量保障措施”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：质量管理责任矩阵、质量审计追踪、CMMI最佳实践、考核指标量化。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 质量管理责任矩阵
+  - 质量审计追踪
+  - CMMI最佳实践
+  - 考核指标量化
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2100
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_3
+  parent_heading_title: 技术质量保障措施
+  generation_strategy: general
+  generates_from_self: false
+- id: '3.2'
+  title: 3.2 全生命周期过程质量控制
+  instruction: 写作侧重点：详细制定咨询规划项目实施过程中的质量保障措施：一是阶段评审机制，设置需求评审、方案评审、中期评审、终期评审四个关。围绕“3.2
+    全生命周期过程质量控制”形成正式应答，在“技术质量保障措施”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：阶段门径评审、文档版本控制、变更审批流程、质量风险阈值。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 阶段门径评审
+  - 文档版本控制
+  - 变更审批流程
+  - 质量风险阈值
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2150
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_3
+  parent_heading_title: 技术质量保障措施
+  generation_strategy: general
+  generates_from_self: false
+- id: '3.3'
+  title: 3.3 交付物验收与售后响应保障
+  instruction: 聚焦最终交付物的质量保障与验收通过策略：一是交付物完整性检查，对照招标文件要求建立《江苏国际数据港跨境可信数据空间咨询规划报告》内容核查清单，确保政策分析、技术架构、实施路径、风险评估等章节无遗漏；二是专家预评审机制，在正式评审前组织内部专家模拟评审，预判问题并准备应答材料；三是质量回溯制度，对历史类似项目的专家评审意见进行统计分析，识别常见质量问题并前置预防；四是验收风险应对，针对“不通过”情形制定整改预案，明确整改时限与资源保障。建立客户满意度调查机制，将反馈纳入持续改进循环，并无缝衔接售后服务响应机制。
+  keywords:
+  - 交付物核查清单
+  - 客户满意度调查
+  - 售后SLA保障
+  - 持续改进闭环
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2000
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_3
+  parent_heading_title: 技术质量保障措施
+  generation_strategy: general
+  generates_from_self: false
+- id: tech_heading_4
+  title: 跨境可信数据空间技术能力
+  instruction: 围绕“跨境可信数据空间技术能力”形成正式技术应答，严格响应“基于智能合约、可信送达、跨境数据合规审查智能体技术、可信执行环境进行详细功能描述并提出适配跨境数据流程场景”的高分要求。技术阐述需避免概念堆砌，强调每项技术的功能细节、实现路径、场景适配性。智能合约重点展示自动化合规执行能力，可信送达重点展示数据完整性保障能力，合规审查智能体重磅展示AI驱动的审查决策能力，可信执行环境重点展示硬件级安全保障理念。补充说明：本章需将“服务响应方案”与“售后服务方案”的技术运维支撑、故障排查工具链及应急响应架构融入各技术模块的底层设计中。
+  keywords:
+  - 智能合约自动化
+  - 可信送达存证
+  - 合规审查大模型
+  - TEE硬件级隔离
+  requires_search: false
+  block_kind: group
+  heading_level: 2
+  generation_strategy: general
+  generates_from_self: false
+- id: '4.1'
+  title: 4.1 智能合约与自动化合规引擎
+  instruction: 写作侧重点：深入阐述基于智能合约的跨境数据合规自动化技术能力：一是智能合约架构设计，说明合约模板库、规则引擎、执行引擎的技术。围绕“4.1
+    智能合约与自动化合规引擎”形成正式应答，在“跨境可信数据空间技术能力”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：规则引擎代码化封装、分级分类判定流、政务系统接口适配、跨境场景合约模板。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 规则引擎代码化封装
+  - 分级分类判定流
+  - 政务系统接口适配
+  - 跨境场景合约模板
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2250
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_4
+  parent_heading_title: 跨境可信数据空间技术能力
+  generation_strategy: general
+  generates_from_self: false
+- id: '4.2'
+  title: 4.2 可信送达与数据完整性防护
+  instruction: 写作侧重点：系统说明可信送达技术的实现方案，确保跨境数据传输的可追溯、可验证、不可抵赖：一是数据指纹技术，采用SHA-256。围绕“4.2
+    可信送达与数据完整性防护”形成正式应答，在“跨境可信数据空间技术能力”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：SHA-256数据指纹、区块链司法存证、TLS1.3传输加密、多因素身份认证。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - SHA-256数据指纹
+  - 区块链司法存证
+  - TLS1.3传输加密
+  - 多因素身份认证
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2250
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_4
+  parent_heading_title: 跨境可信数据空间技术能力
+  generation_strategy: general
+  generates_from_self: false
+- id: '4.3'
+  title: 4.3 合规审查智能体与TEE协同架构
+  instruction: 写作侧重点：详细展示跨境数据合规审查智能体的技术架构与功能实现：一是智能体核心能力，基于大语言模型（LLM）构建合规知识理解。围绕“4.3
+    合规审查智能体与TEE协同架构”形成正式应答，在“跨境可信数据空间技术能力”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：LLM合规推理引擎、动态法规知识图谱、人机协同审查流、芯片直接测算签名。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - LLM合规推理引擎
+  - 动态法规知识图谱
+  - 人机协同审查流
+  - 芯片直接测算签名
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2250
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_4
+  parent_heading_title: 跨境可信数据空间技术能力
+  generation_strategy: general
+  generates_from_self: false
+- id: tech_heading_5
+  title: 服务响应方案
+  instruction: 写作侧重点：围绕“服务响应方案”形成正式应答。需构建覆盖全生命周期的服务响应体系，明确7×24小时全天候值守机制与分级工。围绕“服务响应方案”形成正式应答，作为本章统筹提示，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：7×24小时运维值守、SLA时效管控、应急调度网络、现场技术支持。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 7×24小时运维值守
+  - SLA时效管控
+  - 应急调度网络
+  - 现场技术支持
+  requires_search: false
+  block_kind: group
+  heading_level: 2
+  generation_strategy: general
+  generates_from_self: false
+- id: 2.1_dup1
+  title: 2.1 7×24小时分级响应与SLA时效管控
+  instruction: 写作侧重点：详细阐述7×24小时服务响应体系的架构设计，包括服务台值班制度、多渠道接入机制（电话、邮件、即时通讯）、工单分级。围绕“2.1
+    7×24小时分级响应与SLA时效管控”形成正式应答，在“服务响应方案”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：多级工单流转、SLA时效承诺、应急交通预案、备勤人员调度。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 多级工单流转
+  - SLA时效承诺
+  - 应急交通预案
+  - 备勤人员调度
+  need_diagram: true
+  diagram_brief: 围绕“2.1 7×24小时分级响应与SLA时效管控”绘制技术架构图，突出核心对象、关键模块、上下游衔接关系与本章节的核心论证重点；重点覆盖：多级工单流转、SLA时效承诺、应急交通预案、备勤人员调度。
+  diagram_plan:
+    enabled: true
+    brief: 围绕“2.1 7×24小时分级响应与SLA时效管控”绘制技术架构图，突出核心对象、关键模块、上下游衔接关系与本章节的核心论证重点；重点覆盖：多级工单流转、SLA时效承诺、应急交通预案、备勤人员调度。
+    typeHint: architecture
+    priority: 132
+  expected_word_count: 2250
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_5
+  parent_heading_title: 服务响应方案
+  generation_strategy: general
+  generates_from_self: false
+- id: 2.2_dup1
+  title: 2.2 远程诊断支持与现场排障协同
+  instruction: 写作侧重点：系统呈现完整的服务响应方案，涵盖服务范围界定、服务方式说明（远程支持、现场服务、驻场服务）、服务流程规范。详细列。围绕“2.2
+    远程诊断支持与现场排障协同”形成正式应答，在“服务响应方案”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：远程监控平台、现场排障SOP、跨域资源协同、专业技术支持。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 远程监控平台
+  - 现场排障SOP
+  - 跨域资源协同
+  - 专业技术支持
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2000
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_5
+  parent_heading_title: 服务响应方案
+  generation_strategy: general
+  generates_from_self: false
+- id: 2.3_dup1
+  title: 2.3 常规问题闭环与服务质量监控
+  instruction: 写作侧重点：针对常规问题24小时内解决的承诺，设计标准化的问题处理流程与质量监控体系。包括问题受理、诊断分析、方案制定、实施。围绕“2.3
+    常规问题闭环与服务质量监控”形成正式应答，在“服务响应方案”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：问题升级机制、服务质量监控、工单追踪系统、满意度评估。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 问题升级机制
+  - 服务质量监控
+  - 工单追踪系统
+  - 满意度评估
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2000
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_5
+  parent_heading_title: 服务响应方案
+  generation_strategy: general
+  generates_from_self: false
+- id: tech_heading_6
+  title: 售后服务方案
+  instruction: 写作侧重点：围绕“售后服务方案”形成正式应答。需展示全面化、合理化与高可行性的售后体系。涵盖质保期内外差异化服务策略、常。围绕“售后服务方案”形成正式应答，作为本章统筹提示，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：全生命周期维保、知识转移培训、持续迭代优化、客户满意度闭环。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 全生命周期维保
+  - 知识转移培训
+  - 持续迭代优化
+  - 客户满意度闭环
+  requires_search: false
+  block_kind: group
+  heading_level: 2
+  generation_strategy: general
+  generates_from_self: false
+- id: 3.1_dup1
+  title: 3.1 全生命周期维保架构与区域网点布局
+  instruction: 写作侧重点：构建全面的售后服务体系框架，明确售后服务的总体目标、服务原则与服务理念。详细设计售后服务组织架构，包括售后服务中。围绕“3.1
+    全生命周期维保架构与区域网点布局”形成正式应答，在“售后服务方案”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：维保周期划分、区域服务站、现场服务团队、长效服务机制。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 维保周期划分
+  - 区域服务站
+  - 现场服务团队
+  - 长效服务机制
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2250
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_6
+  parent_heading_title: 售后服务方案
+  generation_strategy: general
+  generates_from_self: false
+- id: 3.2_dup1
+  title: 3.2 标准化售后流程与客户赋能培训
+  instruction: 写作侧重点：系统呈现售后方案的全面性设计，包括服务请求处理流程、故障排查流程、变更管理流程、配置管理流程等标准化规范。重点阐。围绕“3.2
+    标准化售后流程与客户赋能培训”形成正式应答，在“售后服务方案”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：服务请求处理、故障排查规范、变更管理流程、知识转移体系。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 服务请求处理
+  - 故障排查规范
+  - 变更管理流程
+  - 知识转移体系
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2250
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_6
+  parent_heading_title: 售后服务方案
+  generation_strategy: general
+  generates_from_self: false
+- id: 3.3_dup1
+  title: 3.3 资源保障能力与风险应对预案
+  instruction: 写作侧重点：重点论证售后方案的可行性，从资源保障能力角度说明人员、技术、物资、资金等方面的投入计划与保障措施。制定风险应对预。围绕“3.3
+    资源保障能力与风险应对预案”形成正式应答，在“售后服务方案”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：物资资金保障、风险识别矩阵、替代技术方案、服务评价闭环。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 物资资金保障
+  - 风险识别矩阵
+  - 替代技术方案
+  - 服务评价闭环
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 1750
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_6
+  parent_heading_title: 售后服务方案
+  generation_strategy: general
+  generates_from_self: false
+- id: tech_heading_7
+  title: 响应情况
+  instruction: 写作侧重点：围绕“响应情况”形成正式应答。采用单章直生结构，严格对照招标文件第四章采购需求进行逐项响应声明。明确标注完全响。围绕“响应情况”形成正式应答，本章为直接成文章节，不再拆分子节，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：采购需求逐条对标、技术参数偏离表、实质性条款确认、负偏离风险缓释。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 采购需求逐条对标
+  - 技术参数偏离表
+  - 实质性条款确认
+  - 负偏离风险缓释
+  need_diagram: false
+  diagram_brief: ''
+  expected_word_count: 3750
+  requires_search: false
+  block_kind: content
+  heading_level: 2
+  generation_strategy: response_special
+  generates_from_self: true
+- id: tech_heading_8
+  title: 项目实施目标
+  instruction: 写作侧重点：综合承接项目理解、重点难点、质量保障与技术能力要求。围绕“项目实施目标”形成正式应答，作为本章统筹提示，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：跨境可信数据空间、智能合约引擎、可信送达协议、合规审查智能体。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 跨境可信数据空间
+  - 智能合约引擎
+  - 可信送达协议
+  - 合规审查智能体
+  requires_search: false
+  block_kind: group
+  heading_level: 2
+  generation_strategy: objective_special
+  generates_from_self: false
+- id: '5.1'
+  title: 5.1 跨境可信数据空间核心引擎建设目标
+  instruction: 写作侧重点：明确项目核心技术目标，聚焦跨境可信数据空间的关键技术能力建设。详细阐述智能合约技术在跨境数据流通中的应用目标，包。围绕“5.1
+    跨境可信数据空间核心引擎建设目标”形成正式应答，在“项目实施目标”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：智能合约模板库、可信送达验证、合规审查智能体、TEE数据隔离。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 智能合约模板库
+  - 可信送达验证
+  - 合规审查智能体
+  - TEE数据隔离
+  need_diagram: true
+  diagram_brief: 围绕“5.1 跨境可信数据空间核心引擎建设目标”绘制数据流转图，突出核心对象、关键模块、上下游衔接关系与本章节的核心论证重点；重点覆盖：智能合约模板库、可信送达验证、合规审查智能体、TEE数据隔离。
+  diagram_plan:
+    enabled: true
+    brief: 围绕“5.1 跨境可信数据空间核心引擎建设目标”绘制数据流转图，突出核心对象、关键模块、上下游衔接关系与本章节的核心论证重点；重点覆盖：智能合约模板库、可信送达验证、合规审查智能体、TEE数据隔离。
+    typeHint: data-flow
+    priority: 156
+  expected_word_count: 3000
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_8
+  parent_heading_title: 项目实施目标
+  generation_strategy: objective_special
+  generates_from_self: false
+- id: '5.2'
+  title: 5.2 可信溯源认证与芯片级签名机制部署
+  instruction: 写作侧重点：结合知识库技术细节，深入设计数据全生命周期可信管理机制。阐述基于海光CPU架构的内存加密秘钥优化方案，将加密虚拟。围绕“5.2
+    可信溯源认证与芯片级签名机制部署”形成正式应答，在“项目实施目标”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：芯片级加密密钥、Audit
+    Agent、verify Server、Guest OS镜像压缩。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 芯片级加密密钥
+  - Audit Agent
+  - verify Server
+  - Guest OS镜像压缩
+  need_diagram: true
+  diagram_brief: 围绕“5.2 可信溯源认证与芯片级签名机制部署”绘制数据流转图，突出核心对象、关键模块、上下游衔接关系与本章节的核心论证重点；重点覆盖：芯片级加密密钥、Audit
+    Agent、verify Server、Guest OS镜像压缩。
+  diagram_plan:
+    enabled: true
+    brief: 围绕“5.2 可信溯源认证与芯片级签名机制部署”绘制数据流转图，突出核心对象、关键模块、上下游衔接关系与本章节的核心论证重点；重点覆盖：芯片级加密密钥、Audit
+      Agent、verify Server、Guest OS镜像压缩。
+    typeHint: data-flow
+    priority: 156
+  expected_word_count: 3000
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_8
+  parent_heading_title: 项目实施目标
+  generation_strategy: objective_special
+  generates_from_self: false
+- id: '5.3'
+  title: 5.3 交付里程碑规划与质量验收标准
+  instruction: 写作侧重点：明确项目交付目标与验收标准，确保与招标文件要求完全一致。详细列明交付物清单，包括《江苏国际数据港跨境可信数据空间。围绕“5.3
+    交付里程碑规划与质量验收标准”形成正式应答，在“项目实施目标”框架下，开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：三阶段实施模型、中期成果交付、主报告编制、专家评审验收。需紧扣招标文件中的关键技术要求，并以正式应答文件口吻展开。
+  keywords:
+  - 三阶段实施模型
+  - 中期成果交付
+  - 主报告编制
+  - 专家评审验收
+  need_diagram: false
+  diagram_brief: ''
+  diagram_plan:
+    enabled: false
+    brief: ''
+    priority: 0
+  expected_word_count: 2750
+  requires_search: true
+  block_kind: content
+  heading_level: 3
+  parent_heading_id: tech_heading_8
+  parent_heading_title: 项目实施目标
+  generation_strategy: objective_special
+  generates_from_self: false

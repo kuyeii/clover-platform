@@ -1,5 +1,5 @@
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, ChevronLeft, ChevronRight, Globe2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { NavigateFn } from "../routes";
 import type { ToolkitApp } from "../shared/types/app";
@@ -31,26 +31,6 @@ const cardVariants = {
   },
 };
 
-const pageVariants = {
-  enter: (direction: number) => ({
-    x: direction > 0 ? "100%" : "-100%",
-  }),
-  center: {
-    x: 0,
-    transition: {
-      duration: 0.52,
-      ease: [0.22, 1, 0.36, 1],
-    },
-  },
-  exit: (direction: number) => ({
-    x: direction > 0 ? "-100%" : "100%",
-    transition: {
-      duration: 0.52,
-      ease: [0.22, 1, 0.36, 1],
-    },
-  }),
-};
-
 type LauncherItem =
   | {
       type: "app";
@@ -64,6 +44,7 @@ type LauncherItem =
       bannerText: string;
       ctaLabel: string;
       route: string;
+      backgroundImage: string;
     };
 
 const pageAppIds = [
@@ -79,6 +60,7 @@ const bidReferenceSitesItem: LauncherItem = {
   bannerText: "常用网站 · 收藏入口 · 快速访问",
   ctaLabel: "进入应用",
   route: "/bid-reference-sites",
+  backgroundImage: "/app-backgrounds/site_colletions.png",
 };
 
 function BidReferenceSitesCard({
@@ -89,17 +71,18 @@ function BidReferenceSitesCard({
   navigate: NavigateFn;
 }) {
   return (
-    <article className="group relative flex h-full min-h-80 overflow-hidden rounded-xl border border-border bg-surface shadow-panel lg:min-h-96">
+    <article className="group relative flex h-full min-h-[260px] overflow-hidden rounded-xl border-0 bg-surface shadow-panel md:min-h-0">
       <div className="absolute inset-0 bg-gradient-to-r from-surface via-surface-soft to-brand-50/60" />
       <div className="absolute inset-y-0 right-0 w-3/5 bg-gradient-to-l from-brand-50/72 via-brand-50/28 to-transparent" />
-      <div className="absolute bottom-8 right-8 hidden h-44 w-44 items-center justify-center rounded-full border border-brand-100 bg-white/50 text-brand-500 md:flex lg:h-52 lg:w-52">
-        <Globe2 className="h-20 w-20 lg:h-24 lg:w-24" strokeWidth={1.45} />
-      </div>
-      <div className="absolute bottom-0 right-0 h-full w-[74%] bg-[radial-gradient(circle_at_65%_62%,rgba(2,132,199,0.18),transparent_34%),linear-gradient(135deg,transparent_0%,rgba(238,248,252,0.82)_100%)] opacity-80 [mask-image:linear-gradient(to_right,transparent,rgba(0,0,0,0.54)_18%,rgb(0,0,0)_38%)] md:w-[58%]" />
+      <img
+        src={item.backgroundImage}
+        alt={`${item.name} 背景图`}
+        className="absolute bottom-0 right-0 h-full w-[74%] object-cover object-center opacity-[0.5] [mask-image:linear-gradient(to_right,transparent,rgba(0,0,0,0.54)_18%,rgb(0,0,0)_38%)] transition-transform duration-500 ease-out motion-reduce:transform-none md:w-[58%] md:scale-105 md:opacity-[0.82] md:group-hover:scale-110 md:group-hover:-translate-y-1 md:group-hover:translate-x-1"
+      />
       <div className="absolute inset-0 bg-gradient-to-r from-surface via-surface/72 to-surface/8" />
       <div className="absolute inset-0 bg-gradient-to-t from-surface/24 via-transparent to-surface/18" />
 
-      <div className="relative z-10 flex h-full w-full flex-col p-7 md:p-9 lg:p-10">
+      <div className="relative z-10 flex h-full w-full flex-col p-6 md:p-7 lg:p-8">
         <div className="min-w-0 max-w-[82%] space-y-5 md:max-w-[52%] lg:max-w-[50%] lg:space-y-6">
           <div className="space-y-4 md:space-y-5">
             <h2 className="text-2xl font-black leading-tight tracking-normal text-ink md:text-3xl lg:text-[2rem]">
@@ -116,7 +99,7 @@ function BidReferenceSitesCard({
           </div>
         </div>
 
-        <div className="mt-auto pt-12 md:pt-16">
+        <div className="mt-auto pt-8 md:pt-10">
           <button
             type="button"
             onClick={() => navigate(item.route)}
@@ -133,7 +116,6 @@ function BidReferenceSitesCard({
 
 export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
   const [pageIndex, setPageIndex] = useState(0);
-  const [direction, setDirection] = useState(1);
   const pages = useMemo(() => {
     const appById = new Map(apps.map((app) => [app.id, app]));
     return pageAppIds.map((ids, index) => {
@@ -150,73 +132,72 @@ export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
     if (nextPageIndex === pageIndex) {
       return;
     }
-    setDirection(nextPageIndex > pageIndex ? 1 : -1);
     setPageIndex(nextPageIndex);
   };
 
   const goToPreviousPage = () => {
     const nextPageIndex = pageIndex === 0 ? pages.length - 1 : pageIndex - 1;
-    setDirection(-1);
-    setPageIndex(nextPageIndex);
+    goToPage(nextPageIndex);
   };
 
   const goToNextPage = () => {
     const nextPageIndex = pageIndex === pages.length - 1 ? 0 : pageIndex + 1;
-    setDirection(1);
-    setPageIndex(nextPageIndex);
+    goToPage(nextPageIndex);
   };
 
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col gap-4 overflow-auto bg-mist px-5 pb-8 pt-6 md:px-8 md:pb-10 md:pt-7 lg:px-12 lg:pb-12 lg:pt-8">
+    <section className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-mist px-5 pb-6 pt-7 md:px-8 md:pb-7 md:pt-9 lg:px-12 lg:pb-8 lg:pt-10">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-surface-soft to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-brand-50/44 to-transparent" />
 
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <div
           aria-hidden="true"
-          className="pointer-events-none invisible grid min-h-full w-full grid-cols-1 gap-5 md:grid-cols-2 md:grid-rows-2 md:gap-6 lg:gap-8"
+          className="pointer-events-none invisible grid min-h-full w-full grid-cols-1 gap-5 md:grid-cols-2 md:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] md:gap-5 lg:gap-6"
         >
           {activeItems.map((item) => (
             <div
               key={item.type === "app" ? `size-${item.app.id}` : `size-${item.id}`}
-              className="h-full min-h-80 lg:min-h-96"
+              className="h-full min-h-[260px] md:min-h-0"
             />
           ))}
         </div>
-        <AnimatePresence initial={false} custom={direction}>
-          <motion.div
-            key={pageIndex}
-            custom={direction}
-            variants={pageVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            className="absolute inset-0 grid h-full w-full grid-cols-1 gap-5 md:grid-cols-2 md:grid-rows-2 md:gap-6 lg:gap-8"
-            style={{ willChange: "transform" }}
-          >
-            {activeItems.map((item, index) => (
-              <motion.div
-                key={item.type === "app" ? item.app.id : item.id}
-                custom={index}
-                variants={cardVariants}
-                initial={false}
-                animate="visible"
-                whileHover="hover"
-                className="h-full min-h-0"
-              >
-                {item.type === "app" ? (
-                  <AppCard app={item.app} navigate={navigate} ctaLabelOverride="进入应用" />
-                ) : (
-                  <BidReferenceSitesCard item={item} navigate={navigate} />
-                )}
-              </motion.div>
-            ))}
-          </motion.div>
-        </AnimatePresence>
+        <motion.div
+          className="absolute inset-0 flex h-full"
+          animate={{ x: `-${pageIndex * (100 / pages.length)}%` }}
+          transition={{ duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
+          style={{ width: `${pages.length * 100}%`, willChange: "transform" }}
+        >
+          {pages.map((pageItems, pageItemIndex) => (
+            <div
+              key={pageItemIndex}
+              className="grid h-full min-w-0 shrink-0 grid-cols-1 gap-5 md:grid-cols-2 md:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] md:gap-5 lg:gap-6"
+              style={{ width: `${100 / pages.length}%` }}
+            >
+              {pageItems.map((item, index) => (
+                <motion.div
+                  key={item.type === "app" ? item.app.id : item.id}
+                  custom={index}
+                  variants={cardVariants}
+                  initial={false}
+                  animate="visible"
+                  whileHover="hover"
+                  className="h-full min-h-0"
+                >
+                  {item.type === "app" ? (
+                    <AppCard app={item.app} navigate={navigate} ctaLabelOverride="进入应用" />
+                  ) : (
+                    <BidReferenceSitesCard item={item} navigate={navigate} />
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          ))}
+        </motion.div>
       </div>
 
-      <div className="relative z-10 flex shrink-0 items-center justify-end">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-white/92 p-1.5 shadow-panel">
+      <div className="relative z-10 mt-5 flex shrink-0 items-center justify-end md:mt-6">
+        <div className="inline-flex items-center gap-2 rounded-full border-0 bg-white/92 p-1.5 shadow-panel">
           <button
             type="button"
             onClick={goToPreviousPage}

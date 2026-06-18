@@ -861,12 +861,6 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
 
                         <div className={clsx('flex-1 min-h-0 bg-gray-50/60 p-4', !isAttachmentActive && 'hidden')}>
                             <div className="flex h-full flex-col gap-3">
-                                {snapshotOnly && docBlocks.length > 0 ? (
-                                    <div className="rounded border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-[11px] text-warning">
-                                        当前为块索引快照降级模式，可继续调整锚点，但表格、图片和部分样式可能不完整。
-                                    </div>
-                                ) : null}
-
                                 <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(220px,3fr)_minmax(0,7fr)]">
                                     <div className="flex min-h-0 flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-none">
                                         <div className="mb-3 flex items-center justify-between px-1">
@@ -904,11 +898,6 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                                             <div>
                                                 <p className="text-base font-bold text-gray-900">实时样式预览</p>
                                             </div>
-                                            {previewSnapshotOnly ? (
-                                                <span className="rounded-full bg-[var(--color-warning-bg)] px-2 py-1 text-[11px] font-medium text-warning">
-                                                    快照降级
-                                                </span>
-                                            ) : null}
                                         </div>
                                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-slate-50/50">
                                             {previewing ? (

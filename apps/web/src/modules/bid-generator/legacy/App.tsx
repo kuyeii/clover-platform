@@ -43,6 +43,7 @@ function ProjectView({
   const [showTechGate, setShowTechGate] = useState(false);
   const [isContentBusy, setIsContentBusy] = useState(false);
   const [exportingBidDoc, setExportingBidDoc] = useState(false);
+  const [exportErrorMessage, setExportErrorMessage] = useState('');
   const [isStartingOutline, setIsStartingOutline] = useState(false);
   const [showBidderGate, setShowBidderGate] = useState(false);
   const activeBusyMeta = projectService.getProjectBusyMeta(activeProject);
@@ -160,17 +161,18 @@ function ProjectView({
     if (!activeProject) return;
     const sections = buildBidExportSections(activeProject, activeProject.bidModules || []);
     if (sections.length === 0) {
-      window.alert('当前没有可导出的模块内容，请先完成模块编排或技术方案生成。');
+      setExportErrorMessage('当前没有可导出的模块内容，请先完成模块编排或技术方案生成。');
       return;
     }
     setExportingBidDoc(true);
+    setExportErrorMessage('');
     try {
       await projectService.forgeDocument(activeProject.id, sections);
       projectService.update(activeProject.id, { status: 'bid_done' });
       refreshProjects();
     } catch (err) {
       console.error('[App] 导出投标文件失败:', err);
-      window.alert('导出失败，请稍后重试。');
+      setExportErrorMessage('导出异常，请稍后重试。');
     } finally {
       setExportingBidDoc(false);
     }
@@ -315,6 +317,35 @@ function ProjectView({
       <div className="flex-1 flex flex-col min-h-0">
         {renderContent()}
       </div>
+      {exportErrorMessage ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/28 px-4" role="presentation">
+          <section
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.18)]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="导出异常"
+          >
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-warning-bg)] text-warning">
+                <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-gray-950">导出异常</h3>
+                <p className="mt-2 text-sm leading-6 text-gray-600">{exportErrorMessage}</p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
+                onClick={() => setExportErrorMessage('')}
+              >
+                知道了
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <TechProposalGate
         visible={showTechGate}
         onCancel={() => setShowTechGate(false)}

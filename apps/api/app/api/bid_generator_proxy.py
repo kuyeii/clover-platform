@@ -464,7 +464,7 @@ async def export_bid_generator_report(
     user: dict[str, Any] = Depends(require_bid_generator_user),
 ) -> Response:
     _ = user
-    return await export_report_response(await _read_json_body(request))
+    return file_response(await export_report_response(await _read_json_body(request)))
 
 
 @router.post("/api/projects/export-scoring-table")
@@ -482,7 +482,7 @@ async def forge_bid_generator_document(
     user: dict[str, Any] = Depends(require_bid_generator_user),
 ) -> Response:
     _ = user
-    return await forge_document_response(await _read_json_body(request))
+    return file_response(await forge_document_response(await _read_json_body(request)))
 
 
 @router.post("/api/projects/generate-outline")

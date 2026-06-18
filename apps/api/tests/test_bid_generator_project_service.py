@@ -565,16 +565,15 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
     def test_get_template_config_reads_config_and_selected_yaml_template(self) -> None:
         root = Path("/tmp/clover-bid-template-test")
         config_path = root / "config.yaml"
-        templates_dir = root / "data" / "templates" / "structures"
+        templates_dir = root / "templates" / "structures"
         selected_template = templates_dir / "custom.yaml"
         default_template = templates_dir / "standard.yaml"
 
         def fake_exists(path: Path) -> bool:
             return path == templates_dir
 
-        def fake_glob(path: Path, pattern: str) -> list[Path]:
+        def fake_iterdir(path: Path) -> list[Path]:
             self.assertEqual(path, templates_dir)
-            self.assertEqual(pattern, "*.yaml")
             return [selected_template, default_template]
 
         def fake_is_file(path: Path) -> bool:
@@ -590,9 +589,10 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             raise FileNotFoundError(path)
 
         with (
-            patch.object(service, "_bid_generator_legacy_root", return_value=root),
+            patch.object(service, "_bid_generator_config_path", return_value=config_path),
+            patch.object(service, "_template_structures_dir", return_value=templates_dir),
             patch.object(Path, "exists", fake_exists),
-            patch.object(Path, "glob", fake_glob),
+            patch.object(Path, "iterdir", fake_iterdir),
             patch.object(Path, "is_file", fake_is_file),
             patch.object(Path, "open", fake_open),
         ):
@@ -606,7 +606,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
     def test_get_template_config_uses_first_template_when_name_missing(self) -> None:
         root = Path("/tmp/clover-bid-template-test")
         config_path = root / "config.yaml"
-        templates_dir = root / "data" / "templates" / "structures"
+        templates_dir = root / "templates" / "structures"
         selected_template = templates_dir / "a.yaml"
 
         def fake_open(path: Path, *args, **kwargs):
@@ -619,9 +619,10 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             raise FileNotFoundError(path)
 
         with (
-            patch.object(service, "_bid_generator_legacy_root", return_value=root),
+            patch.object(service, "_bid_generator_config_path", return_value=config_path),
+            patch.object(service, "_template_structures_dir", return_value=templates_dir),
             patch.object(Path, "exists", return_value=True),
-            patch.object(Path, "glob", return_value=[selected_template]),
+            patch.object(Path, "iterdir", return_value=[selected_template]),
             patch.object(Path, "is_file", return_value=True),
             patch.object(Path, "open", fake_open),
         ):
@@ -638,11 +639,12 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
     def test_get_template_config_returns_404_for_unknown_template(self) -> None:
         root = Path("/tmp/clover-bid-template-test")
-        known_template = root / "data" / "templates" / "structures" / "standard.yaml"
+        templates_dir = root / "templates" / "structures"
+        known_template = templates_dir / "standard.yaml"
         with (
-            patch.object(service, "_bid_generator_legacy_root", return_value=root),
+            patch.object(service, "_template_structures_dir", return_value=templates_dir),
             patch.object(Path, "exists", return_value=True),
-            patch.object(Path, "glob", return_value=[known_template]),
+            patch.object(Path, "iterdir", return_value=[known_template]),
             patch.object(Path, "is_file", return_value=True),
         ):
             with self.assertRaises(Exception) as ctx:
@@ -653,8 +655,9 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
     def test_update_template_config_writes_yaml_natively(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            templates_dir = root / "templates" / "structures"
             with (
-                patch.object(service, "_bid_generator_legacy_root", return_value=root),
+                patch.object(service, "_template_structures_dir", return_value=templates_dir),
                 patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
             ):
                 payload = _run_async(
@@ -665,18 +668,19 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
             legacy_import.assert_not_called()
             self.assertEqual(payload, {"status": "success", "message": "Template custom.yaml updated successfully"})
-            template_path = root / "data" / "templates" / "structures" / "custom.yaml"
+            template_path = templates_dir / "custom.yaml"
             self.assertTrue(template_path.exists())
             self.assertEqual(service._read_yaml_mapping(template_path), {"id": "custom", "blocks": [{"id": "b1"}]})
 
     def test_delete_template_config_deletes_yaml_natively(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            template_path = root / "data" / "templates" / "structures" / "custom.yaml"
+            templates_dir = root / "templates" / "structures"
+            template_path = templates_dir / "custom.yaml"
             template_path.parent.mkdir(parents=True)
             template_path.write_text("id: custom\n", encoding="utf-8")
             with (
-                patch.object(service, "_bid_generator_legacy_root", return_value=root),
+                patch.object(service, "_template_structures_dir", return_value=templates_dir),
                 patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
             ):
                 payload = _run_async(service.delete_template_config_payload("custom.yaml"))
@@ -694,8 +698,9 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
     def test_update_global_config_writes_yaml_natively(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            config_path = root / "config.yaml"
             with (
-                patch.object(service, "_bid_generator_legacy_root", return_value=root),
+                patch.object(service, "_bid_generator_config_path", return_value=config_path),
                 patch.object(service, "_ensure_legacy_imported", create=True) as legacy_import,
             ):
                 payload = _run_async(
@@ -704,7 +709,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
 
             legacy_import.assert_not_called()
             self.assertEqual(payload, {"status": "success", "message": "Config updated successfully"})
-            self.assertEqual(service._read_yaml_mapping(root / "config.yaml"), {"workspace": {"data_dir": "./data"}})
+            self.assertEqual(service._read_yaml_mapping(config_path), {"workspace": {"data_dir": "./data"}})
 
     def test_get_cached_pdf_payload_returns_pdf_metadata(self) -> None:
         pdf_path = Mock()

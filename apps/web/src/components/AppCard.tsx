@@ -42,7 +42,7 @@ export function AppCard({ app, navigate, ctaLabelOverride }: AppCardProps) {
     <>
       <article
         className={[
-          "group relative flex h-full min-h-80 overflow-hidden rounded-xl border border-border bg-surface shadow-panel lg:min-h-96",
+          "group relative flex h-full min-h-[260px] overflow-hidden rounded-xl border-0 bg-surface shadow-panel md:min-h-0",
           hasPermission ? "" : "opacity-80",
         ].join(" ")}
       >
@@ -67,7 +67,7 @@ export function AppCard({ app, navigate, ctaLabelOverride }: AppCardProps) {
           ) : null}
         </div>
 
-        <div className="relative z-10 flex h-full w-full flex-col p-7 md:p-9 lg:p-10">
+        <div className="relative z-10 flex h-full w-full flex-col p-6 md:p-7 lg:p-8">
           <div className="min-w-0 max-w-[82%] space-y-5 md:max-w-[52%] lg:max-w-[50%] lg:space-y-6">
             <div className="space-y-4 md:space-y-5">
               <h2 className="text-2xl font-black leading-tight tracking-normal text-ink md:text-3xl lg:text-[2rem]">
@@ -84,7 +84,7 @@ export function AppCard({ app, navigate, ctaLabelOverride }: AppCardProps) {
             </div>
           </div>
 
-          <div className="mt-auto pt-12 md:pt-16">
+          <div className="mt-auto pt-8 md:pt-10">
             <button
               type="button"
               onClick={handleEnter}

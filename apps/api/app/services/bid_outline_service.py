@@ -686,7 +686,51 @@ def _sanitize_outline_writing_hint(text: str) -> str:
         line = re.sub(r"^\s*([一二三四五六七八九十]+、|\d+(?:\.\d+){0,3}[、.]?)\s*", "", raw_line).strip()
         if line:
             lines.append(line)
-    return re.sub(r"\s+", " ", " ".join(lines)).strip()
+    return _normalize_outline_response_writing_intent(" ".join(lines))
+
+
+def _normalize_outline_response_writing_intent(text: str) -> str:
+    """大纲阶段只保留写作意图，避免把评分说明式提示传给正文生成。"""
+    normalized = re.sub(r"\s+", " ", str(text or "").strip())
+    if not normalized:
+        return ""
+    normalized = re.sub(r"[“\"]([^”\"]+?)（\s*\d+\s*分\s*）[”\"]", r"“\1”", normalized)
+    normalized = re.sub(r"（\s*满分\s*\d+\s*分\s*）", "", normalized)
+    normalized = re.sub(r"（\s*\d+\s*分\s*）", "", normalized)
+    normalized = re.sub(
+        r"对标评分标准“([^”]+)”[，,]?",
+        r"围绕“\1”形成正式技术应答，",
+        normalized,
+    )
+    normalized = re.sub(
+        r"当前已识别的核心侧重点是：本章对应“([^”]+)”\s*\d*\s*分?评分项。?",
+        r"当前写作侧重点：围绕“\1”形成正式应答。",
+        normalized,
+    )
+    normalized = re.sub(
+        r"当前已识别的核心侧重点是：本章综合对应[^。]*。",
+        "当前写作侧重点：综合承接项目理解、重点难点、质量保障与技术能力要求。",
+        normalized,
+    )
+    normalized = normalized.replace("当前已识别的核心侧重点是：", "当前写作侧重点：")
+    normalized = re.sub(
+        r"围绕“([^”]+)”撰写本节内容，([^。]*?)，先说明本节要解决的问题和响应目标，"
+        r"再把招标文件或评分细则要求转化为可执行方案。",
+        r"围绕“\1”形成正式应答，\2，开篇直接进入项目理解、方案机制或实施安排，"
+        r"并将采购需求、技术条款与交付约束转化为可执行方案。",
+        normalized,
+    )
+    normalized = re.sub(r"围绕“([^”]+)”撰写本节内容，", r"围绕“\1”形成正式应答，", normalized)
+    normalized = normalized.replace(
+        "先说明本节要解决的问题和响应目标，再把招标文件或评分细则要求转化为可执行方案",
+        "开篇直接进入项目理解、方案机制或实施安排，并将采购需求、技术条款与交付约束转化为可执行方案",
+    )
+    normalized = normalized.replace("评分细则要求", "采购需求与评审关注点")
+    normalized = normalized.replace("评分标准", "评审关注点")
+    normalized = normalized.replace("评分项", "评审关注点")
+    normalized = re.sub(r"对应评审关注点（约\s*\d+\s*分）", "对应评审关注点", normalized)
+    normalized = re.sub(r"约\s*\d+\s*分", "对应权重", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def _outline_writing_hint_is_weak(text: str) -> bool:
@@ -714,18 +758,18 @@ def _compose_outline_writing_hint(title: str, parent_title: str, word_count: int
     criteria_text = re.sub(r"\s+", " ", str(criteria or "").strip())
     if len(criteria_text) > 72:
         criteria_text = criteria_text[:72].rstrip("，,；;。 ") + "。"
-    score_text = f"需紧扣对应评分点（约 {max_score} 分）" if max_score > 0 else "需紧扣招标文件中的关键技术要求"
+    score_text = "需完整覆盖对应评审关注点" if max_score > 0 else "需紧扣招标文件中的关键技术要求"
     parent_scope = f"在“{parent_title}”框架下" if parent_title else "作为本章统筹提示"
     if generation_strategy == "response_special":
         parent_scope = "本章为直接成文章节，不再拆分子节"
-    focus_prefix = f"当前已识别的核心侧重点是：{normalized_existing[:56].rstrip('，,；;。 ')}。" if normalized_existing else ""
+    focus_prefix = f"当前写作侧重点：{normalized_existing[:72].rstrip('，,；;。 ')}。" if normalized_existing else ""
     target_words = f"正文目标篇幅约 {int(word_count)} 字。" if int(word_count or 0) > 0 else ""
     return (
-        f"{focus_prefix}围绕“{title}”撰写本节内容，{parent_scope}，先说明本节要解决的问题和响应目标，"
-        f"再把招标文件或评分细则要求转化为可执行方案。重点覆盖：{keyword_text}。{score_text}"
+        f"{focus_prefix}围绕“{title}”形成正式应答，{parent_scope}，开篇直接进入项目理解、方案机制或实施安排，"
+        f"并将采购需求、技术条款与交付约束转化为可执行方案。重点覆盖：{keyword_text}。{score_text}"
         f"{('，尤其要回应：' + criteria_text) if criteria_text else '。'}"
-        "正文应按“需求理解、方案机制、落地措施、验证与风险控制”展开，明确为什么这样设计、如何实施、如何证明达标，"
-        "尽量使用“针对…采用…实现…通过…保障…”这类响应式表述，使段落能直接回扣技术条款或评分点。"
+        "正文应按“项目理解、方案机制、落地措施、验证与风险控制”展开，明确为什么这样设计、如何实施、如何证明达标，"
+        "尽量使用“针对…采用…实现…通过…保障…”这类响应式表述，使段落能直接回扣技术条款或评审关注点。"
         "不要重复目录编号、小标题清单或其他章节已经展开的通用背景，也不要只写空泛优势表述。"
         "不得编造缺乏依据的参数、型号、案例、标准编号或业绩事实；若证据不足，优先写控制措施、资源配置、交付边界、偏差闭环与验收方式。"
         f"{target_words}"

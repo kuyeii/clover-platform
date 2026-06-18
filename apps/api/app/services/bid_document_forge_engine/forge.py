@@ -623,7 +623,7 @@ class DocumentForge:
             elif body.strip():
                 parts.append(body)
 
-        full_markdown = "\n\n---\n\n".join(parts)
+        full_markdown = "\n\n".join(parts)
 
         # 全量占位符还原（先 BIDDER，后 PIPT）
         full_markdown = self.restorer.restore_all(full_markdown, self.bidder_info)

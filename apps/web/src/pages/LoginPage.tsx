@@ -1,13 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  ArrowRight,
-  DatabaseZap,
-  FileSearch,
-  LockKeyhole,
-  ShieldCheck,
-  UserRound,
-} from "lucide-react";
-import { motion } from "framer-motion";
+import { ArrowRight, LockKeyhole, UserRound } from "lucide-react";
 
 import type { NavigateFn } from "../routes";
 import { useAuth } from "../shared/auth/AuthProvider";
@@ -22,43 +14,248 @@ function getLoginRedirect() {
   return from && from.startsWith("/") && !from.startsWith("//") ? from : "/workspace";
 }
 
-const brandSlides = [
+type FeatureApp = {
+  key: string;
+  title: string;
+  icon: FeatureIconType;
+  description: string;
+  tags: string[];
+};
+
+type FeatureIconType = "document" | "shield" | "chart" | "chat" | "badge";
+
+const featureApps: FeatureApp[] = [
   {
-    icon: ShieldCheck,
-    label: "合同审查",
-    summary: "帮助业务、法务和项目团队快速识别合同风险，沉淀可复用的审查意见。",
-    capabilities: ["条款定位", "风险分级", "改写建议"],
-    tone: "bg-white text-brand-600",
+    key: "bid",
+    title: "标书生成",
+    icon: "document",
+    description: "整合团队资源和前沿技术调研，AI辅助输出高质量投标文件。",
+    tags: ["模板复用", "智能生成"],
   },
   {
-    icon: FileSearch,
-    label: "标书生成",
-    summary: "让投标团队复用企业资料、项目经验和模板规范，更快完成投标文件。",
-    capabilities: ["资料复用", "模板生成", "格式整理"],
-    tone: "bg-[var(--color-info-bg)] text-brand-700",
+    key: "contract",
+    title: "合同审查",
+    icon: "shield",
+    description: "识别关键条款与潜在风险，辅助合规审阅和修订。",
+    tags: ["风险提示", "条款比对", "修订建议"],
   },
   {
-    icon: DatabaseZap,
-    label: "知识检索",
-    summary: "把制度、案例、项目资料和历史成果统一检索，减少反复找资料的时间。",
-    capabilities: ["语义检索", "来源追溯", "材料归档"],
-    tone: "bg-[var(--color-success-bg)] text-success",
+    key: "competitor",
+    title: "竞品分析",
+    icon: "chart",
+    description: "整合公开信息与行业数据，快速形成结构化洞察。",
+    tags: ["行业对比", "趋势摘要", "报告输出"],
   },
   {
-    icon: ArrowRight,
-    label: "竞对分析",
-    summary: "面向市场、售前和管理者汇总竞品动态，辅助判断机会和差异。",
-    capabilities: ["信息汇总", "差异对比", "趋势洞察"],
-    tone: "bg-[var(--color-warning-bg)] text-warning",
+    key: "rag",
+    title: "RAG问答",
+    icon: "chat",
+    description: "连接企业知识库与项目资料，针对业务问题精准检索作答。",
+    tags: ["知识检索", "语义问答", "多源引用"],
+  },
+  {
+    key: "patent",
+    title: "专利生成",
+    icon: "badge",
+    description: "梳理技术方案与创新点，辅助生成规范专利文本。",
+    tags: ["创新提炼", "结构生成", "规范输出"],
   },
 ];
+
+function usePrefersReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mediaQuery.matches);
+    const handleChange = () => setReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  return reducedMotion;
+}
+
+function AppIcon({ type }: { type: FeatureIconType }) {
+  const commonProps = {
+    className: "h-10 w-10",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.85,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  if (type === "document") {
+    return (
+      <svg {...commonProps}>
+        <path d="M7 3.8h6.2L18 8.6v11.6H7z" />
+        <path d="M13 4v5h5" />
+        <path d="M9.5 13h5" />
+        <path d="M9.5 16.5H14" />
+      </svg>
+    );
+  }
+
+  if (type === "shield") {
+    return (
+      <svg {...commonProps}>
+        <path d="M12 3.8 18.4 6v5.3c0 4.1-2.5 7.4-6.4 8.9-3.9-1.5-6.4-4.8-6.4-8.9V6z" />
+        <path d="m9.4 12 1.8 1.8 3.6-4" />
+      </svg>
+    );
+  }
+
+  if (type === "chart") {
+    return (
+      <svg {...commonProps}>
+        <path d="M4.8 19.2h14.4" />
+        <path d="M6.8 15.8V9.4" />
+        <path d="M12 15.8V5.8" />
+        <path d="M17.2 15.8v-3.9" />
+        <path d="m6.8 10 4-3.9 3.4 3 3-3.6" />
+      </svg>
+    );
+  }
+
+  if (type === "chat") {
+    return (
+      <svg {...commonProps}>
+        <path d="M5.2 6.4h13.6v8.8H10l-4.8 3.2z" />
+        <path d="M8.6 10h6.8" />
+        <path d="M8.6 13h4.4" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...commonProps}>
+      <path d="M12 3.8 14.3 8l4.7.8-3.3 3.3.8 4.7L12 14.6l-4.5 2.2.8-4.7L5 8.8 9.7 8z" />
+      <path d="M9.8 20.2h4.4" />
+    </svg>
+  );
+}
+
+function FeatureSwitcher() {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
+  const activeApp = featureApps[activeIndex];
+
+  useEffect(() => {
+    if (isPaused || reducedMotion) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % featureApps.length);
+    }, 7500);
+
+    return () => window.clearInterval(timer);
+  }, [isPaused, reducedMotion]);
+
+  return (
+    <section
+      className="group relative w-full max-w-[620px] overflow-hidden rounded-2xl border border-white/35 bg-[linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] px-4 pb-5 pt-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_24px_60px_rgba(0,39,105,0.26)] backdrop-blur-[18px] sm:px-5"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      aria-label="应用能力切换"
+    >
+      <span
+        className="pointer-events-none absolute -inset-px bg-[radial-gradient(circle_at_78%_100%,rgba(40,226,255,0.22),transparent_42%)]"
+        aria-hidden="true"
+      />
+      <div className="relative z-10">
+        <div
+          className="grid grid-cols-5 gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] max-sm:flex max-sm:gap-2 [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="应用能力"
+        >
+          {featureApps.map((item, index) => {
+            const selected = activeIndex === index;
+            return (
+              <div
+                key={item.key}
+                className={[
+                  "relative min-w-0 shrink-0 sm:w-full",
+                  index > 0 ? "before:absolute before:-left-[3px] before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-white/22" : "",
+                ].join(" ")}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={[
+                    "inline-flex h-9 min-w-0 shrink-0 items-center justify-center rounded-full px-2.5 text-[13px] font-bold transition-[background-color,color,box-shadow,transform] duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:w-full",
+                    selected
+                      ? "-translate-y-px bg-white/95 text-[#096dd9] shadow-[0_8px_22px_rgba(0,84,180,0.18)]"
+                      : "bg-transparent text-white/85 hover:bg-white/12 hover:text-white",
+                  ].join(" ")}
+                  onClick={() => setActiveIndex(index)}
+                >
+                  <span className="truncate">{item.title}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          key={activeApp.key}
+          className="feature-switcher-body mt-5 min-h-[112px] pl-8"
+          role="tabpanel"
+        >
+          <div className="flex items-stretch gap-4">
+            <div className="grid min-h-[64px] w-16 shrink-0 place-items-center rounded-xl bg-slate-100/20 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_10px_24px_rgba(0,103,184,0.14)]">
+              <AppIcon type={activeApp.icon} />
+            </div>
+            <div className="min-w-0 self-center">
+              <h3 className="text-[23px] font-extrabold leading-tight text-white">{activeApp.title}</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeApp.tags.map((tag) => (
+                  <span key={tag} className="rounded-md border border-white/22 bg-white/10 px-2.5 py-1 text-xs font-medium text-white/86">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="mt-4 text-[15px] font-medium leading-7 text-white/82">{activeApp.description}</p>
+        </div>
+
+        <div className="mt-4 flex items-center justify-center gap-2.5" aria-label="应用切换分页">
+          {featureApps.map((item, index) => {
+            const selected = activeIndex === index;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                aria-label={`切换到${item.title}`}
+                className={[
+                  "h-[7px] rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
+                  selected ? "w-[22px] bg-[linear-gradient(90deg,#fff,#6eefff)]" : "w-[7px] bg-white/45 hover:bg-white/70",
+                ].join(" ")}
+                onClick={() => setActiveIndex(index)}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export function LoginPage({ navigate }: { navigate: NavigateFn }) {
   const { login, isAuthenticated, isLoading, error } = useAuth();
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState("");
-  const [activeSlide, setActiveSlide] = useState(0);
   const redirectTo = useMemo(() => getLoginRedirect(), []);
 
   useEffect(() => {
@@ -66,13 +263,6 @@ export function LoginPage({ navigate }: { navigate: NavigateFn }) {
       navigate(redirectTo);
     }
   }, [isAuthenticated, navigate, redirectTo]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setActiveSlide((current) => (current + 1) % brandSlides.length);
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   if (isAuthenticated) {
     return null;
@@ -91,109 +281,54 @@ export function LoginPage({ navigate }: { navigate: NavigateFn }) {
     }
   };
 
-  const ActiveSlideIcon = brandSlides[activeSlide].icon;
-
   return (
-    <main className="grid min-h-screen place-items-center overflow-hidden bg-mist px-4 py-4 text-ink sm:px-6 lg:px-8">
+    <main className="grid min-h-screen place-items-center overflow-x-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(42,157,255,0.14),transparent_32%),linear-gradient(135deg,#f7fbff_0%,#eef6ff_100%)] px-3 py-4 text-ink sm:px-6 lg:overflow-hidden lg:px-8">
       <section
-        className="relative grid max-h-[calc(100vh-32px)] min-h-[min(600px,calc(100vh-32px))] w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-surface shadow-panel lg:grid-cols-[1.06fr_0.94fr]"
+        className="grid min-h-[600px] w-full max-w-[min(86vw,1280px)] overflow-hidden rounded-[18px] bg-white shadow-[0_28px_80px_rgba(19,59,105,0.18)] lg:max-h-[min(76vh,680px)] lg:grid-cols-[54%_46%]"
         aria-label="账号登录"
       >
-        <div className="absolute right-5 top-5 z-30 sm:right-6">
-          <BrandMark compact />
-        </div>
-
-        <div className="relative hidden overflow-hidden bg-brand-500 p-6 text-white lg:block">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,var(--color-brand-active)_0%,var(--color-brand)_58%,var(--color-success-text)_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_16%,rgba(255,255,255,0.24),transparent_30%),linear-gradient(90deg,rgba(36,52,71,0.34),rgba(36,52,71,0.08)_56%,rgba(36,52,71,0.28))]" />
-          <div
-            className="absolute inset-0 opacity-[0.14]"
-            aria-hidden="true"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(255,255,255,.52) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.52) 1px, transparent 1px)",
-              backgroundSize: "40px 40px",
-            }}
-          />
-
-          <div className="relative z-10 flex h-full min-h-[440px] flex-col justify-between gap-7 px-4 pt-10">
-            <div className="max-w-[520px] space-y-4">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-white/64">AI Work Platform</p>
-              <h1 className="text-5xl font-black leading-none tracking-normal text-white xl:text-6xl">
-                企智方
+        <div className="relative flex min-h-[420px] flex-col justify-between overflow-hidden bg-[#0266a8] px-7 py-10 text-white sm:min-h-[460px] sm:px-10 sm:py-12 lg:min-h-0 lg:px-14 lg:py-16">
+          <div className="pointer-events-none absolute inset-0 bg-[url('/login/arkmind-left-bg-rendered.png')] bg-cover bg-center opacity-75" aria-hidden="true" />
+          <div className="pointer-events-none absolute inset-0 bg-white,linear-gradient(180deg,rgba(0,22,78,0.88),rgba(0,20,60,0.35))]" />
+          <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-between gap-10">
+            <div className="max-w-[620px]">
+              <p className="text-[13px] font-bold uppercase tracking-[4px] text-white/90">AI WORK PLATFORM</p>
+              <h1 className="mt-16 text-[clamp(38px,4.2vw,60px)] font-black leading-[1.12] tracking-normal text-white sm:tracking-[-1px] lg:mt-20">
+                企业级{" "}
+                <span className="bg-[linear-gradient(90deg,#8ef7ff_0%,#d7ffff_48%,#1ce4ff_100%)] bg-clip-text text-transparent">
+                  AI
+                </span>{" "}
+                智能工作台
               </h1>
-              <p className="max-w-[500px] text-base font-medium leading-7 text-white/82">
-                为企业客户提供合同审查、标书生成、知识检索和竞对分析能力，让业务团队在同一入口完成高频文档与信息工作。
+              <span className="mt-6 block h-1 w-[42px] rounded-full bg-[linear-gradient(90deg,#18f0ff,#31ffc7)]" aria-hidden="true" />
+              <p className="mt-6 max-w-[620px] text-base font-medium leading-[1.9] text-white/85">
+                统一承载标书生成、合同审查、竞品分析、RAG问答与专利生成，
+                帮助团队高效完成资料复用、知识检索、风险审阅与内容生成。
               </p>
             </div>
 
-            <div className="w-full px-4 pb-4">
-              <div className="relative mx-auto h-36 w-full max-w-[580px] overflow-hidden rounded-lg border border-white/16 bg-white/10 shadow-none">
-                <motion.div
-                  key={brandSlides[activeSlide].label}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute inset-0 px-5 py-5 pr-24"
-                >
-                  <div className="flex h-full min-w-0 flex-col justify-center">
-                    <div className="flex min-w-0 items-center gap-3 overflow-hidden">
-                      <h2 className="shrink-0 text-xl font-black leading-tight text-white">{brandSlides[activeSlide].label}</h2>
-                      <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden">
-                        {brandSlides[activeSlide].capabilities.map((capability) => (
-                          <span key={capability} className="shrink-0 rounded-md border border-white/14 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/82">
-                            {capability}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <p className="mt-3 max-w-[420px] text-sm font-medium leading-6 text-white/78">{brandSlides[activeSlide].summary}</p>
-                  </div>
-                </motion.div>
-
-                <span className={`absolute right-5 top-5 grid h-11 w-11 place-items-center rounded-lg shadow-sm ${brandSlides[activeSlide].tone}`}>
-                  <ActiveSlideIcon className="h-5 w-5" aria-hidden="true" />
-                </span>
-
-                <div className="absolute bottom-4 right-5 flex items-center gap-2">
-                  {brandSlides.map((item, index) => {
-                    const selected = index === activeSlide;
-                    return (
-                      <button
-                        key={item.label}
-                        type="button"
-                        className={[
-                          "grid h-4 w-4 place-items-center rounded-full transition-colors",
-                          selected ? "bg-white/20" : "bg-transparent hover:bg-white/12",
-                        ].join(" ")}
-                        onClick={() => setActiveSlide(index)}
-                        aria-label={`查看${item.label}`}
-                        aria-current={selected ? "true" : undefined}
-                      >
-                        <span className={["h-2 w-2 rounded-full transition-colors", selected ? "bg-white" : "bg-white/42"].join(" ")} />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <FeatureSwitcher />
           </div>
         </div>
 
-        <div className="flex items-center px-6 py-16 sm:px-8 lg:px-12 lg:py-10">
-          <div className="mx-auto w-full max-w-md space-y-7">
-            <div className="space-y-3 pt-8 lg:pt-0">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-600">Portal Access</p>
-              <h2 className="text-3xl font-black leading-tight tracking-normal text-ink sm:text-4xl">账号登录</h2>
+        <div className="flex items-center justify-center bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-7 py-12 sm:px-9 lg:px-[72px] lg:py-16">
+          <div className="mx-auto w-full max-w-[460px]">
+            <div className="mb-11">
+              <BrandMark />
             </div>
 
-            <form onSubmit={handleSubmit} className="grid gap-4">
+            <div className="space-y-2">
+              <p className="text-[13px] font-bold uppercase tracking-[4px] text-[#096dd9]">PORTAL ACCESS</p>
+              <h2 className="text-4xl font-black leading-tight tracking-normal text-[#10233f]">账号登录</h2>
+            </div>
+
+            <form onSubmit={handleSubmit} className="mt-8 grid gap-5">
               <label className="grid gap-2">
-                <span className="text-sm font-semibold text-muted">账号</span>
-                <span className="flex h-12 items-center gap-3 rounded-lg border border-border bg-surface-soft px-4 transition focus-within:border-brand-500 focus-within:bg-surface focus-within:ring-4 focus-within:ring-brand-200">
-                  <UserRound className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+                <span className="text-sm font-bold text-[#10233f]">账号</span>
+                <span className="flex h-[50px] items-center gap-3 rounded-[9px] border border-[#d8e4f2] bg-white px-4 text-[#10233f] transition focus-within:border-[#1677ff] focus-within:ring-[3px] focus-within:ring-[rgba(22,119,255,0.12)]">
+                  <UserRound className="h-5 w-5 shrink-0 text-[#71839b]" aria-hidden="true" />
                   <input
-                    className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted"
+                    className="min-h-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-base text-[#10233f] shadow-none outline-none placeholder:text-[#7c8da3] focus:border-0 focus:shadow-none"
                     value={account}
                     onChange={(event) => setAccount(event.target.value)}
                     autoComplete="username"
@@ -204,11 +339,11 @@ export function LoginPage({ navigate }: { navigate: NavigateFn }) {
               </label>
 
               <label className="grid gap-2">
-                <span className="text-sm font-semibold text-muted">密码</span>
-                <span className="flex h-12 items-center gap-3 rounded-lg border border-border bg-surface-soft px-4 transition focus-within:border-brand-500 focus-within:bg-surface focus-within:ring-4 focus-within:ring-brand-200">
-                  <LockKeyhole className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+                <span className="text-sm font-bold text-[#10233f]">密码</span>
+                <span className="flex h-[50px] items-center gap-3 rounded-[9px] border border-[#d8e4f2] bg-white px-4 text-[#10233f] transition focus-within:border-[#1677ff] focus-within:ring-[3px] focus-within:ring-[rgba(22,119,255,0.12)]">
+                  <LockKeyhole className="h-5 w-5 shrink-0 text-[#71839b]" aria-hidden="true" />
                   <input
-                    className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted"
+                    className="min-h-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-base text-[#10233f] shadow-none outline-none placeholder:text-[#7c8da3] focus:border-0 focus:shadow-none"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     type="password"
@@ -218,6 +353,23 @@ export function LoginPage({ navigate }: { navigate: NavigateFn }) {
                 </span>
               </label>
 
+              <div className="flex items-center justify-between gap-4 text-sm font-semibold">
+                {/* <label className="inline-flex min-w-0 items-center gap-2 text-[#53657d]">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-[#d8e4f2] p-0 accent-[#096dd9] focus:shadow-none"
+                    defaultChecked
+                  />
+                  <span className="truncate">记住账号</span>
+                </label>
+                <button
+                  type="button"
+                  className="shrink-0 text-[#096dd9] transition hover:text-[#075bb8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(22,119,255,0.18)]"
+                >
+                  忘记密码？
+                </button> */}
+              </div>
+
               {formError || error ? (
                 <p className="rounded-lg border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-4 py-3 text-sm font-medium text-danger" aria-live="polite">
                   {formError || error}
@@ -226,7 +378,7 @@ export function LoginPage({ navigate }: { navigate: NavigateFn }) {
 
               <button
                 type="submit"
-                className="inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-lg bg-brand-500 px-5 text-base font-bold text-white transition hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-200 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="mt-2 inline-flex h-[54px] min-w-0 items-center justify-center gap-3 rounded-[9px] bg-[linear-gradient(90deg,#0565f2_0%,#0a8df5_100%)] px-5 text-base font-bold text-white shadow-[0_14px_28px_rgba(0,101,242,0.22)] transition hover:-translate-y-px hover:shadow-[0_16px_34px_rgba(0,101,242,0.28)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(22,119,255,0.16)] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
                 disabled={isLoading}
               >
                 <span className="truncate">{isLoading ? "正在登录..." : "进入工作台"}</span>
