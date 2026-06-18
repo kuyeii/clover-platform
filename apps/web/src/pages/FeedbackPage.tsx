@@ -339,55 +339,56 @@ export function FeedbackPage() {
 
   return (
     <>
-      <div className="mx-auto min-h-full w-full max-w-7xl space-y-5 px-4 py-5 pb-10 md:px-8 md:py-6 md:pb-12">
-        <section className="px-1">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-600">
-                <ShieldCheck className="h-4 w-4" />
-                邮件工单与愿望单
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-5 pb-10 md:px-8 md:py-6 md:pb-12">
+          <section className="px-1">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-3">
+                <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-600">
+                  <ShieldCheck className="h-4 w-4" />
+                  邮件工单与愿望单
+                </div>
+                <h1 className="text-3xl font-semibold text-slate-950">用户反馈</h1>
+                <p className="max-w-3xl text-sm leading-6 text-slate-600">
+                  提交后将通过邮件发送至后台配置的邮箱。请尽量在一条反馈中汇总相关信息，便于我们处理。
+                </p>
               </div>
-              <h1 className="text-3xl font-semibold text-slate-950">用户反馈</h1>
-              <p className="max-w-3xl text-sm leading-6 text-slate-600">
-                提交后将通过邮件发送至后台配置的邮箱。请尽量在一条反馈中汇总相关信息，便于我们处理。
-              </p>
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+                <MessageSquarePlus className="h-7 w-7" />
+              </div>
             </div>
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
-              <MessageSquarePlus className="h-7 w-7" />
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <aside className="w-full shrink-0 rounded-xl border border-border bg-white p-4 shadow-none lg:w-56 xl:w-64">
-            <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">反馈类型</p>
-            <nav className="flex flex-col gap-2">
-              {sidebarItems.map((item) => {
-                const active = mode === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setMode(item.id)}
-                    className={[
-                      "relative rounded-2xl border px-4 py-3 text-left transition-colors",
-                      active
-                        ? "border-brand-200 bg-brand-50 text-brand-900"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                    ].join(" ")}
-                  >
-                    {active ? (
-                      <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-brand-500" />
-                    ) : null}
-                    <span className="block pl-2 text-sm font-semibold">{item.label}</span>
-                    <span className="mt-1 block pl-2 text-xs text-slate-500">{item.description}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          </aside>
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+            <aside className="w-full shrink-0 rounded-xl border border-border bg-white p-4 shadow-none lg:w-56 xl:w-64">
+              <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">反馈类型</p>
+              <nav className="flex flex-col gap-2">
+                {sidebarItems.map((item) => {
+                  const active = mode === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setMode(item.id)}
+                      className={[
+                        "relative rounded-2xl border px-4 py-3 text-left transition-colors",
+                        active
+                          ? "border-brand-200 bg-brand-50 text-brand-900"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                      ].join(" ")}
+                    >
+                      {active ? (
+                        <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-brand-500" />
+                      ) : null}
+                      <span className="block pl-2 text-sm font-semibold">{item.label}</span>
+                      <span className="mt-1 block pl-2 text-xs text-slate-500">{item.description}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </aside>
 
-          <section className="min-w-0 flex-1 rounded-xl border border-border bg-white p-5 shadow-none md:p-7">
+            <section className="min-w-0 flex-1 rounded-xl border border-border bg-white p-5 shadow-none md:p-7">
             <div className="mb-6 border-b border-slate-100 pb-5">
               <h2 className="text-xl font-semibold text-slate-950">{pageTitle}</h2>
               <p className="mt-1 text-sm text-slate-500">标有 * 的字段为必填。</p>
@@ -524,6 +525,7 @@ export function FeedbackPage() {
               </form>
             )}
           </section>
+          </div>
         </div>
       </div>
 
