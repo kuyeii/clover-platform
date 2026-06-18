@@ -40,6 +40,10 @@ class ApiSettings:
     feedback_rate_limit_window_seconds: int = 24 * 60 * 60
     feedback_captcha_ttl_seconds: int = 10 * 60
     feedback_captcha_hint: str = "建议将问题汇总后发送"
+    cors_allow_origin_regex: str = os.getenv(
+        "PLATFORM_CORS_ALLOW_ORIGIN_REGEX",
+        r"https?://(localhost|127\.0\.0\.1|arkmind\.local|10\.88\.21\.93)(:\d+)?",
+    )
     feedback_allowed_extensions: frozenset[str] = frozenset(
         {
             ".png",

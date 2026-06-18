@@ -269,7 +269,15 @@ export function getPlatformCoreApiBaseUrl() {
 export function getWebSocketBaseUrl() {
   const explicit = import.meta.env.VITE_WS_BASE_URL;
   if (explicit) {
-    return trimTrailingSlash(String(explicit));
+    const value = trimTrailingSlash(String(explicit));
+    if (/^wss?:\/\//i.test(value)) {
+      return value;
+    }
+    if (value.startsWith("/") && typeof window !== "undefined") {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.host}${value}`;
+    }
+    return value;
   }
 
   if (/^https?:\/\//i.test(getApiBaseUrl())) {

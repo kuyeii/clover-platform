@@ -65,6 +65,7 @@ from app.services.bid_document_forge_service import (
     create_document_forge,
 )
 from app.services.bid_document_forge_engine.markdown_norm import normalize_generated_markdown
+from app.services.contract_review_engine.document_ingest import DocumentIngestError, normalize_upload_to_docx
 from app.services.bid_outline_service import (
     build_outline_generation_bundle,
     build_seeded_outline_sections,
@@ -2559,22 +2560,30 @@ async def start_extract_task_payload(
     async def run_task() -> None:
         try:
             task_manager.update_stage(task_id, "解析文档结构")
+            effective_filename = filename
+            effective_content_bytes = content_bytes
+            effective_suffix = suffix
+            if suffix == ".doc":
+                effective_content_bytes = _normalize_bid_doc_upload_to_docx(content_bytes, filename)
+                effective_filename = f"{Path(filename).stem or 'source'}.docx"
+                effective_suffix = ".docx"
+
             pdf_url = ""
-            if suffix == ".pdf":
-                pdf_url = _cache_pdf_file_native(cache_id, content_bytes)
-                _extract_pdf_pages_text_native(content_bytes)
-            elif suffix in {".docx", ".doc"}:
+            if effective_suffix == ".pdf":
+                pdf_url = _cache_pdf_file_native(cache_id, effective_content_bytes)
+                _extract_pdf_pages_text_native(effective_content_bytes)
+            elif effective_suffix == ".docx":
                 try:
-                    pdf_url = _convert_to_pdf_and_cache_native(cache_id, content_bytes, filename)
+                    pdf_url = _convert_to_pdf_and_cache_native(cache_id, effective_content_bytes, effective_filename)
                 except Exception as exc:
                     logger.warning("DOC/DOCX 转 PDF 失败: %s", exc)
 
             raw_document, raw_image_map = _extract_raw_text_with_images_native(
-                filename,
-                content_bytes,
+                effective_filename,
+                effective_content_bytes,
                 use_vision_parsing=use_vision_parsing,
             )
-            if str(raw_document).startswith("["):
+            if suffix == ".doc" and str(raw_document).startswith("[无法解析旧版 .doc 文件"):
                 raise PlatformError(
                     code="TASK_START_FAILED",
                     message="旧版 .doc 文件无法自动解析，请将文件另存为 .docx 后重新上传。",
@@ -2582,13 +2591,12 @@ async def start_extract_task_payload(
                 )
 
             text_for_dify = str(raw_document or "")
-            if suffix in {".docx", ".doc"}:
+            if effective_suffix == ".docx":
                 try:
-                    loc_text, _loc_map, doc_blocks = _extract_docx_with_locators_native(content_bytes)
+                    loc_text, _loc_map, doc_blocks = _extract_docx_with_locators_native(effective_content_bytes)
                     if doc_blocks:
                         _persist_project_doc_blocks_snapshot(project_id=cache_id, doc_blocks=doc_blocks)
-                    if suffix == ".docx":
-                        _persist_docx_cache(cache_id, content_bytes)
+                    _persist_docx_cache(cache_id, effective_content_bytes)
                     if loc_text:
                         text_for_dify = loc_text
                 except Exception as exc:
@@ -7890,6 +7898,27 @@ def _persist_extract_raw_document(project_id: str, text_for_dify: str) -> None:
     _persist_raw_document(project_id, text_for_dify[:300000])
 
 
+def _normalize_bid_doc_upload_to_docx(content_bytes: bytes, filename: str) -> bytes:
+    """将旧版 .doc 招标文件转换为 DOCX 字节，复用合同审查的 LibreOffice 归一化能力。"""
+    try:
+        with tempfile.TemporaryDirectory(prefix="bid-doc-ingest-") as temp_dir:
+            work_dir = Path(temp_dir)
+            input_path = work_dir / "source.doc"
+            input_path.write_bytes(content_bytes)
+            ingest_result = normalize_upload_to_docx(input_path, work_dir / "normalized")
+            return ingest_result.working_docx_path.read_bytes()
+    except DocumentIngestError as exc:
+        logger.warning("标书 .doc 转 DOCX 失败: filename=%s code=%s detail=%s", filename, exc.code, exc.detail)
+        raise PlatformError(
+            code="INVALID_REQUEST",
+            message=exc.user_message or "当前服务暂不支持 .doc 文件转换，请上传 .docx 文件后重试。",
+            status_code=400,
+        ) from exc
+    except OSError as exc:
+        logger.warning("标书 .doc 转 DOCX 临时文件处理失败: filename=%s error=%s", filename, exc)
+        raise PlatformError(code="BUSINESS_DIRECT_ERROR", message=".doc 文件转换失败，请上传 .docx 文件后重试。", status_code=500) from exc
+
+
 def _prepare_extract_document(
     *,
     filename: str,
@@ -7901,24 +7930,32 @@ def _prepare_extract_document(
     task_id: str = "",
 ) -> dict[str, Any]:
     suffix = Path(filename).suffix.lower()
+    effective_filename = filename
+    effective_content_bytes = content_bytes
+    effective_suffix = suffix
+    if suffix == ".doc":
+        effective_content_bytes = _normalize_bid_doc_upload_to_docx(content_bytes, filename)
+        effective_filename = f"{Path(filename).stem or 'source'}.docx"
+        effective_suffix = ".docx"
+
     pdf_url = ""
     pages_text: list[dict[str, Any]] = []
     cache_id = project_id or uuid.uuid4().hex[:12]
-    if suffix == ".pdf":
-        pdf_url = _cache_pdf_file_native(cache_id, content_bytes)
-        pages_text = _extract_pdf_pages_text_native(content_bytes)
-    elif suffix in {".docx", ".doc"}:
+    if effective_suffix == ".pdf":
+        pdf_url = _cache_pdf_file_native(cache_id, effective_content_bytes)
+        pages_text = _extract_pdf_pages_text_native(effective_content_bytes)
+    elif effective_suffix == ".docx":
         try:
-            pdf_url = _convert_to_pdf_and_cache_native(cache_id, content_bytes, filename)
+            pdf_url = _convert_to_pdf_and_cache_native(cache_id, effective_content_bytes, effective_filename)
         except Exception as exc:
             logger.warning("DOC/DOCX 转 PDF 失败: %s", exc)
 
     raw_document, raw_image_map = _extract_raw_text_with_images_native(
-        filename,
-        content_bytes,
+        effective_filename,
+        effective_content_bytes,
         use_vision_parsing=use_vision_parsing,
     )
-    if raw_document.startswith("["):
+    if suffix == ".doc" and raw_document.startswith("[无法解析旧版 .doc 文件"):
         raise PlatformError(
             code="INVALID_REQUEST",
             message="旧版 .doc 文件无法自动解析，请将文件另存为 .docx 后重新上传。",
@@ -7926,13 +7963,12 @@ def _prepare_extract_document(
         )
 
     text_for_dify = raw_document
-    if suffix in {".docx", ".doc"}:
+    if effective_suffix == ".docx":
         try:
-            loc_text, _loc_map, doc_blocks = _extract_docx_with_locators_native(content_bytes)
+            loc_text, _loc_map, doc_blocks = _extract_docx_with_locators_native(effective_content_bytes)
             if doc_blocks:
                 _persist_project_doc_blocks_snapshot(project_id=cache_id, doc_blocks=doc_blocks)
-            if suffix == ".docx":
-                _persist_docx_cache(cache_id, content_bytes)
+            _persist_docx_cache(cache_id, effective_content_bytes)
             if loc_text:
                 text_for_dify = loc_text
         except Exception as exc:

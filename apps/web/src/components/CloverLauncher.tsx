@@ -2,8 +2,10 @@ import { motion } from "framer-motion";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { NavigateFn } from "../routes";
+import { useAppUsage } from "../shared/runtime/AppUsageProvider";
 import type { ToolkitApp } from "../shared/types/app";
 import { AppCard } from "./AppCard";
+import { AppEntryConfirmDialog } from "./AppEntryConfirmDialog";
 
 interface CloverLauncherProps {
   apps: ToolkitApp[];
@@ -116,6 +118,8 @@ function BidReferenceSitesCard({
 
 export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
   const [pageIndex, setPageIndex] = useState(0);
+  const [pendingOccupiedApp, setPendingOccupiedApp] = useState<ToolkitApp | null>(null);
+  const { enterApp, getAppUsage } = useAppUsage();
   const pages = useMemo(() => {
     const appById = new Map(apps.map((app) => [app.id, app]));
     return pageAppIds.map((ids, index) => {
@@ -127,6 +131,7 @@ export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
     });
   }, [apps]);
   const activeItems = pages[pageIndex] ?? pages[0] ?? [];
+  const pendingUsage = pendingOccupiedApp ? getAppUsage(pendingOccupiedApp.id) : null;
 
   const goToPage = (nextPageIndex: number) => {
     if (nextPageIndex === pageIndex) {
@@ -143,6 +148,17 @@ export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
   const goToNextPage = () => {
     const nextPageIndex = pageIndex === pages.length - 1 ? 0 : pageIndex + 1;
     goToPage(nextPageIndex);
+  };
+
+  const confirmOccupiedEntry = () => {
+    if (!pendingOccupiedApp) {
+      return;
+    }
+    const appId = pendingOccupiedApp.id;
+    setPendingOccupiedApp(null);
+    enterApp(appId, { confirmedConflict: true })
+      .then(() => navigate(`/apps/${appId}`))
+      .catch(() => undefined);
   };
 
   return (
@@ -185,7 +201,12 @@ export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
                   className="h-full min-h-0"
                 >
                   {item.type === "app" ? (
-                    <AppCard app={item.app} navigate={navigate} ctaLabelOverride="进入应用" />
+                    <AppCard
+                      app={item.app}
+                      navigate={navigate}
+                      ctaLabelOverride="进入应用"
+                      onRequestOccupiedEntry={setPendingOccupiedApp}
+                    />
                   ) : (
                     <BidReferenceSitesCard item={item} navigate={navigate} />
                   )}
@@ -235,6 +256,15 @@ export function CloverLauncher({ apps, navigate }: CloverLauncherProps) {
           </button>
         </div>
       </div>
+
+      {pendingOccupiedApp ? (
+        <AppEntryConfirmDialog
+          app={pendingOccupiedApp}
+          userNames={pendingUsage?.inUseByOthers ? pendingUsage.otherUserNames : pendingUsage?.userNames ?? []}
+          onCancel={() => setPendingOccupiedApp(null)}
+          onConfirm={confirmOccupiedEntry}
+        />
+      ) : null}
     </section>
   );
 }

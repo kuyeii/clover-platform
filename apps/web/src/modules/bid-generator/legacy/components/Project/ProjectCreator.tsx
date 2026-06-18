@@ -156,7 +156,7 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
                                         <Upload className="w-7 h-7 text-gray-400" />
                                     </div>
                                     <p className="text-base font-semibold text-gray-700">拖拽文件至此或点击导入</p>
-                                    <p className="text-sm text-gray-400">支持 .docx · .pdf · .md 格式，单文件不超过 50MB</p>
+                                    <p className="text-sm text-gray-400">支持 .doc · .docx · .pdf · .md 格式，单文件不超过 50MB</p>
                                 </div>
                             )}
                         </label>

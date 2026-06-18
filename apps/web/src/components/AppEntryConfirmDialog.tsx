@@ -1,4 +1,5 @@
 import { AlertTriangle, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import type { ToolkitApp } from "../shared/types/app";
 
 interface AppEntryConfirmDialogProps {
@@ -16,7 +17,7 @@ export function AppEntryConfirmDialog({
 }: AppEntryConfirmDialogProps) {
   const userLabel = userNames.join("、") || "其他";
 
-  return (
+  const dialog = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
       <section
         role="dialog"
@@ -74,4 +75,10 @@ export function AppEntryConfirmDialog({
       </section>
     </div>
   );
+
+  if (typeof document === "undefined") {
+    return dialog;
+  }
+
+  return createPortal(dialog, document.body);
 }

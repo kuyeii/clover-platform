@@ -126,8 +126,12 @@ def _inject_apps_web_platform_env(env: dict[str, str], port_plan: dict[str, Any]
         return
 
     ws_url = backend_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
-    env.setdefault("VITE_API_BASE_URL", f"{backend_url}/api/v1")
-    env.setdefault("VITE_WS_BASE_URL", f"{ws_url}/ws/core")
+    # 浏览器侧保持同源相对路径，由 Vite 代理转发到真实后端。
+    # 否则局域网客户端会把 127.0.0.1 解析成自己的机器，导致登录 fetch 网络错误。
+    env.setdefault("VITE_API_BASE_URL", "/api/v1")
+    env.setdefault("VITE_WS_BASE_URL", "/ws/core")
+    env.setdefault("VITE_API_PROXY_TARGET", backend_url)
+    env.setdefault("VITE_WS_PROXY_TARGET", ws_url)
     _inject_bid_generator_diagram_vite_env(env)
 
 

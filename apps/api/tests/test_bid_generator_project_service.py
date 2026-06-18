@@ -1944,6 +1944,75 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertEqual(task_manager.result["pdf_url"], "/api/projects/pdf/proj-1")
         self.assertEqual(task_manager.result["image_map"], {"img1": {"name": "示意图"}})
 
+    def test_start_extract_task_payload_normalizes_doc_before_task_pipeline(self) -> None:
+        upload = SimpleNamespace(filename="legacy.doc")
+        upload.read = AsyncMock(return_value=b"legacy-doc-bytes")
+        converted_docx = b"converted-docx-bytes"
+
+        class FakeTaskManager:
+            def __init__(self) -> None:
+                self.result = None
+                self.async_task = None
+
+            def create_task(self, task_type: str, project_id: str) -> str:
+                return "task-extract-doc"
+
+            def update_stage(self, task_id: str, stage: str) -> None:
+                return None
+
+            def set_result(self, task_id: str, payload: dict[str, object]) -> None:
+                self.result = payload
+
+            def set_async_task(self, task_id: str, task: object) -> None:
+                self.async_task = task
+
+            def set_error(self, task_id: str, message: str) -> None:
+                raise AssertionError(f"unexpected set_error: {message}")
+
+            def set_cancelled(self, task_id: str) -> None:
+                raise AssertionError("unexpected cancel")
+
+            def get_task(self, task_id: str) -> SimpleNamespace:
+                return SimpleNamespace(status="done", current_stage="预处理完成")
+
+        def fake_normalize(upload_path: Path, run_dir: Path) -> SimpleNamespace:
+            self.assertEqual(Path(upload_path).suffix, ".doc")
+            output_path = Path(run_dir) / "source.docx"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(converted_docx)
+            return SimpleNamespace(working_docx_path=output_path)
+
+        task_manager = FakeTaskManager()
+
+        with (
+            patch.object(service, "_task_manager", return_value=task_manager),
+            patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
+            patch.object(service, "normalize_upload_to_docx", side_effect=fake_normalize),
+            patch.object(service, "_convert_to_pdf_and_cache_native", return_value="/api/projects/pdf/proj-doc") as convert_pdf,
+            patch.object(service, "_extract_raw_text_with_images_native", return_value=("原文内容", {})) as extract_raw,
+            patch.object(service, "_extract_docx_with_locators_native", return_value=("定位原文", {}, [])) as extract_locators,
+            patch.object(service, "_persist_docx_cache", return_value=None) as persist_docx,
+            patch.object(service, "_persist_project_runtime", return_value=None),
+            patch.object(service, "_sync_project_runtime_from_task", return_value=None),
+            patch.object(service, "_persist_raw_document", return_value=None),
+        ):
+            payload = _run_async(
+                service.start_extract_task_payload(
+                    upload,
+                    project_name="项目一",
+                    project_id="proj-doc",
+                    enable_desensitize=False,
+                )
+            )
+            _run_async(_await_task(task_manager.async_task))
+
+        self.assertEqual(payload["task_id"], "task-extract-doc")
+        convert_pdf.assert_called_once_with("proj-doc", converted_docx, "legacy.docx")
+        extract_raw.assert_called_once_with("legacy.docx", converted_docx, use_vision_parsing=False)
+        extract_locators.assert_called_once_with(converted_docx)
+        persist_docx.assert_called_once_with("proj-doc", converted_docx)
+        self.assertEqual(task_manager.result["raw_document"], "定位原文")
+
     def test_start_extract_task_payload_uses_unified_pipt_global_redaction(self) -> None:
         upload = SimpleNamespace(filename="demo.docx")
         upload.read = AsyncMock(return_value=b"docx-bytes")
@@ -2016,6 +2085,65 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             task_manager.result["mapping_table"],
             {"@@PIPT:v1:e000001:k11111111@@": "张三"},
         )
+
+    def test_prepare_extract_document_normalizes_doc_before_docx_pipeline(self) -> None:
+        converted_docx = b"converted-docx-bytes"
+
+        def fake_normalize(upload_path: Path, run_dir: Path) -> SimpleNamespace:
+            self.assertEqual(Path(upload_path).suffix, ".doc")
+            output_path = Path(run_dir) / "source.docx"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(converted_docx)
+            return SimpleNamespace(working_docx_path=output_path)
+
+        with (
+            patch.object(service, "normalize_upload_to_docx", side_effect=fake_normalize),
+            patch.object(service, "_convert_to_pdf_and_cache_native", return_value="/api/projects/pdf/proj-doc") as convert_pdf,
+            patch.object(service, "_extract_raw_text_with_images_native", return_value=("原文内容", {"img1": {"name": "图1"}})) as extract_raw,
+            patch.object(service, "_extract_docx_with_locators_native", return_value=("定位原文", {}, [{"block_id": "B1"}])) as extract_locators,
+            patch.object(service, "_persist_project_doc_blocks_snapshot", return_value=None) as persist_blocks,
+            patch.object(service, "_persist_docx_cache", return_value=None) as persist_docx,
+        ):
+            payload = service._prepare_extract_document(
+                filename="demo.doc",
+                content_bytes=b"legacy-doc-bytes",
+                project_id="proj-doc",
+                enable_desensitize=False,
+                desensitize_profile="tender",
+                use_vision_parsing=True,
+            )
+
+        convert_pdf.assert_called_once_with("proj-doc", converted_docx, "demo.docx")
+        extract_raw.assert_called_once_with("demo.docx", converted_docx, use_vision_parsing=True)
+        extract_locators.assert_called_once_with(converted_docx)
+        persist_blocks.assert_called_once_with(project_id="proj-doc", doc_blocks=[{"block_id": "B1"}])
+        persist_docx.assert_called_once_with("proj-doc", converted_docx)
+        self.assertEqual(payload["text_for_dify"], "定位原文")
+        self.assertEqual(payload["pdf_url"], "/api/projects/pdf/proj-doc")
+        self.assertEqual(payload["raw_image_map"], {"img1": {"name": "图1"}})
+
+    def test_prepare_extract_document_returns_readable_error_when_doc_converter_missing(self) -> None:
+        ingest_error = service.DocumentIngestError(
+            code="CONVERTER_NOT_AVAILABLE",
+            title="文件转换组件未安装",
+            user_message="当前服务暂不支持 .doc 文件转换，请联系管理员安装 LibreOffice 后再试，或上传 .docx 文件。",
+            detail="soffice not found",
+        )
+
+        with patch.object(service, "normalize_upload_to_docx", side_effect=ingest_error):
+            with self.assertRaises(service.PlatformError) as ctx:
+                service._prepare_extract_document(
+                    filename="demo.doc",
+                    content_bytes=b"legacy-doc-bytes",
+                    project_id="proj-doc",
+                    enable_desensitize=False,
+                    desensitize_profile="tender",
+                    use_vision_parsing=False,
+                )
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(ctx.exception.code, "INVALID_REQUEST")
+        self.assertIn("LibreOffice", ctx.exception.message)
 
     def test_start_analyze_task_payload_runs_natively_and_sets_result(self) -> None:
         class FakeTaskManager:
