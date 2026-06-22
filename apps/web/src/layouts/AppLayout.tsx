@@ -128,10 +128,12 @@ export function AppLayout({ children, currentPath, lastActiveModuleCode, navigat
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const isLogin = currentPath === "/login";
   const activeModule = getActiveModule(currentPath);
-  const lastActiveModule = !activeModule && lastActiveModuleCode
+  const activeWorkspaceFeature = getActiveWorkspaceFeature(currentPath);
+  const isDashboardRoute = currentPath === "/" || currentPath === "/workspace" || currentPath === "/dashboard";
+  // 工作台及其功能页必须回到自身文案，避免 keep-alive 记忆污染主导航。
+  const lastActiveModule = !activeModule && !activeWorkspaceFeature && !isDashboardRoute && lastActiveModuleCode
     ? moduleEntries.find((entry) => entry.code === lastActiveModuleCode)
     : undefined;
-  const activeWorkspaceFeature = getActiveWorkspaceFeature(currentPath);
   const isWorkspaceFeatureView = Boolean(activeModule || activeWorkspaceFeature);
   const primaryModule = activeModule || lastActiveModule;
   const primaryNavTarget = primaryModule
@@ -143,7 +145,6 @@ export function AppLayout({ children, currentPath, lastActiveModuleCode, navigat
   const userDisplayName = currentUser?.name ?? currentUser?.account ?? "未登录";
   const navItemWidthClass = "w-11 sm:w-12 md:w-14 xl:w-36 2xl:w-40";
   const activeNavItemWidthClass = "w-28 sm:w-32 md:w-36 xl:w-36 2xl:w-40";
-  const isDashboardRoute = currentPath === "/" || currentPath === "/workspace" || currentPath === "/dashboard";
   const shouldShowPrimaryIndicator = isDashboardRoute || isWorkspaceFeatureView;
 
   const handleLogout = () => {
