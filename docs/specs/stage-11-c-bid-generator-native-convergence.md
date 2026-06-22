@@ -7,7 +7,7 @@ The bid generator is exposed through the unified platform and has converged to n
 Current evidence:
 
 - `apps/api/app/api/bid_generator_proxy.py` no longer mounts `legacy/bid-generator/pipt-flask/app/api_lite` routers by default. Public bid-generator paths are declared in `apps/api`; legacy router/init/preload entrypoints have been removed from the bid service.
-- `apps/web/src/modules/bid-generator/BidGeneratorPage.tsx` now natively embeds the migrated legacy React workbench through `legacy/LegacyBidGeneratorRuntime.tsx`; it is no longer loaded through a standalone legacy frontend iframe. The original workbench UI and interaction model are intentionally preserved.
+- `apps/web/src/modules/bid-generator/BidGeneratorPage.tsx` now natively embeds the migrated React workbench through `workbench/BidGeneratorWorkbenchRuntime.tsx`; it is no longer loaded through a standalone legacy frontend iframe. The original workbench UI and interaction model are intentionally preserved.
 - `apps/api/app/services/pipt_gateway_service.py` already provides a platform PIPT gateway. Strong preprocessing now calls `apps/api/app/services/pipt_recognition_adapter.py`, which uses the native `apps/api/app/services/pipt_engine` implementation.
 - RAG knowledge privacy recognition now also calls `apps/api/app/services/pipt_recognition_adapter.py`; it no longer imports bid-generator legacy runtime helpers or `app.api_lite.routes.get_engine` directly.
 - `apps/api/app/services/bid_workflow_execution_adapter.py` now runs `config/template/generate` through the unified backend `DIFY_WORKFLOW_STRUCTURE_GENERATOR` workflow instead of the legacy Dify bridge; export and forge response assembly have moved into `bid_generator_service.py`.
@@ -107,20 +107,20 @@ Goal: move from iframe loading to native `apps/web` embedding while preserving t
 
 Current status:
 
-- `BidGeneratorPage.tsx` is a thin native entrypoint that lazy-loads `legacy/LegacyBidGeneratorRuntime.tsx`.
-- `LegacyBidGeneratorRuntime.tsx` wraps the migrated workbench with `HashRouter` and imports the original workbench stylesheet.
-- The primary route may render `./legacy/App` through this runtime because the requirement is native embedding, not a visual rewrite.
-- Migrated workbench components no longer call `fetch`, `axios`, or a low-level legacy `api` client directly. API access is routed through module services and the unified `bidGeneratorApi.ts` Service Layer; the obsolete `legacy/services/api.ts` shim has been removed.
-- `legacy/services/projectService.ts` no longer calls `bidGeneratorFetch` directly. Project patch persistence, extract/analyze progress SSE, task cancel, content/rewrite/group/review task start and status polling, single-node analysis SSE, and source DOCX access now go through `apps/web/src/modules/bid-generator/services/bidGeneratorApi.ts`.
-- `legacy/services/diagramService.ts` no longer calls `bidGeneratorFetch` directly. Diagram artifact reads, diagram batch task start, task status, and cancel now go through `bidGeneratorApi.ts`; the service keeps only Mermaid rendering fallback and legacy workbench result shaping.
-- `legacy/services/configService.ts` now uses `bidGeneratorApi.ts` for template/global config read-write and keeps only legacy UI type mapping.
-- `legacy/services/protectedAssetUrl.ts` now uses `bidGeneratorApi.ts` for authenticated blob reads; `legacy/services/api.ts` has been removed because it had no remaining callers.
+- `BidGeneratorPage.tsx` is a thin native entrypoint that lazy-loads `workbench/BidGeneratorWorkbenchRuntime.tsx`.
+- `BidGeneratorWorkbenchRuntime.tsx` wraps the migrated workbench with `HashRouter` and imports the original workbench stylesheet.
+- The primary route may render `./workbench/App` through this runtime because the requirement is native embedding, not a visual rewrite.
+- Migrated workbench components no longer call `fetch`, `axios`, or a low-level legacy `api` client directly. API access is routed through module services and the unified `bidGeneratorApi.ts` Service Layer; the obsolete workbench-local `services/api.ts` shim has been removed.
+- `workbench/services/projectService.ts` no longer calls `bidGeneratorFetch` directly. Project patch persistence, extract/analyze progress SSE, task cancel, content/rewrite/group/review task start and status polling, single-node analysis SSE, and source DOCX access now go through `apps/web/src/modules/bid-generator/services/bidGeneratorApi.ts`.
+- `workbench/services/diagramService.ts` no longer calls `bidGeneratorFetch` directly. Diagram artifact reads, diagram batch task start, task status, and cancel now go through `bidGeneratorApi.ts`; the service keeps only Mermaid rendering fallback and legacy workbench result shaping.
+- `workbench/services/configService.ts` now uses `bidGeneratorApi.ts` for template/global config read-write and keeps only legacy UI type mapping.
+- `workbench/services/protectedAssetUrl.ts` now uses `bidGeneratorApi.ts` for authenticated blob reads; the obsolete workbench-local `services/api.ts` has been removed because it had no remaining callers.
 - Knowledge sync trigger controls were removed from the bid-generator workbench because synchronization is owned by the unified knowledge base entrypoint. The bid workbench keeps status/document visibility only.
 - The standalone legacy frontend remains rollback/reference only.
 
 Remaining frontend service boundary note:
 
-- `legacy/services/apiBase.ts` remains the low-level compatibility bridge for code paths that need normalized bid-generator URLs, authenticated raw `Response` objects, or local blob URL helpers.
+- `workbench/services/apiBase.ts` remains the low-level compatibility bridge for code paths that need normalized bid-generator URLs, authenticated raw `Response` objects, or local blob URL helpers.
 - It is kept as a service-layer compatibility utility, not as component-level API access.
 
 Rules:

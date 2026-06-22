@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 
-const LegacyBidGeneratorRuntime = lazy(() => import("./legacy/LegacyBidGeneratorRuntime"));
+const BidGeneratorWorkbenchRuntime = lazy(() => import("./workbench/BidGeneratorWorkbenchRuntime"));
 
 function LegacyLoading() {
   return (
@@ -16,9 +16,9 @@ function LegacyLoading() {
 
 export function BidGeneratorPage() {
   return (
-    <div className="legacy-app-viewport bid-generator-legacy-viewport">
+    <div className="bid-generator-workbench-viewport">
       <Suspense fallback={<LegacyLoading />}>
-        <LegacyBidGeneratorRuntime />
+        <BidGeneratorWorkbenchRuntime />
       </Suspense>
     </div>
   );
