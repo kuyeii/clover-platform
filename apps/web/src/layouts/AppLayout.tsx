@@ -23,6 +23,7 @@ import type { PortalModule } from "../shared/types/portal";
 type AppLayoutProps = {
   children: ReactNode;
   currentPath: string;
+  lastActiveModuleCode?: PortalModule["code"] | string | null;
   navigate: NavigateFn;
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
 };
@@ -121,20 +122,24 @@ function ReturnOverviewButton({
   );
 }
 
-export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLayoutProps) {
+export function AppLayout({ children, currentPath, lastActiveModuleCode, navigate, onNavigate }: AppLayoutProps) {
   const { currentUser, isAuthenticated, logout } = useAuth();
   const { leaveApp } = useAppUsage();
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const isLogin = currentPath === "/login";
   const activeModule = getActiveModule(currentPath);
+  const lastActiveModule = !activeModule && lastActiveModuleCode
+    ? moduleEntries.find((entry) => entry.code === lastActiveModuleCode)
+    : undefined;
   const activeWorkspaceFeature = getActiveWorkspaceFeature(currentPath);
   const isWorkspaceFeatureView = Boolean(activeModule || activeWorkspaceFeature);
-  const primaryNavTarget = activeModule
-    ? legacyAppRoutes[activeModule.code]
+  const primaryModule = activeModule || lastActiveModule;
+  const primaryNavTarget = primaryModule
+    ? legacyAppRoutes[primaryModule.code]
     : activeWorkspaceFeature
       ? activeWorkspaceFeature.path
       : "/workspace";
-  const primaryNavLabel = activeModule?.name ?? activeWorkspaceFeature?.label ?? "工作台";
+  const primaryNavLabel = primaryModule?.name ?? activeWorkspaceFeature?.label ?? "工作台";
   const userDisplayName = currentUser?.name ?? currentUser?.account ?? "未登录";
   const navItemWidthClass = "w-11 sm:w-12 md:w-14 xl:w-36 2xl:w-40";
   const activeNavItemWidthClass = "w-28 sm:w-32 md:w-36 xl:w-36 2xl:w-40";
@@ -224,7 +229,7 @@ export function AppLayout({ children, currentPath, navigate, onNavigate }: AppLa
                       "inline-flex min-w-0 items-center justify-center gap-3 transition-colors",
                       shouldShowPrimaryIndicator
                         ? "text-brand-500"
-                        : activeModule
+                        : primaryModule
                           ? "text-slate-700 hover:text-slate-900"
                           : "text-slate-600 hover:text-slate-900",
                     ].join(" ")}

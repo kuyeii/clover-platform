@@ -25,6 +25,7 @@ export type AppRoute = {
   path: string;
   label: string;
   public?: boolean;
+  keepAliveKey?: string;
   render: (context: RouteRenderContext) => ReactElement;
 };
 
@@ -91,56 +92,67 @@ export const appRoutes: AppRoute[] = [
   {
     path: "/apps/competitor-analysis",
     label: "企业竞品分析",
+    keepAliveKey: "competitor-analysis",
     render: (context) => protectedPage(context, <CompetitorAnalysisPage />),
   },
   {
     path: "/modules/competitor-analysis",
     label: "竞对分析",
+    keepAliveKey: "competitor-analysis",
     render: (context) => protectedPage(context, <CompetitorAnalysisPage />),
   },
   {
     path: "/apps/rag-web-search",
     label: "RAG 问答",
+    keepAliveKey: "rag-web-search",
     render: (context) => protectedPage(context, <RagPage />),
   },
   {
     path: "/apps/rag",
     label: "RAG 问答",
+    keepAliveKey: "rag-web-search",
     render: (context) => protectedPage(context, <RagPage />),
   },
   {
     path: "/modules/rag",
     label: "RAG 问答",
+    keepAliveKey: "rag-web-search",
     render: (context) => protectedPage(context, <RagPage />),
   },
   {
     path: "/apps/contract-review",
     label: "合同审查",
+    keepAliveKey: "contract-review",
     render: (context) => protectedPage(context, <ContractReviewPage />),
   },
   {
     path: "/modules/contract-review",
     label: "合同审查",
+    keepAliveKey: "contract-review",
     render: (context) => protectedPage(context, <ContractReviewPage />),
   },
   {
     path: "/apps/bid-generator",
     label: "标书生成",
+    keepAliveKey: "bid-generator",
     render: (context) => protectedPage(context, <BidGeneratorPage />),
   },
   {
     path: "/modules/bid-generator",
     label: "标书生成",
+    keepAliveKey: "bid-generator",
     render: (context) => protectedPage(context, <BidGeneratorPage />),
   },
   {
     path: "/apps/patent-disclosure",
     label: "专利交底书",
+    keepAliveKey: "patent-disclosure",
     render: (context) => protectedPage(context, <PatentDisclosurePage />),
   },
   {
     path: "/modules/patent-disclosure",
     label: "专利交底书",
+    keepAliveKey: "patent-disclosure",
     render: (context) => protectedPage(context, <PatentDisclosurePage />),
   },
 ];
@@ -150,6 +162,7 @@ export function resolveRoute(pathname: string): AppRoute {
     return {
       path: "/apps/competitor-analysis/*",
       label: "企业竞品分析",
+      keepAliveKey: "competitor-analysis",
       render: (context) => protectedPage(context, <CompetitorAnalysisPage />),
     };
   }

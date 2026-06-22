@@ -2460,6 +2460,22 @@ body {
   flex: 1 1 auto;
 }
 
+.portal-keepalive-page {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.portal-keepalive-page[hidden] {
+  display: none !important;
+}
+
+.portal-keepalive-page > * {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
 .bid-generator-legacy-viewport,
 .contract-review-legacy-viewport,
 .competitor-analysis-legacy-viewport,

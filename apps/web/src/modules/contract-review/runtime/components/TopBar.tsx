@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 export function TopBar(props: {
   file: File | null
@@ -18,12 +18,26 @@ export function TopBar(props: {
   canUndoLastAction?: boolean
   onActionError?: (error: unknown, fallbackTitle: string) => void
 }) {
+  const [isDownloading, setIsDownloading] = useState(false)
+
   const handleActionError = (error: unknown, fallbackTitle: string) => {
     if (props.onActionError) {
       props.onActionError(error, fallbackTitle)
       return
     }
     alert(String((error as any)?.message || error || fallbackTitle))
+  }
+
+  const handleDownload = async () => {
+    if (!props.downloadUrl || isDownloading) return
+    setIsDownloading(true)
+    try {
+      await props.onDownload?.(props.downloadUrl)
+    } catch (e) {
+      handleActionError(e, '下载文档失败')
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   return (
@@ -56,16 +70,12 @@ export function TopBar(props: {
           {props.downloadUrl ? (
             <button
               type="button"
-              className="btn btnPrimary"
-              onClick={async () => {
-                try {
-                  await props.onDownload?.(props.downloadUrl || '')
-                } catch (e) {
-                  handleActionError(e, '下载文档失败')
-                }
-              }}
+              className="btn btnPrimary btnDownloadReviewed"
+              disabled={isDownloading || !props.onDownload}
+              onClick={handleDownload}
             >
-              下载法务修订文档
+              {isDownloading ? <span className="btnSpinner" aria-hidden="true" /> : null}
+              {isDownloading ? '生成中' : '下载法务修订文档'}
             </button>
           ) : null}
           <button
