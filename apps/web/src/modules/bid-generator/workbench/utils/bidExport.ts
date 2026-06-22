@@ -17,6 +17,8 @@ export type BidExportSection = {
     attachment_name?: string;
     start_block_id?: string;
     end_block_id?: string;
+    start_locator?: string;
+    end_locator?: string;
 };
 
 export function resolveVersionContent(state: any): string {
@@ -256,16 +258,37 @@ export function buildBidExportSections(
     const attachmentModules = effectiveModules.filter((item) => item.moduleKind === 'attachment');
     const technicalModules = effectiveModules.filter((item) => item.moduleKind === 'technical');
     const businessModules = effectiveModules.filter((item) => item.moduleKind === 'business');
+    const attachmentAnchorByStructureId = new Map<string, {
+        startBlockId: string;
+        endBlockId: string;
+        startLocator: string;
+        endLocator: string;
+    }>();
+    for (const item of project.analysisV2?.bid_structure?.attachments || []) {
+        const id = String(item?.id || '').trim();
+        if (!id) continue;
+        attachmentAnchorByStructureId.set(id, {
+            startBlockId: String(item?.start_block_id || '').trim(),
+            endBlockId: String(item?.end_block_id || '').trim(),
+            startLocator: String(item?.start_locator || '').trim(),
+            endLocator: String(item?.end_locator || '').trim(),
+        });
+    }
 
     for (const module of attachmentModules) {
         const htmlContent = module.filledContent || module.templateContent || '';
         const markdownContent = htmlContent.trim() ? turndownService.turndown(htmlContent) : '';
+        const fallbackAnchor = module.structureHeadingId
+            ? attachmentAnchorByStructureId.get(module.structureHeadingId)
+            : undefined;
 
-        const start = (module.startBlockId || '').trim();
-        const end = (module.endBlockId || '').trim();
+        const start = (module.startBlockId || fallbackAnchor?.startBlockId || '').trim();
+        const end = (module.endBlockId || fallbackAnchor?.endBlockId || '').trim();
+        const startLocator = (module.locatorStart || fallbackAnchor?.startLocator || '').trim();
+        const endLocator = (module.locatorEnd || fallbackAnchor?.endLocator || '').trim();
         const headingLevel = module.headingLevel || 1;
         const headingMeta = buildHeadingMeta(numberingState, headingLevel, module.id, module.name);
-        if (start && end) {
+        if ((start && end) || (startLocator && endLocator)) {
             exportSections.push({
                 id: module.id,
                 title: module.name,
@@ -275,11 +298,14 @@ export function buildBidExportSections(
                 heading_text: headingMeta.headingText,
                 toc_level: headingMeta.tocLevel,
                 bookmark_id: headingMeta.bookmarkId,
+                // 附件正文保留招标原文排版；节点标题仍作为真实 Heading 注入，保证目录结构不丢失。
                 inject_title: true,
                 source_type: 'docx_slice',
                 attachment_name: module.sourceAttachmentName || module.name,
                 start_block_id: start,
                 end_block_id: end,
+                start_locator: startLocator,
+                end_locator: endLocator,
             });
             continue;
         }

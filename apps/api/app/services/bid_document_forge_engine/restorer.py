@@ -106,7 +106,6 @@ class PlaceholderRestorer:
             str: 还原后的文本
         """
         if not self.mapping_table:
-            logger.warning("映射表为空，跳过 PIPT 占位符复原")
             return text
 
         restored_count = 0
@@ -124,12 +123,13 @@ class PlaceholderRestorer:
         if remaining:
             logger.warning(f"存在 {len(remaining)} 个未还原的占位符: {remaining[:5]}")
 
-        logger.info(
-            "PIPT 占位符复原完成: 文档命中 %s 个占位符，成功还原 %s 处（映射表总量 %s）",
-            hit_count,
-            restored_count,
-            len(self.mapping_table),
-        )
+        if hit_count:
+            logger.info(
+                "PIPT 占位符复原完成: 文档命中 %s 个占位符，成功还原 %s 处（映射表总量 %s）",
+                hit_count,
+                restored_count,
+                len(self.mapping_table),
+            )
         return result
 
     def restore_all(self, text: str, bidder_info: Optional[dict] = None) -> str:

@@ -102,7 +102,7 @@ function sanitizeOutlineSections(sections: OutlineSection[]): OutlineSection[] {
   return (sections || []).map((section) => ({
     ...section,
     writingHint: normalizeWritingIntent(section.writingHint),
-    children: (section.children || []).map((child) => ({
+    children: sectionChildren(section).map((child) => ({
       ...child,
       writingHint: normalizeWritingIntent(child.writingHint),
     })),
@@ -122,6 +122,10 @@ function sectionBudgetTotal(sec: OutlineSection): number {
   return sec.wordCount;
 }
 
+function sectionChildren(section: Pick<OutlineSection, 'children'> | null | undefined): OutlineSubSection[] {
+  return Array.isArray(section?.children) ? section.children : [];
+}
+
 function analyzeOutlineFallback(secs: OutlineSection[]): {
   totalChildren: number;
   fallbackChildren: number;
@@ -136,7 +140,7 @@ function analyzeOutlineFallback(secs: OutlineSection[]): {
     const sectionTitle = String(sec.title || '').trim();
     const isCritical = ['售后服务方案', '响应情况', '项目实施目标'].includes(sectionTitle);
     const selfGenerating = Boolean((sec as any).generatesFromSelf || (sec as any).generationStrategy === 'response_special');
-    for (const child of sec.children || []) {
+    for (const child of sectionChildren(sec)) {
       totalChildren += 1;
       const title = String(child.title || '').trim();
       const hint = String(child.writingHint || '').trim();
@@ -150,7 +154,7 @@ function analyzeOutlineFallback(secs: OutlineSection[]): {
         if (isCritical) criticalFailures.add(sectionTitle);
       }
     }
-    if (isCritical && (!sec.children || sec.children.length === 0) && !selfGenerating) criticalFailures.add(sectionTitle);
+    if (isCritical && sectionChildren(sec).length === 0 && !selfGenerating) criticalFailures.add(sectionTitle);
     if (selfGenerating) {
       const hint = String(sec.writingHint || '').trim();
       const kwCount = Array.isArray(sec.keywords) ? sec.keywords.length : 0;
@@ -887,7 +891,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
       if (s.id === id) {
         return { ...s, [field]: nextValue };
       }
-      return { ...s, children: s.children.map(c => c.id === id ? { ...c, [field]: nextValue } : c) };
+      return { ...s, children: sectionChildren(s).map(c => c.id === id ? { ...c, [field]: nextValue } : c) };
     });
     persist(updated);
     cancelEdit();
@@ -895,7 +899,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
 
   const deleteSection = (id: string) => {
     const updated = sections.filter(s => s.id !== id).map(s => ({
-      ...s, children: s.children.filter(c => c.id !== id),
+      ...s, children: sectionChildren(s).filter(c => c.id !== id),
     }));
     persist(updated);
     if (selectedSectionId === id) setSelectedSectionId(null);
@@ -919,11 +923,12 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
 
     // 二级子章节排序（同一父级内）
     for (const sec of sections) {
-      const ca = sec.children.findIndex(c => c.id === activeId);
-      const co = sec.children.findIndex(c => c.id === overId);
+      const children = sectionChildren(sec);
+      const ca = children.findIndex(c => c.id === activeId);
+      const co = children.findIndex(c => c.id === overId);
       if (ca !== -1 && co !== -1) {
         const updated = sections.map(s =>
-          s.id === sec.id ? { ...s, children: arrayMove(s.children, ca, co) } : s
+          s.id === sec.id ? { ...s, children: arrayMove(children, ca, co) } : s
         );
         persist(updated);
         return;
@@ -936,7 +941,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
     if (!newKeywordInput.trim()) return;
     const updated = sections.map(s => {
       if (s.id === sectionId) return { ...s, keywords: [...(s.keywords || []), newKeywordInput.trim()] };
-      return { ...s, children: s.children.map(c => c.id === sectionId ? { ...c, keywords: [...(c.keywords || []), newKeywordInput.trim()] } : c) };
+      return { ...s, children: sectionChildren(s).map(c => c.id === sectionId ? { ...c, keywords: [...(c.keywords || []), newKeywordInput.trim()] } : c) };
     });
     persist(updated);
     setNewKeywordInput('');
@@ -945,7 +950,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
   const handleRemoveKeyword = (sectionId: string, kw: string) => {
     const updated = sections.map(s => {
       if (s.id === sectionId) return { ...s, keywords: (s.keywords || []).filter(k => k !== kw) };
-      return { ...s, children: s.children.map(c => c.id === sectionId ? { ...c, keywords: (c.keywords || []).filter(k => k !== kw) } : c) };
+      return { ...s, children: sectionChildren(s).map(c => c.id === sectionId ? { ...c, keywords: (c.keywords || []).filter(k => k !== kw) } : c) };
     });
     persist(updated);
   };
@@ -967,7 +972,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
     if (!id) return null;
     for (const s of sections) {
       if (s.id === id) return s;
-      for (const c of s.children) if (c.id === id) return { ...c, _parent: s, _isSubSection: true };
+      for (const c of sectionChildren(s)) if (c.id === id) return { ...c, _parent: s, _isSubSection: true };
     }
     return null;
   };
@@ -975,7 +980,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
   const selectedSection = findAny(selectedSectionId);
   const totalWordCount = sections.reduce((s, sec) => s + sectionBudgetTotal(sec), 0);
   const hasWordBudget = sections.some((sec) =>
-    sectionBudgetTotal(sec) > 0 || sec.children.some((c) => subSectionBudgetWords(c) > 0),
+    sectionBudgetTotal(sec) > 0 || sectionChildren(sec).some((c) => subSectionBudgetWords(c) > 0),
   );
   const currentConfig = projectService.getById(project.id)?.targetConfig ?? project.targetConfig;
   const runtimeOutlineBusy = (project.taskRuntime?.taskType === 'outline')
@@ -992,9 +997,10 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
   const isGenerating = isActuallyGenerating;
   const isSectionPending = (section: OutlineSection): boolean => {
     if (!isActuallyGenerating) return false;
-    if (section.children.length === 0) return true;
+    const children = sectionChildren(section);
+    if (children.length === 0) return true;
     if (section.wordCount <= 0 || !String(section.writingHint || '').trim()) return true;
-    return section.children.some((child) => child.wordCount <= 0 || !String(child.writingHint || '').trim());
+    return children.some((child) => child.wordCount <= 0 || !String(child.writingHint || '').trim());
   };
   const isSubSectionPending = (child: OutlineSubSection): boolean => (
     isActuallyGenerating && (child.wordCount <= 0 || !String(child.writingHint || '').trim())
@@ -1045,7 +1051,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
             <p className="text-xs text-gray-400 mt-0.5">
               {isGenerating ? '生成中'
                 : isDone && sections.length > 0
-                  ? `已生成 ${sections.length} 个二级标题 / ${sections.reduce((s, sec) => s + sec.children.length, 0)} 个三级标题${
+                  ? `已生成 ${sections.length} 个二级标题 / ${sections.reduce((s, sec) => s + sectionChildren(sec).length, 0)} 个三级标题${
                       hasWordBudget ? ` · 预算合计 ${totalWordCount.toLocaleString()} 字` : ''
                     }${
                       hasWordBudget && currentConfig?.totalWords != null && currentConfig.totalWords > 0
@@ -1201,6 +1207,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                   const isExpanded = expandedIds.has(section.id);
                   const isSelected = selectedSectionId === section.id;
                   const sectionPending = isSectionPending(section);
+                  const children = sectionChildren(section);
                   return (
                     <div key={section.id}>
                       <SortableRow id={section.id} isLocked={isLocked}
@@ -1231,8 +1238,8 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                       {/* 二级子章节拖拽 */}
                       {isExpanded && (
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                          <SortableContext items={section.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
-                            {section.children.map((child, ci) => {
+                          <SortableContext items={children.map(c => c.id)} strategy={verticalListSortingStrategy}>
+                            {children.map((child, ci) => {
                               const isChildSelected = selectedSectionId === child.id;
                               const childPending = isSubSectionPending(child);
                               return (
@@ -1488,11 +1495,11 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
               })()} */}
 
               {/* 子章节列表（仅一级标题时） */}
-              {'children' in selectedSection && (selectedSection as OutlineSection).children.length > 0 && (
+              {!selectedSection._isSubSection && sectionChildren(selectedSection as OutlineSection).length > 0 && (
                 <div className="hidden bg-white border border-gray-200 rounded-xl p-5">
-                  <p className="text-base font-semibold text-gray-700 mb-3">📑 子章节 ({(selectedSection as OutlineSection).children.length})</p>
+                  <p className="text-base font-semibold text-gray-700 mb-3">📑 子章节 ({sectionChildren(selectedSection as OutlineSection).length})</p>
                   <div className="space-y-1">
-                    {(selectedSection as OutlineSection).children.map((child: OutlineSubSection, ci: number) => (
+                    {sectionChildren(selectedSection as OutlineSection).map((child: OutlineSubSection, ci: number) => (
                       <div key={child.id} onClick={() => setSelectedSectionId(child.id)}
                         className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
                         <span className="text-sm text-gray-400 font-mono w-8">{ci + 1}.</span>

@@ -45,7 +45,7 @@ export function ReviewHistoryPanel(props: {
   useEffect(() => {
     const computePageSize = () => {
       const vh = window.innerHeight
-      const reserved = vh < 820 ? 390 : 430
+      const reserved = vh < 820 ? 280 : 310
       const rowHeight = vh < 820 ? 58 : 64
       const fitRows = Math.floor((vh - reserved) / rowHeight)
       setPageSize(Math.max(5, Math.min(14, fitRows)))
@@ -69,8 +69,6 @@ export function ReviewHistoryPanel(props: {
 
   const showingStart = props.items.length === 0 ? 0 : (page - 1) * pageSize + 1
   const showingEnd = Math.min(page * pageSize, props.items.length)
-  const completedCount = props.stats?.completed ?? props.items.filter((item) => item.status === 'completed').length
-  const runningCount = props.stats?.running ?? props.items.filter((item) => item.status === 'running' || item.status === 'queued').length
 
   return (
     <div className="historyPage landingHistoryPage">
@@ -90,21 +88,6 @@ export function ReviewHistoryPanel(props: {
             发起新审查
           </button>
         </header>
-
-        <section className="landingHistoryStats" aria-label="审查记录统计">
-          <div className="landingHistoryStatCard">
-            <div className="landingHistoryStatLabel">总任务数</div>
-            <div className="landingHistoryStatValue">{props.stats?.total ?? props.items.length}</div>
-          </div>
-          <div className="landingHistoryStatCard">
-            <div className="landingHistoryStatLabel">已完成</div>
-            <div className="landingHistoryStatValue">{completedCount}</div>
-          </div>
-          <div className="landingHistoryStatCard">
-            <div className="landingHistoryStatLabel">进行中</div>
-            <div className="landingHistoryStatValue">{runningCount}</div>
-          </div>
-        </section>
 
         <section className="landingHistoryTableCard" aria-label="审查记录列表">
           <div className="landingHistoryTableWrap">

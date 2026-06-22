@@ -2739,13 +2739,15 @@ async def forge_document_response(body: Mapping[str, Any]) -> Any:
         logger.error("forge-document 失败: %s", exc, exc_info=True)
         raise PlatformError(code="FORGE_FAILED", message=str(exc), status_code=500) from exc
 
-    safe_name = project_name.replace("/", "_").replace("\\", "_")
-    filename = f"{safe_name}_标书文件.docx"
-    content_disposition = f'attachment; filename="document.docx"; filename*=UTF-8\'\'{quote(filename, safe="")}'
+    safe_name = project_name.replace("/", "_").replace("\\", "_").strip() or "投标文件"
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    filename = f"{safe_name}_{timestamp}.docx"
+    ascii_filename = f"document_{timestamp}.docx"
+    content_disposition = f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{quote(filename, safe="")}'
     return BidGeneratorFilePayload(
         content=docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename="document.docx",
+        filename=ascii_filename,
         inline=False,
         cache_control="no-store",
         headers={"Content-Disposition": content_disposition},
@@ -3959,6 +3961,22 @@ def _slice_docx_bytes_by_body_range(docx_bytes: bytes, start_body_idx: int, end_
             if len(list(run)) == 0:
                 first.remove(run)
 
+    def remove_last_paragraph_trailing_page_break_controls(children: list[ET.Element]) -> None:
+        if not children:
+            return
+        last = children[-1]
+        if last.tag != paragraph_tag:
+            return
+        for run in list(last.findall(run_tag)):
+            for node in list(run):
+                if node.tag == last_rendered_page_break_tag:
+                    run.remove(node)
+                    continue
+                if node.tag == break_tag and (node.attrib.get(f"{{{word_namespace}}}type") or "").lower() == "page":
+                    run.remove(node)
+            if len(list(run)) == 0:
+                last.remove(run)
+
     lo, hi = (start_body_idx, end_body_idx) if start_body_idx <= end_body_idx else (end_body_idx, start_body_idx)
     for idx, child in enumerate(original_children):
         if child.tag == sectpr_tag:
@@ -3972,6 +3990,7 @@ def _slice_docx_bytes_by_body_range(docx_bytes: bytes, start_body_idx: int, end_
 
     kept_children = trim_empty_paragraphs(kept_children)
     remove_first_paragraph_page_break_controls(kept_children)
+    remove_last_paragraph_trailing_page_break_controls(kept_children)
 
     for child in list(body):
         body.remove(child)
@@ -4288,7 +4307,10 @@ def _build_forge_document_docx(
     )
     pipt_mapping = _load_forge_pipt_mapping(all_content)
     dynamic_image_map = _load_forge_image_map(all_content)
-    full_mapping = {**pipt_mapping, **{str(key): str(value) for key, value in mapping_table.items()}}
+    request_mapping = {str(key): str(value) for key, value in mapping_table.items() if str(key).strip()}
+    # 导出正文通常已经反脱敏；只保留仍残留在正文里的请求侧占位符，避免无效二次复原。
+    active_request_mapping = {key: value for key, value in request_mapping.items() if key in all_content}
+    full_mapping = {**pipt_mapping, **active_request_mapping}
     merged_image_map = {**image_map, **dynamic_image_map}
 
     forge = create_document_forge(
@@ -4316,13 +4338,14 @@ def _build_forge_document_docx(
             scoring_rows=normalized_scoring_rows,
             attachments=normalized_attachments,
         )
-    docx_bytes = _rebind_heading_numbering_bytes(docx_bytes)
-    return _apply_toc_for_export(
+        docx_bytes = _rebind_heading_numbering_bytes(docx_bytes)
+    docx_bytes = _apply_toc_for_export(
         docx_bytes,
         normalized_sections,
         prefer_native=True,
         heading_sanitized=heading_sanitized,
     )
+    return _remove_blank_pages_from_docx_bytes(docx_bytes)
 
 
 def _build_hybrid_forge_docx(
@@ -4342,6 +4365,7 @@ def _build_hybrid_forge_docx(
 
     normalized_project_id = _ensure_safe_project_id(project_id)
     docx_segments: list[tuple[bytes, bool]] = []
+    slice_style_sources: list[bytes] = []
     heading_sanitized = True
     pending_markdown_sections: list[dict[str, Any]] = []
 
@@ -4362,10 +4386,22 @@ def _build_hybrid_forge_docx(
         paragraph.add_run().add_break(WD_BREAK.PAGE)
         return doc_obj
 
+    def merge_heading_and_slice(heading_bytes: bytes | None, slice_bytes: bytes) -> bytes:
+        if not heading_bytes:
+            return slice_bytes
+        heading_doc = docx_module.Document(io.BytesIO(heading_bytes))
+        module_composer = Composer(heading_doc)
+        module_composer.append(docx_module.Document(io.BytesIO(slice_bytes)))
+        module_buffer = io.BytesIO()
+        module_composer.save(module_buffer)
+        module_buffer.seek(0)
+        return module_buffer.read()
+
     for section in sections:
         source_type = str(section.get("source_type") or "markdown").strip().lower()
         if source_type == "docx_slice":
             flush_markdown_sections()
+            heading_segment: bytes | None = None
             if section.get("inject_title") and str(section.get("title") or "").strip():
                 heading_segment = forge.build(
                     sections=[
@@ -4383,10 +4419,11 @@ def _build_hybrid_forge_docx(
                     scoring_rows=[],
                     attachments=[],
                 )
-                docx_segments.append((heading_segment, True))
             slice_segment, sanitized_ok = _build_docx_slice_segment(section=section, project_id=normalized_project_id)
             heading_sanitized = heading_sanitized and bool(sanitized_ok)
-            docx_segments.append((slice_segment, False))
+            slice_style_sources.append(slice_segment)
+            # 附件标题与正文必须作为同一模块片段拼接，避免标题和切片正文落到不同结构节点下。
+            docx_segments.append((merge_heading_and_slice(heading_segment, slice_segment), True))
             continue
 
         pending_markdown_sections.append({
@@ -4417,27 +4454,42 @@ def _build_hybrid_forge_docx(
 
     final_doc = docx_module.Document(merged_buffer)
     add_scoring_table_and_attachments(final_doc, scoring_rows, attachments)
-    _rebind_heading_numbering_for_export(final_doc)
+    allowed_heading_texts = _collect_export_heading_texts(sections)
+    allowed_heading_bookmarks = _collect_export_heading_bookmarks(sections)
+    _rebind_heading_numbering_for_export(
+        final_doc,
+        allowed_heading_texts=allowed_heading_texts,
+        allowed_heading_bookmarks=allowed_heading_bookmarks,
+    )
+    _remove_redundant_page_breaks(final_doc)
 
     output = io.BytesIO()
     final_doc.save(output)
     output.seek(0)
-    return output.read(), heading_sanitized
+    docx_bytes = output.read()
+    if slice_style_sources:
+        docx_bytes = _merge_docx_style_definitions(docx_bytes, slice_style_sources)
+    return docx_bytes, heading_sanitized
 
 
 def _build_docx_slice_segment(*, section: Mapping[str, Any], project_id: str) -> tuple[bytes, bool]:
     start_block_id = str(section.get("start_block_id") or "").strip()
     end_block_id = str(section.get("end_block_id") or "").strip()
-    if not start_block_id or not end_block_id:
-        raise PlatformError(code="INVALID_REQUEST", message="docx_slice 段缺少 start_block_id/end_block_id", status_code=400)
+    start_locator = str(section.get("start_locator") or "").strip().upper()
+    end_locator = str(section.get("end_locator") or "").strip().upper()
 
     blocks = get_project_doc_blocks_payload(project_id)["blocks"]
-    start_block = _find_doc_block_by_id(blocks, start_block_id)
-    end_block = _find_doc_block_by_id(blocks, end_block_id)
+    locator_map = {str(block.get("locator") or "").strip().upper(): block for block in blocks if isinstance(block, Mapping)}
+    start_block = _find_doc_block_by_id(blocks, start_block_id) if start_block_id else locator_map.get(start_locator)
+    end_block = _find_doc_block_by_id(blocks, end_block_id) if end_block_id else locator_map.get(end_locator)
+    if not start_block_id and not start_locator:
+        raise PlatformError(code="INVALID_REQUEST", message="docx_slice 段缺少 start_block_id/start_locator", status_code=400)
+    if not end_block_id and not end_locator:
+        raise PlatformError(code="INVALID_REQUEST", message="docx_slice 段缺少 end_block_id/end_locator", status_code=400)
     if start_block is None:
-        raise PlatformError(code="RESOURCE_NOT_FOUND", message=f"block_id {start_block_id} 未找到", status_code=404)
+        raise PlatformError(code="RESOURCE_NOT_FOUND", message=f"起始切片锚点未找到: {start_block_id or start_locator}", status_code=404)
     if end_block is None:
-        raise PlatformError(code="RESOURCE_NOT_FOUND", message=f"block_id {end_block_id} 未找到", status_code=404)
+        raise PlatformError(code="RESOURCE_NOT_FOUND", message=f"结束切片锚点未找到: {end_block_id or end_locator}", status_code=404)
 
     start_idx = _non_negative_int(start_block.get("body_idx"))
     end_idx = _non_negative_int(end_block.get("body_idx"))
@@ -4455,19 +4507,17 @@ def _build_docx_slice_segment(*, section: Mapping[str, Any], project_id: str) ->
         sliced = _slice_docx_bytes_by_body_range(docx_path.read_bytes(), start_idx, end_idx)
     except Exception as exc:
         raise PlatformError(code="FORGE_FAILED", message=f"DOCX 切片失败: {exc}", status_code=500) from exc
-    return _sanitize_docx_slice_heading_semantics(sliced)
+    sanitized, _ = _sanitize_docx_slice_heading_semantics(sliced)
+    style_prefix_seed = f"{project_id}:{start_idx}:{end_idx}:{start_block_id}:{end_block_id}:{start_locator}:{end_locator}"
+    style_prefix = f"SRC_{hashlib.sha1(style_prefix_seed.encode('utf-8')).hexdigest()[:10]}_"
+    sanitized = _isolate_docx_slice_styles(sanitized, style_prefix)
+    return sanitized, True
 
 
 def _sanitize_docx_slice_heading_semantics(docx_bytes: bytes) -> tuple[bytes, bool]:
+    """仅移除 DOCX 切片的目录层级语义，保留原文段落/表格/编号/字体样式。"""
     word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     ns = {"w": word_namespace}
-
-    def qn(tag: str) -> str:
-        return f"{{{word_namespace}}}{tag}"
-
-    def is_heading_like_style_id(style_id: str) -> bool:
-        normalized = str(style_id or "").strip().lower()
-        return bool(re.match(r"heading[1-9]\d*$", normalized) or normalized.startswith("toc"))
 
     input_buffer = io.BytesIO(docx_bytes)
     output_buffer = io.BytesIO()
@@ -4478,50 +4528,10 @@ def _sanitize_docx_slice_heading_semantics(docx_bytes: bytes) -> tuple[bytes, bo
     if not doc_xml:
         return docx_bytes, False
 
-    heading_style_ids: set[str] = set()
-    style_font_size_map: dict[str, str] = {}
-    styles_xml = entries.get("word/styles.xml")
-    if styles_xml:
-        try:
-            styles_root = ET.fromstring(styles_xml)
-            for style in styles_root.findall(".//w:style", ns):
-                if style.attrib.get(qn("type")) != "paragraph":
-                    continue
-                style_id = style.attrib.get(qn("styleId"), "")
-                size_el = style.find("w:rPr/w:sz", ns)
-                if size_el is not None and size_el.attrib.get(qn("val")):
-                    style_font_size_map[style_id] = str(size_el.attrib.get(qn("val")))
-                name_el = style.find("w:name", ns)
-                style_name = name_el.attrib.get(qn("val"), "") if name_el is not None else ""
-                if is_heading_like_style_id(style_id) or str(style_name).strip().lower().startswith(("heading", "toc")):
-                    heading_style_ids.add(style_id)
-        except Exception:
-            heading_style_ids = set()
-            style_font_size_map = {}
-
     changed = False
     try:
         root = ET.fromstring(doc_xml)
         for paragraph_props in root.findall(".//w:p/w:pPr", ns):
-            p_style = paragraph_props.find("w:pStyle", ns)
-            if p_style is not None:
-                style_id = p_style.attrib.get(qn("val"), "")
-                if style_id in heading_style_ids or is_heading_like_style_id(style_id):
-                    inherited_size = style_font_size_map.get(style_id, "")
-                    paragraph_props.remove(p_style)
-                    changed = True
-                    if inherited_size:
-                        run_props = paragraph_props.find("w:rPr", ns)
-                        if run_props is None:
-                            run_props = ET.SubElement(paragraph_props, qn("rPr"))
-                        size = run_props.find("w:sz", ns)
-                        if size is None:
-                            size = ET.SubElement(run_props, qn("sz"))
-                        size.set(qn("val"), inherited_size)
-                        size_cs = run_props.find("w:szCs", ns)
-                        if size_cs is None:
-                            size_cs = ET.SubElement(run_props, qn("szCs"))
-                        size_cs.set(qn("val"), inherited_size)
             outline_level = paragraph_props.find("w:outlineLvl", ns)
             if outline_level is not None:
                 paragraph_props.remove(outline_level)
@@ -4538,6 +4548,203 @@ def _sanitize_docx_slice_heading_semantics(docx_bytes: bytes) -> tuple[bytes, bo
     return output_buffer.getvalue(), True
 
 
+def _isolate_docx_slice_styles(docx_bytes: bytes, style_prefix: str) -> bytes:
+    """给原文切片样式加独立前缀，避免合并时被投标模板同名样式覆盖。"""
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    ns = {"w": word_namespace}
+
+    def qn(tag: str) -> str:
+        return f"{{{word_namespace}}}{tag}"
+
+    def attr(tag: str) -> str:
+        return qn(tag)
+
+    def update_style_ref(elem: ET.Element, style_map: Mapping[str, str]) -> None:
+        val = elem.get(attr("val"))
+        if val in style_map:
+            elem.set(attr("val"), style_map[val])
+
+    def merge_child_props(target: ET.Element, source: ET.Element) -> None:
+        existing_tags = {child.tag for child in list(target)}
+        for child in list(source):
+            if child.tag not in existing_tags:
+                target.append(copy.deepcopy(child))
+                existing_tags.add(child.tag)
+
+    try:
+        input_buffer = io.BytesIO(docx_bytes)
+        output_buffer = io.BytesIO()
+        with zipfile.ZipFile(input_buffer, "r") as zin:
+            entries = {info.filename: zin.read(info.filename) for info in zin.infolist()}
+
+        styles_xml = entries.get("word/styles.xml")
+        doc_xml = entries.get("word/document.xml")
+        if not styles_xml or not doc_xml:
+            return docx_bytes
+
+        styles_root = ET.fromstring(styles_xml)
+        style_map: dict[str, str] = {}
+        default_paragraph_style = ""
+        default_table_style = ""
+        doc_defaults = styles_root.find("w:docDefaults", ns)
+        for style in styles_root.findall("w:style", ns):
+            style_id = str(style.get(attr("styleId")) or "").strip()
+            if not style_id:
+                continue
+            style_type = str(style.get(attr("type")) or "").strip()
+            if style.get(attr("default")) == "1":
+                if style_type == "paragraph":
+                    default_paragraph_style = style_id
+                elif style_type == "table":
+                    default_table_style = style_id
+            style_map[style_id] = f"{style_prefix}{style_id}"
+
+        if not style_map:
+            return docx_bytes
+
+        for style in styles_root.findall("w:style", ns):
+            style_id = str(style.get(attr("styleId")) or "").strip()
+            if style_id in style_map:
+                style.set(attr("styleId"), style_map[style_id])
+                if style.get(attr("default")) is not None:
+                    style.attrib.pop(attr("default"), None)
+                name_node = style.find("w:name", ns)
+                if name_node is not None:
+                    original_name = str(name_node.get(attr("val")) or style_id).strip()
+                    name_node.set(attr("val"), f"{style_prefix}{original_name}")
+                if style_id == default_paragraph_style and doc_defaults is not None:
+                    ppr_default = doc_defaults.find("w:pPrDefault/w:pPr", ns)
+                    rpr_default = doc_defaults.find("w:rPrDefault/w:rPr", ns)
+                    if ppr_default is not None:
+                        style_ppr = style.find("w:pPr", ns)
+                        if style_ppr is None:
+                            style.append(copy.deepcopy(ppr_default))
+                        else:
+                            merge_child_props(style_ppr, ppr_default)
+                    if rpr_default is not None:
+                        style_rpr = style.find("w:rPr", ns)
+                        if style_rpr is None:
+                            style.append(copy.deepcopy(rpr_default))
+                        else:
+                            merge_child_props(style_rpr, rpr_default)
+                style_paragraph_props = style.find("w:pPr", ns)
+                if style_paragraph_props is not None:
+                    outline_level = style_paragraph_props.find("w:outlineLvl", ns)
+                    if outline_level is not None:
+                        style_paragraph_props.remove(outline_level)
+            for ref in style.findall(".//w:basedOn", ns) + style.findall(".//w:next", ns) + style.findall(".//w:link", ns):
+                update_style_ref(ref, style_map)
+        entries["word/styles.xml"] = ET.tostring(styles_root, encoding="utf-8", xml_declaration=True)
+
+        style_ref_tags = {
+            qn("pStyle"),
+            qn("rStyle"),
+            qn("tblStyle"),
+            qn("basedOn"),
+            qn("next"),
+            qn("link"),
+            qn("styleLink"),
+            qn("numStyleLink"),
+        }
+        for name, content in list(entries.items()):
+            if not name.startswith("word/") or not name.endswith(".xml") or name == "word/styles.xml":
+                continue
+            try:
+                root = ET.fromstring(content)
+            except Exception:
+                continue
+
+            changed = False
+            for elem in root.iter():
+                if elem.tag in style_ref_tags:
+                    before = elem.get(attr("val"))
+                    update_style_ref(elem, style_map)
+                    changed = changed or before != elem.get(attr("val"))
+
+            if name == "word/document.xml":
+                paragraph_default = style_map.get(default_paragraph_style, "")
+                if paragraph_default:
+                    for paragraph in root.findall(".//w:p", ns):
+                        paragraph_props = paragraph.find("w:pPr", ns)
+                        if paragraph_props is None:
+                            paragraph_props = ET.Element(qn("pPr"))
+                            paragraph.insert(0, paragraph_props)
+                        if paragraph_props.find("w:pStyle", ns) is None:
+                            paragraph_style = ET.Element(qn("pStyle"))
+                            paragraph_style.set(attr("val"), paragraph_default)
+                            paragraph_props.insert(0, paragraph_style)
+                            changed = True
+                table_default = style_map.get(default_table_style, "")
+                if table_default:
+                    for table in root.findall(".//w:tbl", ns):
+                        table_props = table.find("w:tblPr", ns)
+                        if table_props is None:
+                            table_props = ET.Element(qn("tblPr"))
+                            table.insert(0, table_props)
+                        if table_props.find("w:tblStyle", ns) is None:
+                            table_style = ET.Element(qn("tblStyle"))
+                            table_style.set(attr("val"), table_default)
+                            table_props.insert(0, table_style)
+                            changed = True
+
+            if changed:
+                entries[name] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+        with zipfile.ZipFile(output_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for name, content in entries.items():
+                zout.writestr(name, content)
+        return output_buffer.getvalue()
+    except Exception:
+        return docx_bytes
+
+
+def _merge_docx_style_definitions(target_docx: bytes, style_source_docx_list: list[bytes]) -> bytes:
+    """把附件切片的隔离样式定义补回最终 DOCX，防止合并器按模板同名样式丢弃原文样式。"""
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    ns = {"w": word_namespace}
+
+    def qn(tag: str) -> str:
+        return f"{{{word_namespace}}}{tag}"
+
+    try:
+        target_input = io.BytesIO(target_docx)
+        output = io.BytesIO()
+        with zipfile.ZipFile(target_input, "r") as zin:
+            entries = {info.filename: zin.read(info.filename) for info in zin.infolist()}
+        styles_xml = entries.get("word/styles.xml")
+        if not styles_xml:
+            return target_docx
+        target_root = ET.fromstring(styles_xml)
+        existing_ids = {
+            str(style.get(qn("styleId")) or "").strip()
+            for style in target_root.findall("w:style", ns)
+        }
+        changed = False
+        for source_docx in style_source_docx_list:
+            try:
+                with zipfile.ZipFile(io.BytesIO(source_docx), "r") as source_zip:
+                    source_styles_xml = source_zip.read("word/styles.xml")
+                source_root = ET.fromstring(source_styles_xml)
+            except Exception:
+                continue
+            for style in source_root.findall("w:style", ns):
+                style_id = str(style.get(qn("styleId")) or "").strip()
+                if not style_id or style_id in existing_ids:
+                    continue
+                target_root.append(copy.deepcopy(style))
+                existing_ids.add(style_id)
+                changed = True
+        if not changed:
+            return target_docx
+        entries["word/styles.xml"] = ET.tostring(target_root, encoding="utf-8", xml_declaration=True)
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for name, content in entries.items():
+                zout.writestr(name, content)
+        return output.getvalue()
+    except Exception:
+        return target_docx
+
+
 def _build_toc_entries(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for section in sections:
@@ -4550,6 +4757,32 @@ def _build_toc_entries(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if title:
             entries.append({"level": level, "text": title})
     return entries
+
+
+def _collect_export_heading_texts(sections: list[dict[str, Any]]) -> set[str]:
+    values: set[str] = set()
+
+    def normalized(value: str) -> str:
+        return re.sub(r"\s+", "", str(value or "")).strip().lower()
+
+    for section in sections:
+        number = str(section.get("heading_number") or "").strip()
+        raw_title = str(section.get("heading_text") or section.get("title") or "").strip()
+        if not raw_title:
+            continue
+        values.add(normalized(raw_title))
+        if number:
+            values.add(normalized(f"{number} {raw_title}"))
+    return {item for item in values if item}
+
+
+def _collect_export_heading_bookmarks(sections: list[dict[str, Any]]) -> set[str]:
+    values: set[str] = set()
+    for section in sections:
+        bookmark_id = str(section.get("bookmark_id") or "").strip()
+        if bookmark_id:
+            values.add(bookmark_id)
+    return values
 
 
 def _doc_has_unexpected_heading_semantics(doc: Any, allowed_headings: set[str]) -> bool:
@@ -4604,7 +4837,11 @@ def _insert_toc_page(doc: Any, toc_entries: list[dict[str, Any]], *, use_native_
     split_paragraph.add_run().add_break(WD_BREAK.PAGE)
 
 
-def _rebind_heading_numbering_for_export(doc: Any) -> None:
+def _rebind_heading_numbering_for_export(
+    doc: Any,
+    allowed_heading_texts: set[str] | None = None,
+    allowed_heading_bookmarks: set[str] | None = None,
+) -> None:
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn as docx_qn
 
@@ -4668,9 +4905,24 @@ def _rebind_heading_numbering_for_export(doc: Any) -> None:
             return 3
         return 0
 
+    def normalized(value: str) -> str:
+        return re.sub(r"\s+", "", str(value or "")).strip().lower()
+
+    def paragraph_bookmarks(paragraph: Any) -> set[str]:
+        names: set[str] = set()
+        for node in paragraph._p.findall(".//" + docx_qn("w:bookmarkStart")):
+            name = str(node.get(docx_qn("w:name")) or "").strip()
+            if name:
+                names.add(name)
+        return names
+
     for paragraph in getattr(doc, "paragraphs", []) or []:
         text_value = str(getattr(paragraph, "text", "") or "").strip()
         if not text_value or text_value == "目录":
+            continue
+        if allowed_heading_bookmarks is not None and not (paragraph_bookmarks(paragraph) & allowed_heading_bookmarks):
+            continue
+        if allowed_heading_texts is not None and normalized(text_value) not in allowed_heading_texts:
             continue
         try:
             level = heading_level(paragraph.style.name if paragraph.style else "")
@@ -4702,6 +4954,110 @@ def _rebind_heading_numbering_bytes(docx_bytes: bytes) -> bytes:
         doc.save(output)
         output.seek(0)
         return output.read()
+    except Exception:
+        return docx_bytes
+
+
+def _remove_redundant_page_breaks(doc: Any) -> None:
+    """清理拼接边界产生的连续分页符，保留章节之间的单次分页。"""
+    from docx.oxml.ns import qn as docx_qn
+
+    def paragraph_text(paragraph: Any) -> str:
+        return str(getattr(paragraph, "text", "") or "").strip()
+
+    def has_page_break(paragraph: Any) -> bool:
+        for br in paragraph._p.findall(".//" + docx_qn("w:br")):
+            if (br.get(docx_qn("w:type")) or "").lower() == "page":
+                return True
+        return False
+
+    seen_page_break = False
+    for paragraph in list(getattr(doc, "paragraphs", []) or []):
+        text_value = paragraph_text(paragraph)
+        page_break = has_page_break(paragraph)
+        if not text_value and page_break:
+            if seen_page_break:
+                paragraph._element.getparent().remove(paragraph._element)
+                continue
+            seen_page_break = True
+            continue
+        if text_value:
+            seen_page_break = False
+
+
+def _remove_blank_pages_from_docx_bytes(docx_bytes: bytes) -> bytes:
+    """最终扫描 DOCX，删除连续分页控制造成的完全空白页。"""
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    body_tag = f"{{{word_namespace}}}body"
+    paragraph_tag = f"{{{word_namespace}}}p"
+    text_tag = f"{{{word_namespace}}}t"
+    break_tag = f"{{{word_namespace}}}br"
+    last_rendered_page_break_tag = f"{{{word_namespace}}}lastRenderedPageBreak"
+    page_break_before_tag = f"{{{word_namespace}}}pageBreakBefore"
+    paragraph_props_tag = f"{{{word_namespace}}}pPr"
+    section_props_tag = f"{{{word_namespace}}}sectPr"
+
+    def paragraph_text(elem: ET.Element) -> str:
+        return "".join((text.text or "") for text in elem.iter(text_tag)).strip()
+
+    def is_blank_page_break_paragraph(elem: ET.Element) -> bool:
+        if elem.tag != paragraph_tag or paragraph_text(elem):
+            return False
+        ppr = elem.find(paragraph_props_tag)
+        if ppr is not None and ppr.find(page_break_before_tag) is not None:
+            return True
+        for br in elem.iter(break_tag):
+            if (br.get(f"{{{word_namespace}}}type") or "").lower() == "page":
+                return True
+        for _ in elem.iter(last_rendered_page_break_tag):
+            return True
+        return False
+
+    try:
+        input_buffer = io.BytesIO(docx_bytes)
+        output_buffer = io.BytesIO()
+        with zipfile.ZipFile(input_buffer, "r") as zin:
+            entries = {info.filename: zin.read(info.filename) for info in zin.infolist()}
+
+        doc_xml = entries.get("word/document.xml")
+        if not doc_xml:
+            return docx_bytes
+        root = ET.fromstring(doc_xml)
+        body = root.find(f".//{body_tag}")
+        if body is None:
+            return docx_bytes
+
+        children = list(body)
+        changed = False
+        seen_break_boundary = False
+        for child in children:
+            if child.tag == section_props_tag:
+                continue
+            if is_blank_page_break_paragraph(child):
+                if seen_break_boundary:
+                    body.remove(child)
+                    changed = True
+                    continue
+                seen_break_boundary = True
+                continue
+            if child.tag == paragraph_tag and not paragraph_text(child):
+                continue
+            seen_break_boundary = False
+
+        while len(body) > 0 and is_blank_page_break_paragraph(body[0]):
+            body.remove(body[0])
+            changed = True
+        while len(body) > 0 and is_blank_page_break_paragraph(body[-1]):
+            body.remove(body[-1])
+            changed = True
+
+        if not changed:
+            return docx_bytes
+        entries["word/document.xml"] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        with zipfile.ZipFile(output_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for name, content in entries.items():
+                zout.writestr(name, content)
+        return output_buffer.getvalue()
     except Exception:
         return docx_bytes
 

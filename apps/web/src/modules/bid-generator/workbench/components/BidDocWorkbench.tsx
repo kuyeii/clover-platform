@@ -202,6 +202,8 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
     const [previewHtml, setPreviewHtml] = useState('');
     const [previewSnapshotOnly, setPreviewSnapshotOnly] = useState(false);
     const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
+    const [docxPreviewReady, setDocxPreviewReady] = useState(false);
+    const [docxPreviewFailed, setDocxPreviewFailed] = useState(false);
     const [previewKey, setPreviewKey] = useState('');
     const [persistingLocator, setPersistingLocator] = useState(false);
     const [snapshotOnly, setSnapshotOnly] = useState(false);
@@ -445,6 +447,8 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
         setPreviewHtml('');
         setPreviewSnapshotOnly(false);
         setPreviewDocxBlob(null);
+        setDocxPreviewReady(false);
+        setDocxPreviewFailed(false);
         setPreviewing(false);
     }, []);
 
@@ -461,14 +465,20 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
             setPreviewHtml(cached.html);
             setPreviewSnapshotOnly(Boolean(cached.snapshotOnly));
             setPreviewDocxBlob(cached.docxBlob || null);
-            if (cached.html && cached.docxBlob) {
+            setDocxPreviewReady(false);
+            setDocxPreviewFailed(false);
+            if (cached.html) {
                 setPreviewing(false);
+            }
+            if (cached.html && cached.docxBlob) {
                 return;
             }
         } else {
             setPreviewHtml('');
             setPreviewSnapshotOnly(false);
             setPreviewDocxBlob(null);
+            setDocxPreviewReady(false);
+            setDocxPreviewFailed(false);
         }
 
         const requestId = previewRequestIdRef.current + 1;
@@ -496,9 +506,6 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                 endBlockId,
             });
 
-        const [htmlResult, docxResult] = await Promise.allSettled([htmlPromise, docxPromise]);
-        if (previewRequestIdRef.current !== requestId) return;
-
         const nextEntry: PreviewCacheEntry = {
             html: cached?.html || '',
             startBlockId,
@@ -507,27 +514,41 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
             docxBlob: cached?.docxBlob || null,
         };
 
-        if (htmlResult.status === 'fulfilled') {
-            nextEntry.html = htmlResult.value.html;
-            nextEntry.startBlockId = htmlResult.value.startBlockId;
-            nextEntry.endBlockId = htmlResult.value.endBlockId;
-            nextEntry.snapshotOnly = Boolean(htmlResult.value.snapshotOnly);
-            setPreviewHtml(htmlResult.value.html);
-            setPreviewSnapshotOnly(Boolean(htmlResult.value.snapshotOnly));
-        } else {
-            console.error('[BidDocWorkbench] 附件 HTML 预览失败:', htmlResult.reason);
-        }
+        docxPromise
+            .then((blob) => {
+                if (previewRequestIdRef.current !== requestId) return;
+                const cachedEntry = previewCacheRef.current.get(key) || nextEntry;
+                previewCacheRef.current.set(key, { ...cachedEntry, docxBlob: blob });
+                setDocxPreviewReady(false);
+                setDocxPreviewFailed(false);
+                setPreviewDocxBlob(blob);
+                setPreviewing(false);
+            })
+            .catch((reason) => {
+                if (previewRequestIdRef.current !== requestId) return;
+                console.warn('[BidDocWorkbench] 附件 DOCX 样式预览降级为 HTML:', reason);
+                setPreviewDocxBlob(null);
+                setDocxPreviewReady(false);
+                setDocxPreviewFailed(true);
+                setPreviewing(false);
+            });
 
-        if (docxResult.status === 'fulfilled') {
-            nextEntry.docxBlob = docxResult.value;
-            setPreviewDocxBlob(docxResult.value);
-        } else {
-            console.warn('[BidDocWorkbench] 附件 DOCX 样式预览降级为 HTML:', docxResult.reason);
-            setPreviewDocxBlob(null);
+        try {
+            const htmlResult = await htmlPromise;
+            if (previewRequestIdRef.current !== requestId) return;
+            nextEntry.html = htmlResult.html;
+            nextEntry.startBlockId = htmlResult.startBlockId;
+            nextEntry.endBlockId = htmlResult.endBlockId;
+            nextEntry.snapshotOnly = Boolean(htmlResult.snapshotOnly);
+            previewCacheRef.current.set(key, nextEntry);
+            setPreviewHtml(htmlResult.html);
+            setPreviewSnapshotOnly(Boolean(htmlResult.snapshotOnly));
+        } catch (reason) {
+            if (previewRequestIdRef.current !== requestId) return;
+            console.error('[BidDocWorkbench] 附件 HTML 预览失败:', reason);
+        } finally {
+            if (previewRequestIdRef.current === requestId) setPreviewing(false);
         }
-
-        previewCacheRef.current.set(key, nextEntry);
-        setPreviewing(false);
     }, [project.id]);
 
     useEffect(() => {
@@ -562,9 +583,11 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
         if (!styledPreviewDocxRef.current) return;
         if (!previewDocxBlob) {
             styledPreviewDocxRef.current.innerHTML = '';
+            setDocxPreviewReady(false);
             return;
         }
         let cancelled = false;
+        setDocxPreviewReady(false);
         (async () => {
             try {
                 const buffer = await previewDocxBlob.arrayBuffer();
@@ -577,10 +600,13 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                     ignoreHeight: false,
                     ignoreLastRenderedPageBreak: false,
                 });
+                if (!cancelled) setDocxPreviewReady(true);
             } catch (error) {
                 if (!cancelled) {
                     console.error('[BidDocWorkbench] DOCX 切片渲染失败:', error);
                     if (styledPreviewDocxRef.current) styledPreviewDocxRef.current.innerHTML = '';
+                    setDocxPreviewReady(false);
+                    setDocxPreviewFailed(true);
                 }
             }
         })();
@@ -898,9 +924,14 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                                             <div>
                                                 <p className="text-base font-bold text-gray-900">实时样式预览</p>
                                             </div>
+                                            {previewDocxBlob && !docxPreviewReady ? (
+                                                <div className="inline-flex items-center gap-1.5 text-xs text-brand-600">
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> 样式套用中
+                                                </div>
+                                            ) : null}
                                         </div>
                                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-slate-50/50">
-                                            {previewing ? (
+                                            {previewing && !previewHtml ? (
                                                 <div className="flex h-full items-center justify-center text-sm text-gray-500">
                                                     <span className="inline-flex items-center gap-2">
                                                         <Loader2 className="h-4 w-4 animate-spin" /> 正在刷新样式预览
@@ -911,15 +942,22 @@ export function BidDocWorkbench({ project, onRefresh, onNextStep, isLocked = fal
                                                     当前附件尚未绑定有效切片范围。
                                                 </div>
                                             ) : (
-                                                <div className="h-full overflow-y-auto px-4 py-4">
+                                                <div className="relative h-full overflow-y-auto px-4 py-4">
                                                     <div ref={styledPreviewDocxRef} />
-                                                    {!previewDocxBlob && previewHtml ? (
+                                                    {docxPreviewFailed && previewHtml ? (
                                                         <div
                                                             className="prose prose-sm max-w-none text-gray-700"
                                                             dangerouslySetInnerHTML={{ __html: previewHtml }}
                                                         />
-                                                    ) : !previewDocxBlob ? (
+                                                    ) : !previewDocxBlob && !previewing ? (
                                                         <div className="text-sm text-gray-500">当前锚点范围暂无可预览内容。</div>
+                                                    ) : null}
+                                                    {!docxPreviewReady && !docxPreviewFailed ? (
+                                                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-50/95 text-sm text-gray-500">
+                                                            <span className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm">
+                                                                <Loader2 className="h-4 w-4 animate-spin text-brand-600" /> 正在套用 Word 样式
+                                                            </span>
+                                                        </div>
                                                     ) : null}
                                                 </div>
                                             )}

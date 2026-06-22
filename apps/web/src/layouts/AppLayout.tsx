@@ -23,7 +23,7 @@ import type { PortalModule } from "../shared/types/portal";
 type AppLayoutProps = {
   children: ReactNode;
   currentPath: string;
-  lastActiveModuleCode?: PortalModule["code"] | string | null;
+  navContextModuleCode?: PortalModule["code"] | string | null;
   navigate: NavigateFn;
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
 };
@@ -122,7 +122,7 @@ function ReturnOverviewButton({
   );
 }
 
-export function AppLayout({ children, currentPath, lastActiveModuleCode, navigate, onNavigate }: AppLayoutProps) {
+export function AppLayout({ children, currentPath, navContextModuleCode, navigate, onNavigate }: AppLayoutProps) {
   const { currentUser, isAuthenticated, logout } = useAuth();
   const { leaveApp } = useAppUsage();
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
@@ -130,12 +130,11 @@ export function AppLayout({ children, currentPath, lastActiveModuleCode, navigat
   const activeModule = getActiveModule(currentPath);
   const activeWorkspaceFeature = getActiveWorkspaceFeature(currentPath);
   const isDashboardRoute = currentPath === "/" || currentPath === "/workspace" || currentPath === "/dashboard";
-  // 工作台及其功能页必须回到自身文案，避免 keep-alive 记忆污染主导航。
-  const lastActiveModule = !activeModule && !activeWorkspaceFeature && !isDashboardRoute && lastActiveModuleCode
-    ? moduleEntries.find((entry) => entry.code === lastActiveModuleCode)
+  const contextModule = !activeModule && !activeWorkspaceFeature && !isDashboardRoute && navContextModuleCode
+    ? moduleEntries.find((entry) => entry.code === navContextModuleCode)
     : undefined;
   const isWorkspaceFeatureView = Boolean(activeModule || activeWorkspaceFeature);
-  const primaryModule = activeModule || lastActiveModule;
+  const primaryModule = activeModule || contextModule;
   const primaryNavTarget = primaryModule
     ? legacyAppRoutes[primaryModule.code]
     : activeWorkspaceFeature

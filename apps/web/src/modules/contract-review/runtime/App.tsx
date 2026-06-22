@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { Trash2 } from 'lucide-react'
 import { DocumentEditor, DocumentEditorHandle } from './components/DocumentEditor'
 import { ReviewHistoryPanel } from './components/ReviewHistoryPanel'
 import { RiskPanel } from './components/RiskPanel'
@@ -657,29 +658,49 @@ function ConfirmDialog(props: {
 }) {
   if (!props.open) return null
   return (
-    <div className="editorOverlay" onClick={props.loading ? undefined : props.onCancel}>
-      <div
-        className="editorSheet alertDialogSheet"
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/35 px-4"
+      onClick={props.loading ? undefined : props.onCancel}
+    >
+      <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="contract-review-confirm-title"
         onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md overflow-hidden rounded-xl border border-gray-100 bg-white shadow-panel"
       >
-        <div className="alertDialogHeader">
-          <div className="alertDialogTitle" id="contract-review-confirm-title">{props.title || '确认操作'}</div>
+        <div className="flex items-start gap-3 border-b border-gray-100 px-6 py-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-danger-bg)] text-[var(--color-danger-text)]">
+            <Trash2 className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 id="contract-review-confirm-title" className="text-base font-bold text-gray-900">
+              {props.title || '确认操作'}
+            </h2>
+          </div>
         </div>
-        <div className="alertDialogBody">
-          <div className="alertDialogMessage">{props.message}</div>
+        <div className="px-6 py-5 text-sm leading-6 text-gray-600">
+          {props.message}
         </div>
-        <div className="alertDialogFooter">
-          <button className="alertDialogSecondary" onClick={props.onCancel} disabled={props.loading}>
+        <div className="flex justify-end gap-3 bg-gray-50 px-6 py-4">
+          <button
+            type="button"
+            onClick={props.onCancel}
+            disabled={props.loading}
+            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
             取消
           </button>
-          <button className="alertDialogDanger" onClick={props.onConfirm} disabled={props.loading}>
+          <button
+            type="button"
+            onClick={props.onConfirm}
+            disabled={props.loading}
+            className="rounded-lg bg-[var(--color-danger-text)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-danger-icon)] disabled:cursor-not-allowed disabled:opacity-70"
+          >
             {props.loading ? '删除中…' : props.confirmLabel}
           </button>
         </div>
-      </div>
+      </section>
     </div>
   )
 }

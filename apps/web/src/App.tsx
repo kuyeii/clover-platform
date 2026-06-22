@@ -57,6 +57,7 @@ export default function App() {
   const route = useMemo(() => resolveRoute(pathname), [pathname]);
   const [keepAlivePages, setKeepAlivePages] = useState<KeepAlivePage[]>([]);
   const [lastActiveKeepAliveKey, setLastActiveKeepAliveKey] = useState<string | null>(null);
+  const [navContextModuleCode, setNavContextModuleCode] = useState<string | null>(null);
   const activeKeepAliveKey = route.keepAliveKey;
   const visibleKeepAlivePages = useMemo(() => {
     if (!activeKeepAliveKey || keepAlivePages.some((page) => page.key === activeKeepAliveKey)) {
@@ -75,6 +76,7 @@ export default function App() {
     if (pathname === "/login") {
       setKeepAlivePages([]);
       setLastActiveKeepAliveKey(null);
+      setNavContextModuleCode(null);
       return;
     }
     if (!activeKeepAliveKey) {
@@ -95,6 +97,16 @@ export default function App() {
       ];
     });
   }, [activeKeepAliveKey, currentPath, navigate, route]);
+
+  useEffect(() => {
+    if (activeKeepAliveKey) {
+      setNavContextModuleCode(activeKeepAliveKey);
+      return;
+    }
+    if (pathname === "/" || pathname === "/workspace" || pathname === "/dashboard" || pathname === "/bid-reference-sites") {
+      setNavContextModuleCode(null);
+    }
+  }, [activeKeepAliveKey, pathname]);
 
   const routeContent = (
     <>
@@ -118,7 +130,7 @@ export default function App() {
         <AppUsageProvider currentPath={pathname}>
           <AppLayout
             currentPath={pathname}
-            lastActiveModuleCode={lastActiveKeepAliveKey}
+            navContextModuleCode={navContextModuleCode}
             onNavigate={onNavigate}
             navigate={navigate}
           >

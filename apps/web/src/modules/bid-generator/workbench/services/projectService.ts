@@ -1626,6 +1626,11 @@ function buildStructuredBidModules(
             fillStatus: resolveStructureFillStatus(htmlContent, linkedSections, generatedContent),
             linkedSections,
             isTechProposalLink: false,
+            locatorStart: next.locatorStart || existing?.locatorStart,
+            locatorEnd: next.locatorEnd || existing?.locatorEnd,
+            startBlockId: next.startBlockId || existing?.startBlockId,
+            endBlockId: next.endBlockId || existing?.endBlockId,
+            sourceAttachmentName: next.sourceAttachmentName || existing?.sourceAttachmentName,
         });
     };
 
@@ -1946,24 +1951,75 @@ function coerceOutlineWordCount(item: any, fallback = 0): number {
     return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
 }
 
-function normalizeOutlineWordFields(outline?: OutlineSection[] | null): OutlineSection[] | undefined {
+function normalizeOutlineDiagramPlan(item: any): OutlineSection['diagramPlan'] {
+    const plan = item?.diagramPlan ?? item?.diagram_plan;
+    if (!plan || typeof plan !== 'object') return undefined;
+    return {
+        enabled: Boolean(plan.enabled),
+        brief: String(plan.brief || ''),
+        typeHint: plan.typeHint ?? plan.type_hint,
+        priority: typeof plan.priority === 'number' ? plan.priority : undefined,
+    };
+}
+
+/**
+ * 归一化大纲节点，隔离 Dify/历史缓存中 children 缺失、snake_case 字段混用等脏数据。
+ */
+function normalizeOutlineData(outline?: OutlineSection[] | null): OutlineSection[] | undefined {
     if (!Array.isArray(outline)) return outline || undefined;
-    return outline.map((section: any) => ({
-        ...section,
-        wordCount: coerceOutlineWordCount(section, 0),
-        children: Array.isArray(section.children)
-            ? section.children.map((child: any) => ({
-                ...child,
-                wordCount: coerceOutlineWordCount(child, 0),
-                children: Array.isArray(child.children)
-                    ? child.children.map((leaf: any) => ({
-                        ...leaf,
-                        wordCount: coerceOutlineWordCount(leaf, 0),
+    return outline
+        .filter((section: any) => section && typeof section === 'object')
+        .map((section: any, sectionIndex) => ({
+            ...section,
+            id: String(section.id || `section_${sectionIndex + 1}`),
+            title: String(section.title || `技术章节 ${sectionIndex + 1}`),
+            wordCount: coerceOutlineWordCount(section, 0),
+            writingHint: String(section.writingHint ?? section.writing_hint ?? ''),
+            keywords: Array.isArray(section.keywords) ? section.keywords.map((kw: any) => String(kw)).filter(Boolean) : [],
+            relatedAnalysisIds: Array.isArray(section.relatedAnalysisIds ?? section.related_analysis_ids)
+                ? (section.relatedAnalysisIds ?? section.related_analysis_ids).map((id: any) => String(id)).filter(Boolean)
+                : [],
+            needDiagram: Boolean(section.needDiagram ?? section.need_diagram ?? false),
+            diagramBrief: String(section.diagramBrief ?? section.diagram_brief ?? ''),
+            diagramPlan: normalizeOutlineDiagramPlan(section),
+            headingLevel: Number(section.headingLevel ?? section.heading_level ?? 2) || 2,
+            generationStrategy: String(section.generationStrategy ?? section.generation_strategy ?? 'general'),
+            generatesFromSelf: Boolean(section.generatesFromSelf ?? section.generates_from_self ?? false),
+            children: Array.isArray(section.children)
+                ? section.children
+                    .filter((child: any) => child && typeof child === 'object')
+                    .map((child: any, childIndex: number) => ({
+                        ...child,
+                        id: String(child.id || `${section.id || `section_${sectionIndex + 1}`}_child_${childIndex + 1}`),
+                        title: String(child.title || `子章节 ${childIndex + 1}`),
+                        wordCount: coerceOutlineWordCount(child, 0),
+                        writingHint: String(child.writingHint ?? child.writing_hint ?? ''),
+                        keywords: Array.isArray(child.keywords) ? child.keywords.map((kw: any) => String(kw)).filter(Boolean) : [],
+                        relatedAnalysisIds: Array.isArray(child.relatedAnalysisIds ?? child.related_analysis_ids)
+                            ? (child.relatedAnalysisIds ?? child.related_analysis_ids).map((id: any) => String(id)).filter(Boolean)
+                            : [],
+                        needDiagram: Boolean(child.needDiagram ?? child.need_diagram ?? false),
+                        diagramBrief: String(child.diagramBrief ?? child.diagram_brief ?? ''),
+                        diagramPlan: normalizeOutlineDiagramPlan(child),
+                        headingLevel: Number(child.headingLevel ?? child.heading_level ?? 3) || 3,
+                        generationStrategy: String(child.generationStrategy ?? child.generation_strategy ?? section.generationStrategy ?? section.generation_strategy ?? 'general'),
+                        generatesFromSelf: Boolean(child.generatesFromSelf ?? child.generates_from_self ?? false),
+                        children: Array.isArray(child.children)
+                            ? child.children
+                                .filter((leaf: any) => leaf && typeof leaf === 'object')
+                                .map((leaf: any, leafIndex: number) => ({
+                                    ...leaf,
+                                    id: String(leaf.id || `${child.id || `child_${childIndex + 1}`}_leaf_${leafIndex + 1}`),
+                                    title: String(leaf.title || `三级标题 ${leafIndex + 1}`),
+                                    wordCount: coerceOutlineWordCount(leaf, 0),
+                                    writingHint: String(leaf.writingHint ?? leaf.writing_hint ?? ''),
+                                    keywords: Array.isArray(leaf.keywords) ? leaf.keywords.map((kw: any) => String(kw)).filter(Boolean) : [],
+                                    headingLevel: Number(leaf.headingLevel ?? leaf.heading_level ?? 4) || 4,
+                                }))
+                            : [],
                     }))
-                    : child.children,
-            }))
-            : section.children,
-    }));
+                : [],
+        }));
 }
 
 function buildPrivacyPlaceholderHint(
@@ -1996,7 +2052,7 @@ function buildContentPlaceholderContext(project?: Project) {
 }
 
 function normalizeProjectCachedData(project: Project): Project {
-    const outline = normalizeOutlineWordFields(project?.outline);
+    const outline = normalizeOutlineData(project?.outline);
     if (!project?.generatedContent) {
         return outline === project?.outline ? project : { ...project, outline };
     }
@@ -4440,6 +4496,8 @@ export const projectService = {
             attachment_name?: string;
             start_block_id?: string;
             end_block_id?: string;
+            start_locator?: string;
+            end_locator?: string;
         }>,
     ): Promise<void> {
         const proj = loadAll().find(p => p.id === projectId);
