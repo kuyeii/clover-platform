@@ -126,6 +126,18 @@ async def get_contract_review_status(
         return legacy_business_error(exc)
 
 
+@router.delete("/api/reviews/{run_id}")
+async def delete_contract_review(
+    run_id: str,
+    user: dict[str, Any] = Depends(require_contract_review_user),
+) -> JSONResponse:
+    _ = user
+    try:
+        return legacy_json(contract_review.delete_review(run_id))
+    except HTTPException as exc:
+        return legacy_business_error(exc)
+
+
 @router.get("/api/reviews/{run_id}/result")
 async def get_contract_review_result(
     run_id: str,

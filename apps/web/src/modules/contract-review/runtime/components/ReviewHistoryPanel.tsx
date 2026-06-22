@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, FileText, History } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, FileText, History, Trash2 } from 'lucide-react'
 import type { ReviewHistoryItem } from '../types'
 
 function statusLabel(status: ReviewHistoryItem['status']) {
@@ -31,6 +31,7 @@ export function ReviewHistoryPanel(props: {
   stats: any
   latestReview: ReviewHistoryItem | null
   onOpen: (item: ReviewHistoryItem) => void
+  onDelete?: (item: ReviewHistoryItem) => void
   onStartNew: () => void
 }) {
   const [pageSize, setPageSize] = useState(10)
@@ -114,12 +115,13 @@ export function ReviewHistoryPanel(props: {
                   <th>任务类型</th>
                   <th>审查时间</th>
                   <th>状态</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {props.items.length === 0 ? (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={5}>
                       <div className="landingHistoryEmpty">暂无审查记录</div>
                     </td>
                   </tr>
@@ -156,6 +158,24 @@ export function ReviewHistoryPanel(props: {
                             <span className={`statusDot statusDot--${state}`} />
                             {statusLabel(item.status)}
                           </span>
+                        </td>
+                        <td>
+                          {item.status === 'completed' || item.status === 'failed' ? (
+                            <button
+                              type="button"
+                              className="landingHistoryDeleteBtn"
+                              aria-label={`删除审查记录 ${item.file_name || item.run_id}`}
+                              title="删除记录"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                props.onDelete?.(item)
+                              }}
+                            >
+                              <Trash2 size={15} strokeWidth={2.2} />
+                            </button>
+                          ) : (
+                            <span className="landingHistoryDeletePlaceholder">—</span>
+                          )}
                         </td>
                       </tr>
                     )

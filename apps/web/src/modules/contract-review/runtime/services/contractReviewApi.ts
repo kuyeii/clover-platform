@@ -97,6 +97,13 @@ export async function getReviewStatus(runId: string, init: RequestInit = {}): Pr
   return contractReviewJsonFetch<ReviewMeta>(`/api/reviews/${encodeURIComponent(runId)}`, init);
 }
 
+// 删除单条审查记录；后端会同步删除数据库记录和对应运行文件。
+export async function deleteReview(runId: string): Promise<{ ok: boolean; run_id: string }> {
+  return contractReviewJsonFetch<{ ok: boolean; run_id: string }>(`/api/reviews/${encodeURIComponent(runId)}`, {
+    method: "DELETE",
+  });
+}
+
 // 获取审查结果；后端返回已适配展示的明文结果，不暴露组件层脱敏映射细节。
 export async function getReviewResult(runId: string, init: RequestInit = {}): Promise<ReviewResultPayload> {
   return contractReviewJsonFetch<ReviewResultPayload>(`/api/reviews/${encodeURIComponent(runId)}/result`, init);

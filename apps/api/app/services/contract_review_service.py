@@ -38,6 +38,7 @@ from app.services.contract_review_engine.merge_risk_results import merge_risk_re
 from app.services.contract_review_engine.normalize_clauses import normalize_clause_records, normalize_clauses
 from app.services.contract_review_engine.parse_outputs import _load_json_with_repair, strip_markdown_json
 from app.services.contract_review_engine.review_store import (
+    delete_review_run,
     get_review_meta,
     init_storage,
     list_review_meta,
@@ -2864,6 +2865,31 @@ def _finalize_aggregate_patch_pair(item: dict[str, Any], ai_payload: dict[str, A
 
 def _write_meta(run_id: str, payload: dict[str, Any]) -> None:
     upsert_review_meta(run_id, dict(payload or {}))
+
+
+def _delete_path_quietly(path: Path) -> bool:
+    try:
+        if path.is_dir():
+            shutil.rmtree(path)
+            return True
+        if path.is_file():
+            path.unlink()
+            return True
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"删除文件失败：{path.name}") from exc
+    return False
+
+
+def _delete_upload_candidates(root: Path, run_id: str) -> list[str]:
+    deleted: list[str] = []
+    if not root.exists():
+        return deleted
+    for upload in root.glob(f"{run_id}.*"):
+        if upload.is_file() and _delete_path_quietly(upload):
+            deleted.append(upload.name)
+    return deleted
 
 
 def _mirror_artifacts_enabled() -> bool:
@@ -5734,6 +5760,41 @@ def get_review_history(limit: int = 30) -> dict[str, Any]:
 def get_review_status(run_id: str) -> dict[str, Any]:
     run_id = _require_safe_run_id(run_id)
     return _read_meta(run_id)
+
+
+def delete_review(run_id: str) -> dict[str, Any]:
+    run_id = _require_safe_run_id(run_id)
+    meta = get_review_meta(run_id)
+    if meta is None:
+        run_dir = RUN_ROOT / run_id
+        archived_run_dir = ARCHIVED_RUN_ROOT / run_id
+        upload_candidates = list(UPLOAD_ROOT.glob(f"{run_id}.*")) if UPLOAD_ROOT.exists() else []
+        archived_upload_candidates = list(ARCHIVED_UPLOAD_ROOT.glob(f"{run_id}.*")) if ARCHIVED_UPLOAD_ROOT.exists() else []
+        if not run_dir.exists() and not archived_run_dir.exists() and not upload_candidates and not archived_upload_candidates:
+            raise HTTPException(status_code=404, detail="审查记录不存在")
+        try:
+            meta = _infer_meta_from_run(run_id)
+        except HTTPException:
+            meta = {"run_id": run_id, "status": "completed"}
+
+    status = str(meta.get("status") or "").strip().lower()
+    if status in {"queued", "running"}:
+        try:
+            meta = _repair_run_state_if_outputs_ready(run_id, meta, persist=False) or meta
+            status = str(meta.get("status") or "").strip().lower()
+        except Exception:
+            pass
+    if status in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail="审查进行中不可删除，请等待完成或失败后再删除。")
+
+    deleted = {
+        "run_dir": _delete_path_quietly(RUN_ROOT / run_id),
+        "archived_run_dir": _delete_path_quietly(ARCHIVED_RUN_ROOT / run_id),
+        "uploads": _delete_upload_candidates(UPLOAD_ROOT, run_id),
+        "archived_uploads": _delete_upload_candidates(ARCHIVED_UPLOAD_ROOT, run_id),
+        "database": delete_review_run(run_id),
+    }
+    return {"ok": True, "run_id": run_id, "deleted": deleted}
 
 
 def get_review_result(run_id: str) -> dict[str, Any]:

@@ -1,5 +1,5 @@
 import React from 'react'
-import { HelpCircle, LayoutGrid, Settings } from 'lucide-react'
+import { HelpCircle, LayoutGrid, Settings, Trash2 } from 'lucide-react'
 import type { NavKey } from './SideNav'
 import type { ReviewHistoryItem } from '../types'
 
@@ -41,6 +41,7 @@ export function ModernSideNav(props: {
   recentItems?: ReviewHistoryItem[]
   activeRunId?: string | null
   onOpenRecent?: (item: ReviewHistoryItem) => void
+  onDeleteRecent?: (item: ReviewHistoryItem) => void
 }) {
   const recent = props.recentItems || []
   return (
@@ -69,13 +70,18 @@ export function ModernSideNav(props: {
               const isActive = (props.activeNav === 'result' || props.activeNav === 'waiting') && props.activeRunId && String(props.activeRunId) === String(it.run_id)
               const statusClass = statusDotClass(it.status)
               return (
-                <button
+                <div
                   key={it.run_id}
+                  role="button"
+                  tabIndex={props.onOpenRecent ? 0 : -1}
                   className={`sideNavRecentItem ${isActive ? 'sideNavRecentItem--active' : ''}`}
                   onClick={() => props.onOpenRecent && props.onOpenRecent(it)}
-                  disabled={!props.onOpenRecent}
+                  onKeyDown={(event) => {
+                    if (!props.onOpenRecent || (event.key !== 'Enter' && event.key !== ' ')) return
+                    event.preventDefault()
+                    props.onOpenRecent(it)
+                  }}
                   title={it.file_name || it.run_id}
-                  type="button"
                 >
                   <span className={`sideNavStatusDot ${statusClass}`} />
                   <span className="sideNavRecentText">
@@ -86,7 +92,27 @@ export function ModernSideNav(props: {
                       <span>{formatRelativeTime(it.updated_at) || ''}</span>
                     </span>
                   </span>
-                </button>
+                  {it.status === 'completed' || it.status === 'failed' ? (
+                    <button
+                      type="button"
+                      className="sideNavRecentDelete"
+                      aria-label={`删除审查记录 ${it.file_name || it.run_id}`}
+                      title="删除记录"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        props.onDeleteRecent?.(it)
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        props.onDeleteRecent?.(it)
+                      }}
+                    >
+                      <Trash2 size={13} strokeWidth={2.2} />
+                    </button>
+                  ) : null}
+                </div>
               )
             })
           )}

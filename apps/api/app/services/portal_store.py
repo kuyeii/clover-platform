@@ -489,6 +489,15 @@ def upsert_app_usage_session(
     confirmed_conflict: bool = False,
 ) -> None:
     purge_expired_usage_sessions(conn)
+    conn.execute(
+        """
+        DELETE FROM core.app_usage_sessions
+        WHERE user_id = :user_id
+          AND metadata->>'clientId' = :client_id
+          AND app_code <> :app_code
+        """,
+        {"app_code": app_id, "user_id": user["id"], "client_id": client_id},
+    )
     existing = conn.one(
         """
         SELECT id, entered_at, metadata

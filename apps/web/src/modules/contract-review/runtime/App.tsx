@@ -13,6 +13,7 @@ import {
   applyRiskAi,
   contractReviewFetch,
   createReview,
+  deleteReview,
   editRiskAiResponse,
   getContractReviewConfig,
   getReviewDocumentResponse,
@@ -57,6 +58,15 @@ type SessionReviewEntry = ReviewHistoryItem & {
 
 type UndoAction = {
   riskIds: string[]
+}
+
+type ConfirmDialogState = {
+  open: boolean
+  title: string
+  message: string
+  confirmLabel: string
+  loading: boolean
+  onConfirm: (() => Promise<void>) | null
 }
 
 const REVIEW_SPLIT_MIN_DOC_WIDTH = 420
@@ -636,6 +646,44 @@ function AlertDialog(props: { open: boolean; title?: string; message: string; on
   )
 }
 
+function ConfirmDialog(props: {
+  open: boolean
+  title: string
+  message: string
+  confirmLabel: string
+  loading?: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (!props.open) return null
+  return (
+    <div className="editorOverlay" onClick={props.loading ? undefined : props.onCancel}>
+      <div
+        className="editorSheet alertDialogSheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="contract-review-confirm-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="alertDialogHeader">
+          <div className="alertDialogTitle" id="contract-review-confirm-title">{props.title || '确认操作'}</div>
+        </div>
+        <div className="alertDialogBody">
+          <div className="alertDialogMessage">{props.message}</div>
+        </div>
+        <div className="alertDialogFooter">
+          <button className="alertDialogSecondary" onClick={props.onCancel} disabled={props.loading}>
+            取消
+          </button>
+          <button className="alertDialogDanger" onClick={props.onConfirm} disabled={props.loading}>
+            {props.loading ? '删除中…' : props.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -665,6 +713,14 @@ export default function App() {
     open: false,
     title: '提示',
     message: ''
+  })
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
+    open: false,
+    title: '',
+    message: '',
+    confirmLabel: '确认',
+    loading: false,
+    onConfirm: null
   })
   const historyEntriesRef = useRef<SessionReviewEntry[]>([])
   const restoredAcceptedCommentRunRef = useRef<string | null>(null)
@@ -2191,6 +2247,49 @@ export default function App() {
     removeLocalValue(ACTIVE_RUN_ID_STORAGE_KEY)
   }, [applyWorkspaceFile])
 
+  const removeReviewSnapshot = useCallback((targetRunId: string) => {
+    const snapshots = readAllReviewSnapshots()
+    if (!snapshots[targetRunId]) return
+    delete snapshots[targetRunId]
+    writeSessionValue(REVIEW_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots))
+  }, [])
+
+  const deleteHistoryItem = useCallback(async (item: ReviewHistoryItem) => {
+    const targetRunId = String(item.run_id || '').trim()
+    if (!targetRunId) return
+    await deleteReview(targetRunId)
+    setHistoryEntries((entries) => entries.filter((entry) => entry.run_id !== targetRunId))
+    removeReviewSnapshot(targetRunId)
+    autoAiTriggeredRef.current.delete(targetRunId)
+    persistTriggeredRunIds()
+    if (readLocalValue(ACTIVE_RUN_ID_STORAGE_KEY) === targetRunId) {
+      removeLocalValue(ACTIVE_RUN_ID_STORAGE_KEY)
+    }
+    if (runId === targetRunId || routeRunId === targetRunId) {
+      resetReviewWorkspace()
+      navigate(pathForNav('upload'), { replace: true })
+    }
+  }, [navigate, persistTriggeredRunIds, removeReviewSnapshot, resetReviewWorkspace, routeRunId, runId])
+
+  const requestDeleteHistoryItem = useCallback((item: ReviewHistoryItem) => {
+    const status = String(item.status || '').toLowerCase()
+    if (status === 'queued' || status === 'running') {
+      openDialog('审查进行中不可删除，请等待完成或失败后再删除。', '无法删除记录')
+      return
+    }
+    const fileName = item.file_name || item.run_id
+    setConfirmDialog({
+      open: true,
+      title: '删除审查记录',
+      message: `将永久删除「${fileName}」的审查记录、运行结果和对应文件。此操作不可恢复。`,
+      confirmLabel: '删除记录',
+      loading: false,
+      onConfirm: async () => {
+        await deleteHistoryItem(item)
+      }
+    })
+  }, [deleteHistoryItem, openDialog])
+
   const goUploadPage = useCallback(() => {
     navigate(pathForNav('upload'))
     resetReviewWorkspace()
@@ -2386,6 +2485,7 @@ export default function App() {
               showErrorDialog(e, '打开审查记录失败')
             }
           }}
+          onDeleteRecent={requestDeleteHistoryItem}
         />
 
         <main className={`contentShell ${activeNav === 'upload' ? 'contentShell--noScroll' : ''}`}>
@@ -2434,6 +2534,7 @@ export default function App() {
                 }
               }}
               onStartNew={goUploadPage}
+              onDelete={requestDeleteHistoryItem}
             />
           ) : null}
         </main>
@@ -2444,6 +2545,29 @@ export default function App() {
         title={dialog.title}
         message={dialog.message}
         onClose={() => setDialog((prev) => ({ ...prev, open: false }))}
+      />
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        loading={confirmDialog.loading}
+        onCancel={() => {
+          if (confirmDialog.loading) return
+          setConfirmDialog((prev) => ({ ...prev, open: false, onConfirm: null }))
+        }}
+        onConfirm={() => {
+          if (confirmDialog.loading || !confirmDialog.onConfirm) return
+          setConfirmDialog((prev) => ({ ...prev, loading: true }))
+          confirmDialog.onConfirm()
+            .then(() => {
+              setConfirmDialog((prev) => ({ ...prev, open: false, loading: false, onConfirm: null }))
+            })
+            .catch((error) => {
+              setConfirmDialog((prev) => ({ ...prev, open: false, loading: false, onConfirm: null }))
+              showErrorDialog(error, '删除审查记录失败')
+            })
+        }}
       />
     </>
   )

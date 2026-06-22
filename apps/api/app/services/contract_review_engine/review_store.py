@@ -263,6 +263,20 @@ def list_review_meta(limit: int = 200) -> list[dict[str, Any]]:
     return items
 
 
+def delete_review_run(run_id: str) -> bool:
+    init_storage()
+    run_id = str(run_id or "").strip()
+    if not run_id:
+        return False
+    with _DB_WRITE_LOCK:
+        with _connect() as conn:
+            result = conn.execute(
+                text("DELETE FROM contract_review.review_runs WHERE run_id = :run_id"),
+                {"run_id": run_id},
+            )
+            return int(result.rowcount or 0) > 0
+
+
 def _relative_to(path: Path, root: Path) -> Path | None:
     try:
         return path.resolve().relative_to(root.resolve())

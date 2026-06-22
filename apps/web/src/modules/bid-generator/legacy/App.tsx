@@ -13,7 +13,7 @@ import type { BidderInfo, Project, TechProposalConfig } from './services/project
 import { buildInitialOutlineFromTechnicalHeadings, projectService } from './services/projectService';
 import { shouldBlockProjectNavigation } from './services/navigationPolicy';
 import { useState } from 'react';
-import { AlertTriangle, FileDown, FolderOpen, Loader2, Lock } from 'lucide-react';
+import { AlertTriangle, FileDown, FolderOpen, Loader2, Lock, Trash2 } from 'lucide-react';
 import { buildBidExportSections } from './utils/bidExport';
 
 // ── 合法 Tab 集合 ──
@@ -22,6 +22,61 @@ const VALID_TABS: StageId[] = ['analysis', 'outline', 'tech', 'bid'];
 function getProjectTabByStatus(project: Project): StageId {
   const stageIdx = getCurrentStageIndex(project.status);
   return VALID_TABS[stageIdx] || 'analysis';
+}
+
+function DeleteProjectConfirmDialog({
+  project,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  project: Project | null;
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!project) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/35 px-4">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bid-delete-project-title"
+        className="w-full max-w-md overflow-hidden rounded-xl border border-gray-100 bg-white shadow-panel"
+      >
+        <div className="flex items-start gap-3 border-b border-gray-100 px-6 py-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-danger-bg)] text-[var(--color-danger-text)]">
+            <Trash2 className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 id="bid-delete-project-title" className="text-base font-bold text-gray-900">删除项目</h2>
+            <p className="mt-1 truncate text-sm text-gray-500">{project.name}</p>
+          </div>
+        </div>
+        <div className="px-6 py-5 text-sm leading-6 text-gray-600">
+          删除后项目记录将不可恢复。确认删除该标书项目？
+        </div>
+        <div className="flex justify-end gap-3 bg-gray-50 px-6 py-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={deleting}
+            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={deleting}
+            className="rounded-lg bg-[var(--color-danger-text)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-danger-icon)] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {deleting ? '删除中…' : '删除项目'}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────
@@ -443,6 +498,8 @@ export default function App() {
   const hasBusyTask = projects.some(isProjectBusy);
   const busyProjectIds = projects.filter(isProjectBusy).map((proj) => proj.id);
   const activeProjectBusy = shouldBlockProjectNavigation(activeProjectId, busyProjectIds);
+  const [pendingDeleteProject, setPendingDeleteProject] = useState<Project | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -502,10 +559,26 @@ export default function App() {
     guardNavigation(`切换到项目「${proj.name}」`, () => navigate(`/projects/${id}/${tab}`));
   };
 
-  const handleDeleteProject = (id: string) => {
-    projectService.delete(id);
-    refreshProjects();
-    navigate('/');
+  const handleRequestDeleteProject = (id: string) => {
+    const project = projects.find(p => p.id === id);
+    if (!project) return;
+    setPendingDeleteProject(project);
+  };
+
+  const handleConfirmDeleteProject = async () => {
+    if (!pendingDeleteProject || deletingProject) return;
+    const deleteId = pendingDeleteProject.id;
+    setDeletingProject(true);
+    try {
+      projectService.delete(deleteId);
+      refreshProjects();
+      setPendingDeleteProject(null);
+      if (activeProjectId === deleteId) {
+        navigate('/');
+      }
+    } finally {
+      setDeletingProject(false);
+    }
   };
 
   const handleProjectCreated = (project: Project) => {
@@ -542,12 +615,20 @@ export default function App() {
         globalTab={globalTab}
         onSelectProject={handleSelectProject}
         onNewProject={() => guardNavigation('新建项目', () => navigate('/'))}
-        onDeleteProject={handleDeleteProject}
+        onDeleteProject={handleRequestDeleteProject}
         onRepairLocks={handleRepairZombieLocks}
         repairingLocks={repairingLocks}
         projectsLoading={bootstrapping}
         lockedProjectId={activeProjectBusy ? activeProjectId : null}
         disableNewProject={activeProjectBusy}
+      />
+      <DeleteProjectConfirmDialog
+        project={pendingDeleteProject}
+        deleting={deletingProject}
+        onCancel={() => {
+          if (!deletingProject) setPendingDeleteProject(null);
+        }}
+        onConfirm={handleConfirmDeleteProject}
       />
 
       {/* 右侧主内容区 */}

@@ -14,6 +14,7 @@ import {
   enterApp as enterAppOnServer,
   fetchUsageSummaries,
   heartbeatApp,
+  leaveAllApps as leaveAllAppsOnServer,
   leaveAllAppsBeacon,
   leaveApp as leaveAppOnServer,
 } from "../api/portal";
@@ -92,6 +93,7 @@ export function AppUsageProvider({
   const usageTransitionRef = useRef(0);
   const websocketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const nonAppReleaseKeyRef = useRef<string | null>(null);
 
   const refreshUsage = useCallback(async () => {
     if (!isAuthenticated) {
@@ -124,6 +126,22 @@ export function AppUsageProvider({
     },
     [currentUser],
   );
+
+  const leaveCurrentClientApps = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
+
+    const transitionId = usageTransitionRef.current + 1;
+    usageTransitionRef.current = transitionId;
+    activeAppIdRef.current = null;
+    setActiveAppId(null);
+
+    const nextSummaries = await leaveAllAppsOnServer();
+    if (usageTransitionRef.current === transitionId) {
+      setSummaries(nextSummaries);
+    }
+  }, [currentUser]);
 
   const enterApp = useCallback(
     async (appId: ModuleCode, options: EnterAppOptions = {}) => {
@@ -251,6 +269,18 @@ export function AppUsageProvider({
     const routeAppId = getRouteAppId(currentPath);
     const previousAppId = activeAppIdRef.current;
 
+    if (!routeAppId) {
+      const releaseKey = `${currentUser?.id ?? "anonymous"}:${currentPath}`;
+      if (currentUser && nonAppReleaseKeyRef.current !== releaseKey) {
+        // 非子应用路由必须释放当前标签页占用，兜住刷新、请求失败和本地状态丢失后的残留。
+        nonAppReleaseKeyRef.current = releaseKey;
+        leaveCurrentClientApps().catch(() => undefined);
+      }
+      return;
+    }
+
+    nonAppReleaseKeyRef.current = null;
+
     if (previousAppId && previousAppId !== routeAppId) {
       leaveApp(previousAppId).catch(() => undefined);
     }
@@ -258,7 +288,7 @@ export function AppUsageProvider({
     if (routeAppId && routeAppId !== previousAppId && canAccessApp(routeAppId)) {
       enterApp(routeAppId).catch(() => undefined);
     }
-  }, [canAccessApp, currentPath, enterApp, leaveApp]);
+  }, [canAccessApp, currentPath, currentUser, enterApp, leaveApp, leaveCurrentClientApps]);
 
   useEffect(() => {
     if (!currentUser) {

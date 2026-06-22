@@ -158,6 +158,10 @@
   border-color: var(--color-brand-border);
   box-shadow: none;
 }
+.sideNavRecentItem:focus-visible {
+  outline: 2px solid var(--color-brand-border);
+  outline-offset: 2px;
+}
 .sideNavRecentItem--active {
   background: var(--color-surface);
   border-color: var(--color-brand-border);
@@ -181,6 +185,29 @@
   flex: 1 1 auto;
   min-width: 0;
   display: block;
+}
+.sideNavRecentDelete {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+.sideNavRecentItem:hover .sideNavRecentDelete,
+.sideNavRecentDelete:focus-visible {
+  opacity: 1;
+}
+.sideNavRecentDelete:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
 }
 .sideNavRecentTitle {
   display: block;
@@ -1028,6 +1055,29 @@
 .landingHistoryStatus--queued {
   color: #64748b;
   background: rgba(148, 163, 184, 0.12);
+}
+
+.landingHistoryDeleteBtn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.landingHistoryDeleteBtn:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+.landingHistoryDeletePlaceholder {
+  color: var(--color-text-disabled);
 }
 
 .landingHistoryEmpty {
