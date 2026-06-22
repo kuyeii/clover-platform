@@ -71,10 +71,10 @@ export function ModernSideNav(props: {
               return (
                 <button
                   key={it.run_id}
-                  className={`sideNavRecentItem ${isActive ? 'sideNavRecentItem--active' : ''} ${it.available === false ? 'sideNavRecentItem--disabled' : ''}`}
+                  className={`sideNavRecentItem ${isActive ? 'sideNavRecentItem--active' : ''}`}
                   onClick={() => props.onOpenRecent && props.onOpenRecent(it)}
-                  disabled={!props.onOpenRecent || it.available === false}
-                  title={it.available === false ? '缺少原始合同文件，无法打开' : (it.file_name || it.run_id)}
+                  disabled={!props.onOpenRecent}
+                  title={it.file_name || it.run_id}
                   type="button"
                 >
                   <span className={`sideNavStatusDot ${statusClass}`} />

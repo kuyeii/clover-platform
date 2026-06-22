@@ -21,7 +21,7 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from app.services.pipt_gateway_service import postprocess_payload, preprocess_internal_payload, preprocess_payload
+from app.services.pipt_gateway_service import contains_supported_placeholder, postprocess_payload, preprocess_internal_payload, preprocess_payload
 from app.services.contract_review_engine.config import API_ROOT, DEFAULT_DATA_ROOT, REPO_ROOT, settings
 from app.services.contract_review_engine.checkpoint import load_existing_clause_batch
 from app.services.contract_review_engine.clause_ref_display import build_clause_alias_map, humanize_clause_refs
@@ -69,6 +69,8 @@ _ACTIVE_REVIEW_RUN_ID: str | None = None
 _AI_REWRITE_LOCK = threading.Lock()
 _AI_REWRITE_IN_FLIGHT: set[str] = set()
 _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,96}$")
+_DISPLAY_CACHE_VERSION = 1
+_DISPLAY_CACHE_META_SUFFIX = ".meta.json"
 logger = logging.getLogger(__name__)
 
 
@@ -133,9 +135,12 @@ def _contract_review_pipt_restore_text(
 ) -> str:
     if not text or not _contract_review_pipt_enabled():
         return str(text or "")
+    text_value = str(text or "")
+    if not contains_supported_placeholder(text_value):
+        return text_value
     payload = postprocess_payload(
         {
-            "text": str(text or ""),
+            "text": text_value,
             "module_code": "contract-review",
             "purpose": purpose,
             "request_id": _contract_review_document_pipt_request_id(run_id),
@@ -2874,6 +2879,93 @@ def _write_json_artifact(path: Path, payload: Any) -> None:
             return
 
 
+def _display_cache_path(run_dir: Path, source_name: str) -> Path:
+    return run_dir / f"{source_name}.display.json"
+
+
+def _display_cache_meta_path(display_path: Path) -> Path:
+    return display_path.with_name(f"{display_path.name}{_DISPLAY_CACHE_META_SUFFIX}")
+
+
+def _file_signature(path: Path) -> dict[str, Any] | None:
+    if not path.exists() or not path.is_file():
+        return None
+    stat = path.stat()
+    return {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size}
+
+
+def _display_cache_sources(run_dir: Path, source_paths: list[Path]) -> dict[str, Any]:
+    sources: dict[str, Any] = {}
+    for source_path in source_paths:
+        sources[source_path.name] = _file_signature(source_path)
+    pipt_path = _pipt_context_path(run_dir)
+    sources[pipt_path.name] = _file_signature(pipt_path)
+    return sources
+
+
+def _display_cache_meta(run_dir: Path, source_paths: list[Path]) -> dict[str, Any]:
+    return {
+        "version": _DISPLAY_CACHE_VERSION,
+        "generated_at": _iso_now(),
+        "sources": _display_cache_sources(run_dir, source_paths),
+    }
+
+
+def _read_json_file(path: Path) -> Any:
+    if not path.exists() or not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _display_cache_is_current(run_dir: Path, display_path: Path, source_paths: list[Path]) -> bool:
+    if not display_path.exists():
+        return False
+    meta = _read_json_file(_display_cache_meta_path(display_path))
+    if not isinstance(meta, dict):
+        return False
+    if int(meta.get("version") or 0) != _DISPLAY_CACHE_VERSION:
+        return False
+    return meta.get("sources") == _display_cache_sources(run_dir, source_paths)
+
+
+def _write_display_cache(run_dir: Path, display_path: Path, payload: Any, source_paths: list[Path]) -> Any:
+    # display 缓存是明文派生产物，只落 run 目录，不镜像进 artifacts 表扩大明文落点。
+    _atomic_write_text(display_path, json.dumps(payload, ensure_ascii=False, indent=2))
+    _atomic_write_text(
+        _display_cache_meta_path(display_path),
+        json.dumps(_display_cache_meta(run_dir, source_paths), ensure_ascii=False, indent=2),
+    )
+    return payload
+
+
+def _load_or_build_display_cache(
+    *,
+    run_id: str,
+    run_dir: Path,
+    source_name: str,
+    source_paths: list[Path],
+    builder,
+) -> Any:
+    display_path = _display_cache_path(run_dir, source_name)
+    if _display_cache_is_current(run_dir, display_path, source_paths):
+        cached = _read_json_file(display_path)
+        if cached is not None:
+            return cached
+    return _write_display_cache(run_dir, display_path, builder(), source_paths)
+
+
+def _artifact_is_current(target_path: Path, source_paths: list[Path]) -> bool:
+    target_signature = _file_signature(target_path)
+    if target_signature is None:
+        return False
+    target_mtime = int(target_signature.get("mtime_ns") or 0)
+    for source_path in source_paths:
+        source_signature = _file_signature(source_path)
+        if source_signature is not None and int(source_signature.get("mtime_ns") or 0) > target_mtime:
+            return False
+    return True
+
+
 def _parse_iso_datetime(value: str | None) -> float:
     if not value:
         return 0.0
@@ -3103,6 +3195,8 @@ def _read_meta(run_id: str) -> dict[str, Any]:
             payload = repaired
 
     payload.setdefault("updated_at", datetime.utcnow().isoformat() + "Z")
+    payload["document_ready"] = _document_preview_ready(run_id)
+    payload["download_ready"] = _can_export_reviewed_docx(run_id)
     return payload
 
 
@@ -4356,10 +4450,40 @@ def _sync_ai_aggregation_file(*, run_dir: Path, validated: dict[str, Any], revie
     return payload
 
 
+def _load_or_sync_ai_aggregation_file(*, run_dir: Path, validated: dict[str, Any], reviewed: dict[str, Any]) -> dict[str, Any]:
+    aggregation_path = _aggregation_file_path(run_dir)
+    source_paths = [
+        run_dir / "risk_result_validated.json",
+        run_dir / "risk_result_reviewed.json",
+        run_dir / "merged_clauses.json",
+    ]
+    aggregation = _safe_json(aggregation_path)
+    if isinstance(aggregation, dict) and _artifact_is_current(aggregation_path, source_paths):
+        return aggregation
+    return _sync_ai_aggregation_file(run_dir=run_dir, validated=validated, reviewed=reviewed)
+
+
+def _load_current_ai_aggregation_file(run_dir: Path) -> dict[str, Any] | None:
+    validated_path = run_dir / "risk_result_validated.json"
+    validated = _safe_json(validated_path)
+    if not isinstance(validated, dict):
+        return None
+
+    reviewed_path = run_dir / "risk_result_reviewed.json"
+    reviewed = _safe_json(reviewed_path) if reviewed_path.exists() else None
+    if reviewed is not None and not isinstance(reviewed, dict):
+        return None
+    if reviewed is None:
+        reviewed = _project_reviewed_risk_payload(run_dir=run_dir, validated=validated, previous_reviewed=None)
+        reviewed = _ensure_risk_items_status(reviewed)
+
+    return _load_or_sync_ai_aggregation_file(run_dir=run_dir, validated=validated, reviewed=reviewed)
+
+
 def _load_ai_aggregation_group(run_dir: Path, risk: dict[str, Any]) -> dict[str, Any] | None:
     aggregate_id = str(risk.get("aggregate_id") or "").strip()
     risk_id = _risk_id_str(risk)
-    payload = _safe_json(_aggregation_file_path(run_dir))
+    payload = _load_current_ai_aggregation_file(run_dir)
     groups = payload.get("groups") if isinstance(payload, dict) else None
     if not isinstance(groups, list):
         return None
@@ -4581,6 +4705,10 @@ def _persist_reviewed_payload(run_dir: Path, reviewed: dict[str, Any]) -> None:
         validated = _safe_json(run_dir / "risk_result_validated.json")
         if isinstance(validated, dict):
             _sync_ai_aggregation_file(run_dir=run_dir, validated=validated, reviewed=reviewed)
+        try:
+            _refresh_review_display_caches(run_dir.name, run_dir=run_dir)
+        except Exception:
+            logger.exception("Failed to refresh contract review display cache for run %s", run_dir.name)
 
 
 def _load_reviewed_risks_for_result(run_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -4604,22 +4732,102 @@ def _load_reviewed_risks_for_result(run_id: str) -> tuple[dict[str, Any], dict[s
     return reviewed, validated
 
 
-def _build_result_payload(run_id: str) -> dict[str, Any]:
-    run_dir = RUN_ROOT / run_id
-    clauses = _safe_json(run_dir / "merged_clauses.json")
+def _display_clauses_payload(*, run_id: str, run_dir: Path, clauses: Any) -> Any:
+    if not isinstance(clauses, list):
+        return clauses
+    return _load_or_build_display_cache(
+        run_id=run_id,
+        run_dir=run_dir,
+        source_name="merged_clauses",
+        source_paths=[run_dir / "merged_clauses.json"],
+        builder=lambda: _contract_review_restore_payload_for_source_docx(clauses, run_id=run_id, run_dir=run_dir),
+    )
+
+
+def _display_reviewed_payload(
+    *,
+    run_id: str,
+    run_dir: Path,
+    reviewed: dict[str, Any],
+    display_clauses: Any,
+) -> dict[str, Any]:
+    reviewed_path = run_dir / "risk_result_reviewed.json"
+    validated_path = run_dir / "risk_result_validated.json"
+
+    def build() -> dict[str, Any]:
+        restored = _contract_review_restore_payload_for_source_docx(reviewed, run_id=run_id, run_dir=run_dir)
+        if isinstance(restored, dict) and isinstance(display_clauses, list):
+            _sanitize_reviewed_display_payload(restored, display_clauses)
+        return restored if isinstance(restored, dict) else reviewed
+
+    cached = _load_or_build_display_cache(
+        run_id=run_id,
+        run_dir=run_dir,
+        source_name="risk_result_reviewed",
+        source_paths=[reviewed_path, validated_path, run_dir / "merged_clauses.json"],
+        builder=build,
+    )
+    return cached if isinstance(cached, dict) else reviewed
+
+
+def _display_ai_aggregation_payload(
+    *,
+    run_id: str,
+    run_dir: Path,
+    aggregation: dict[str, Any],
+) -> dict[str, Any]:
+    aggregation_path = _aggregation_file_path(run_dir)
+    reviewed_path = run_dir / "risk_result_reviewed.json"
+
+    def build() -> dict[str, Any]:
+        restored = _contract_review_restore_payload_for_source_docx(aggregation, run_id=run_id, run_dir=run_dir)
+        return restored if isinstance(restored, dict) else aggregation
+
+    cached = _load_or_build_display_cache(
+        run_id=run_id,
+        run_dir=run_dir,
+        source_name="risk_result_ai_aggregated",
+        source_paths=[aggregation_path, reviewed_path, run_dir / "merged_clauses.json"],
+        builder=build,
+    )
+    return cached if isinstance(cached, dict) else aggregation
+
+
+def _refresh_review_display_caches(run_id: str, *, run_dir: Path | None = None) -> None:
+    run_id = _require_safe_run_id(run_id)
+    target_dir = run_dir or (RUN_ROOT / run_id)
+    clauses = _safe_json(target_dir / "merged_clauses.json")
     if clauses is None:
-        raise HTTPException(status_code=404, detail="结果尚未生成完成")
-    validated, raw_validated = _load_reviewed_risks_for_result(run_id)
-    display_clauses = _contract_review_restore_payload_for_source_docx(clauses, run_id=run_id, run_dir=run_dir) if isinstance(clauses, list) else clauses
-    validated = _contract_review_restore_payload_for_source_docx(validated, run_id=run_id, run_dir=run_dir)
-    if isinstance(clauses, list):
-        _sanitize_reviewed_display_payload(validated, display_clauses if isinstance(display_clauses, list) else clauses)
-    meta = _read_meta(run_id)
-    can_export_reviewed_docx = _can_export_reviewed_docx(run_id)
-    aggregation = _safe_json(_aggregation_file_path(run_dir))
+        return
+    reviewed, raw_validated = _load_reviewed_risks_for_result(run_id)
+    display_clauses = _display_clauses_payload(run_id=run_id, run_dir=target_dir, clauses=clauses)
+    display_reviewed = _display_reviewed_payload(
+        run_id=run_id,
+        run_dir=target_dir,
+        reviewed=reviewed,
+        display_clauses=display_clauses,
+    )
+    aggregation = _load_or_sync_ai_aggregation_file(run_dir=target_dir, validated=raw_validated, reviewed=reviewed)
+    _display_ai_aggregation_payload(run_id=run_id, run_dir=target_dir, aggregation=aggregation)
+    if isinstance(display_reviewed, dict) and isinstance(display_clauses, list):
+        _sanitize_reviewed_display_payload(display_reviewed, display_clauses)
+
+
+def _load_display_cache_file(run_dir: Path, source_name: str) -> Any:
+    payload = _read_json_file(_display_cache_path(run_dir, source_name))
+    return payload
+
+
+def _build_readonly_display_result_payload(run_id: str, *, run_dir: Path, meta: dict[str, Any]) -> dict[str, Any] | None:
+    display_clauses = _load_display_cache_file(run_dir, "merged_clauses")
+    display_reviewed = _load_display_cache_file(run_dir, "risk_result_reviewed")
+    if display_reviewed is None:
+        display_reviewed = _load_display_cache_file(run_dir, "risk_result_validated")
+    if not isinstance(display_clauses, list) or not isinstance(display_reviewed, dict):
+        return None
+    aggregation = _load_display_cache_file(run_dir, "risk_result_ai_aggregated")
     if not isinstance(aggregation, dict):
-        aggregation = _build_ai_aggregation_payload(run_dir=run_dir, validated=raw_validated, reviewed=validated)
-    aggregation = _contract_review_restore_payload_for_source_docx(aggregation, run_id=run_id, run_dir=run_dir)
+        aggregation = {"version": 1, "groups": []}
     return {
         "run_id": run_id,
         "status": meta.get("status"),
@@ -4629,7 +4837,45 @@ def _build_result_payload(run_id: str) -> dict[str, Any]:
         "analysis_scope": meta.get("analysis_scope"),
         "analysis_scope_label": meta.get("analysis_scope_label"),
         "merged_clauses": display_clauses,
-        "risk_result_validated": validated,
+        "risk_result_validated": display_reviewed,
+        "risk_result_ai_aggregated": aggregation,
+        "download_ready": False,
+        "download_url": None,
+        "readonly": True,
+        "readonly_reason": "该历史记录缺少完整审查源文件，仅支持查看已缓存结果。",
+    }
+
+
+def _build_result_payload(run_id: str) -> dict[str, Any]:
+    run_dir = RUN_ROOT / run_id
+    meta = _read_meta(run_id)
+    clauses = _safe_json(run_dir / "merged_clauses.json")
+    if clauses is None:
+        readonly_payload = _build_readonly_display_result_payload(run_id, run_dir=run_dir, meta=meta)
+        if readonly_payload is not None:
+            return readonly_payload
+        raise HTTPException(status_code=404, detail="结果尚未生成完成")
+    reviewed, raw_validated = _load_reviewed_risks_for_result(run_id)
+    display_clauses = _display_clauses_payload(run_id=run_id, run_dir=run_dir, clauses=clauses)
+    display_reviewed = _display_reviewed_payload(
+        run_id=run_id,
+        run_dir=run_dir,
+        reviewed=reviewed,
+        display_clauses=display_clauses,
+    )
+    can_export_reviewed_docx = _can_export_reviewed_docx(run_id)
+    aggregation = _load_or_sync_ai_aggregation_file(run_dir=run_dir, validated=raw_validated, reviewed=reviewed)
+    aggregation = _display_ai_aggregation_payload(run_id=run_id, run_dir=run_dir, aggregation=aggregation)
+    return {
+        "run_id": run_id,
+        "status": meta.get("status"),
+        "file_name": meta.get("file_name"),
+        "review_side": meta.get("review_side"),
+        "contract_type_hint": meta.get("contract_type_hint"),
+        "analysis_scope": meta.get("analysis_scope"),
+        "analysis_scope_label": meta.get("analysis_scope_label"),
+        "merged_clauses": display_clauses,
+        "risk_result_validated": display_reviewed,
         "risk_result_ai_aggregated": aggregation,
         "download_ready": can_export_reviewed_docx,
         "download_url": f"/api/reviews/{run_id}/download" if can_export_reviewed_docx else None,
@@ -4639,14 +4885,19 @@ def _build_result_payload(run_id: str) -> dict[str, Any]:
 def _resolve_document_path(run_id: str) -> Path | None:
     _migrate_archived_run_if_needed(run_id)
     run_dir = RUN_ROOT / run_id
-    for candidate in (
-        run_dir / "source.docx",
-        UPLOAD_ROOT / f"{run_id}.docx",
-        run_dir / "reviewed_comments.docx",
-    ):
+    for candidate in _document_preview_candidates(run_id):
         if candidate.exists() and is_valid_docx_file(candidate):
             return candidate
     return None
+
+
+def _document_preview_candidates(run_id: str) -> tuple[Path, ...]:
+    run_dir = RUN_ROOT / run_id
+    return (
+        run_dir / "source.docx",
+        UPLOAD_ROOT / f"{run_id}.docx",
+        run_dir / "reviewed_comments.docx",
+    )
 
 
 def _safe_docx_download_name(preferred_name: str | None, fallback_name: str) -> str:
@@ -4676,6 +4927,11 @@ def _document_file_exists(run_id: str) -> bool:
     return False
 
 
+def _document_preview_ready(run_id: str) -> bool:
+    _migrate_archived_run_if_needed(run_id)
+    return any(candidate.exists() and candidate.is_file() for candidate in _document_preview_candidates(run_id))
+
+
 def _can_export_reviewed_docx(run_id: str) -> bool:
     run_dir = RUN_ROOT / run_id
     return _document_file_exists(run_id) and (run_dir / "merged_clauses.json").exists()
@@ -4684,7 +4940,8 @@ def _can_export_reviewed_docx(run_id: str) -> bool:
 def _to_history_item(meta: dict[str, Any]) -> dict[str, Any]:
     run_id = str(meta.get("run_id") or "")
     status = str(meta.get("status") or "running")
-    document_ready = bool(meta.get("document_ready") or status == "completed")
+    document_ready = bool(run_id and _document_preview_ready(run_id))
+    download_ready = bool(run_id and _can_export_reviewed_docx(run_id))
     return {
         "run_id": run_id,
         "file_name": meta.get("file_name"),
@@ -4698,7 +4955,7 @@ def _to_history_item(meta: dict[str, Any]) -> dict[str, Any]:
         "warning": meta.get("warning"),
         "error": meta.get("error"),
         "progress": meta.get("progress"),
-        "download_ready": bool(meta.get("download_ready") or document_ready),
+        "download_ready": download_ready,
         "document_ready": document_ready,
     }
 
@@ -5260,6 +5517,10 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
         return
 
     get_or_create_reviewed_risks(run_id)
+    try:
+        _refresh_review_display_caches(run_id, run_dir=run_dir)
+    except Exception:
+        logger.exception("Failed to warm contract review display cache for run %s", run_id)
     _write_meta(
         run_id,
         {

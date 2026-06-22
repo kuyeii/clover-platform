@@ -17,6 +17,7 @@ export type ReviewMeta = {
   error_code?: string
   error_detail?: string
   document_ready?: boolean
+  download_ready?: boolean
   original_format?: string
   working_file_name?: string
   converted?: boolean
@@ -113,6 +114,8 @@ export type ReviewResultPayload = {
   }
   download_ready: boolean
   download_url?: string | null
+  readonly?: boolean
+  readonly_reason?: string
 }
 
 export type EditSummary = {
@@ -138,6 +141,8 @@ export type ReviewHistoryItem = {
   updated_at: string
   created_at: string
   available: boolean
+  document_ready?: boolean
+  download_ready?: boolean
   file?: File | null
   meta?: ReviewMeta | null
   result?: ReviewResultPayload | null

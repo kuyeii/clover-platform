@@ -213,6 +213,24 @@ export function toUserFacingError(
     })
   }
 
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>
+    const status = typeof record.status === 'number' ? record.status : fallback?.status
+    const code = String(record.code || '').trim() || undefined
+    const title = typeof record.title === 'string' ? record.title.trim() || undefined : undefined
+    const message = typeof record.message === 'string' ? record.message.trim() || undefined : undefined
+    const detailText = pickText(message || record.detail || error)
+    return buildUserFacingError({
+      status,
+      code,
+      title,
+      message,
+      fallbackTitle: fallback?.title,
+      fallbackMessage: fallback?.message,
+      detailText,
+    })
+  }
+
   const detailText = pickText(error)
   return buildUserFacingError({
     status: fallback?.status,

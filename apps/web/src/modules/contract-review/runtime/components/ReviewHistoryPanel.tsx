@@ -23,7 +23,6 @@ function formatReviewTime(value?: string) {
 }
 
 function statusClass(item: ReviewHistoryItem) {
-  if (item.available === false) return 'queued'
   return item.status || 'queued'
 }
 
@@ -126,13 +125,12 @@ export function ReviewHistoryPanel(props: {
                   </tr>
                 ) : (
                   pagedItems.map((item) => {
-                    const disabled = item.available === false
                     const state = statusClass(item)
                     return (
                       <tr
                         key={item.id}
-                        className={`historyRow landingHistoryRow ${disabled ? 'landingHistoryRow--disabled' : ''}`}
-                        onClick={disabled ? undefined : () => props.onOpen(item)}
+                        className="historyRow landingHistoryRow"
+                        onClick={() => props.onOpen(item)}
                       >
                         <td>
                           <div className="landingHistoryFileCell">
@@ -156,7 +154,7 @@ export function ReviewHistoryPanel(props: {
                         <td>
                           <span className={`landingHistoryStatus landingHistoryStatus--${state}`}>
                             <span className={`statusDot statusDot--${state}`} />
-                            {disabled ? '缺少文件' : statusLabel(item.status)}
+                            {statusLabel(item.status)}
                           </span>
                         </td>
                       </tr>

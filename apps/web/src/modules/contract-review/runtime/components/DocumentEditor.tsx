@@ -863,6 +863,7 @@ export const DocumentEditor = forwardRef<
     riskHighlights?: string[]
     clauseTextByUid?: Record<string, string>
     className?: string
+    emptyMessage?: string
     isInteractionLocked?: boolean
     lockLabel?: string
     lockProgress?: number | null
@@ -2354,7 +2355,6 @@ export const DocumentEditor = forwardRef<
       docRef.current.innerHTML = ''
 
       if (!props.file) {
-        setDocMessage(docRef.current, '正在准备可预览的 Word 文档，请稍候…')
         setReady(false)
         return
       }
@@ -2478,7 +2478,7 @@ export const DocumentEditor = forwardRef<
     <div className={props.className}>
       <div className="docViewport">
         <div ref={scrollRef} className={`docScroll ${props.isInteractionLocked ? 'docScroll--locked' : ''}`}>
-          {!ready ? <div className="emptyState">正在加载文档…</div> : null}
+          {!ready ? <div className="emptyState">{props.emptyMessage || '正在加载文档…'}</div> : null}
           <div ref={rowRef} className={`docRow ${hasComments ? 'docRow--withComments' : 'docRow--compact'}`}>
             <div className="docCanvas" ref={canvasRef}>
               <div ref={docRef} />

@@ -8,7 +8,20 @@ import { ModernSideNav } from './components/ModernSideNav'
 import { TopBar } from './components/TopBar'
 import { UploadDashboard } from './components/UploadDashboard'
 import { ReviewProgress, computeProgress as computeReviewProgress } from './components/ReviewProgress'
-import { contractReviewFetch } from './services/contractReviewApi'
+import {
+  acceptRiskAi,
+  applyRiskAi,
+  contractReviewFetch,
+  createReview,
+  editRiskAiResponse,
+  getContractReviewConfig,
+  getReviewDocumentResponse,
+  getReviewHistory,
+  getReviewResult,
+  getReviewStatus,
+  patchRiskStatus,
+  rejectRiskAiResponse
+} from './services/contractReviewApi'
 import type { AnalysisScopeOption, EditSummary, ReviewHistoryItem, ReviewMeta, ReviewResultPayload, ReviewSideOption } from './types'
 import { readApiError, toUserFacingError } from './utils/appError'
 import { normalizeRiskTextForDisplay } from './utils/riskText'
@@ -40,15 +53,6 @@ type SessionReviewEntry = ReviewHistoryItem & {
   file: File | null
   meta: ReviewMeta | null
   result: ReviewResultPayload | null
-}
-
-type HistoryApiItem = {
-  run_id: string
-  file_name?: string
-  status: ReviewMeta['status']
-  step?: string
-  updated_at?: string
-  document_ready?: boolean
 }
 
 type UndoAction = {
@@ -95,7 +99,7 @@ async function fileFromReviewDocumentResponse(runId: string, resp: Response, fal
 }
 
 async function fetchReviewDocumentFile(runId: string, fallbackName?: string | null, init?: RequestInit) {
-  const docResp = await fetchNoStore(`/api/reviews/${runId}/document`, init)
+  const docResp = await getReviewDocumentResponse(runId, init)
   return fileFromReviewDocumentResponse(runId, docResp, fallbackName)
 }
 
@@ -162,7 +166,7 @@ const PREVIEW_AUTO_COMPLETE_QUERY_KEY = 'preview_auto_complete'
 type PersistedReviewSnapshot = {
   runId: string
   meta: ReviewMeta
-  result: ReviewResultPayload
+  fileName?: string | null
   savedAt: string
 }
 
@@ -185,7 +189,7 @@ function readReviewSnapshot(runId?: string | null): PersistedReviewSnapshot | nu
   if (!snapshot) return null
   if (snapshot.runId !== key) return null
   if (snapshot.meta?.status !== 'completed') return null
-  return snapshot.result ? snapshot : null
+  return snapshot
 }
 
 function writeReviewSnapshot(runId: string, meta: ReviewMeta, result: ReviewResultPayload) {
@@ -195,7 +199,7 @@ function writeReviewSnapshot(runId: string, meta: ReviewMeta, result: ReviewResu
   snapshots[key] = {
     runId: key,
     meta,
-    result,
+    fileName: result.file_name || meta.file_name || key,
     savedAt: new Date().toISOString()
   }
   writeSessionValue(REVIEW_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots))
@@ -912,12 +916,7 @@ export default function App() {
     if (!savedRunId) return
     ;(async () => {
       try {
-        const resp = await fetchNoStore(`/api/reviews/${savedRunId}`)
-        if (!resp.ok) {
-          removeLocalValue(ACTIVE_RUN_ID_STORAGE_KEY)
-          return
-        }
-        const restoredMeta = (await resp.json()) as ReviewMeta
+        const restoredMeta = await getReviewStatus(savedRunId)
         if (restoredMeta.status === 'queued' || restoredMeta.status === 'running') {
           setRunId(savedRunId)
           setMeta(restoredMeta)
@@ -1053,9 +1052,7 @@ export default function App() {
 
   const refreshHistoryFromApi = useCallback(async () => {
     try {
-      const resp = await fetchNoStore('/api/reviews/history?limit=30')
-      if (!resp.ok) return
-      const data = (await resp.json()) as { items?: HistoryApiItem[] }
+      const data = await getReviewHistory(30)
     const remoteItems = data.items || []
     setHistoryEntries((entries) => {
       const byRunId = new Map(entries.map((it) => [it.run_id, it]))
@@ -1073,7 +1070,9 @@ export default function App() {
             previousUpdatedAt: prev?.updated_at
           }),
           created_at: prev?.created_at || item.updated_at || new Date().toISOString(),
-          available: item.document_ready ?? prev?.available ?? true,
+          available: prev?.available ?? true,
+          document_ready: Boolean(item.document_ready),
+          download_ready: Boolean(item.download_ready),
           file: prev?.file ?? null,
           meta: prev?.meta ?? null,
           result: prev?.result ?? null
@@ -1100,26 +1099,29 @@ export default function App() {
     let nextFile = isRenderableDocxFile(seedFile) ? seedFile : null
     let nextResult = seedResult
 
-    const statusResp = await fetchNoStore(`/api/reviews/${targetRunId}`)
-    if (!statusResp.ok) {
-      throw await readApiError(statusResp, { title: '加载审查记录失败' })
-    }
-    nextMeta = (await statusResp.json()) as ReviewMeta
+    nextMeta = await getReviewStatus(targetRunId)
 
     const effectiveStatus = String(nextMeta?.status || '').toLowerCase()
 
-    if (!nextFile && (effectiveStatus === 'completed' || nextMeta?.document_ready)) {
+    const shouldFetchDocument = !nextFile && Boolean(nextMeta?.document_ready)
+
+    if (effectiveStatus === 'completed') {
+      const [fetchedFile, fetchedResult] = await Promise.all([
+        shouldFetchDocument
+          ? fetchReviewDocumentFile(
+              targetRunId,
+              nextMeta?.working_file_name || nextMeta?.file_name || fileName || `${targetRunId}.docx`
+            )
+          : Promise.resolve(null),
+        nextResult ? Promise.resolve(nextResult) : getReviewResult(targetRunId)
+      ])
+      nextFile = fetchedFile || nextFile
+      nextResult = fetchedResult
+    } else if (shouldFetchDocument) {
       nextFile = await fetchReviewDocumentFile(
         targetRunId,
         nextMeta?.working_file_name || nextMeta?.file_name || fileName || `${targetRunId}.docx`
       )
-    }
-    if (effectiveStatus === 'completed') {
-      const resultResp = await fetchNoStore(`/api/reviews/${targetRunId}/result`)
-      if (!resultResp.ok) {
-        throw await readApiError(resultResp, { title: '加载审查结果失败' })
-      }
-      nextResult = (await resultResp.json()) as ReviewResultPayload
     }
 
     return {
@@ -1179,6 +1181,8 @@ export default function App() {
             remoteUpdatedAt: nextMeta?.updated_at,
             previousUpdatedAt: prev.updated_at
           }),
+          document_ready: Boolean(nextMeta?.document_ready),
+          download_ready: Boolean(nextMeta?.download_ready || nextResult?.download_ready),
           available: true
         }),
         nextFile,
@@ -1188,11 +1192,6 @@ export default function App() {
   }, [applyWorkspaceFile, persistCompletedReviewSnapshot])
 
   const openSessionReview = useCallback(async (item: ReviewHistoryItem) => {
-    if (item.available === false) {
-      openDialog('该审查记录对应的原始合同暂时不可用，请重新上传合同后再试。', '无法打开审查记录')
-      return
-    }
-
     setEdits([])
 
     const { nextMeta, nextFile, nextResult, effectiveStatus } = await loadReviewWorkspace({
@@ -1220,7 +1219,7 @@ export default function App() {
       fallbackFile: nextFile
     })
 
-  }, [applyLoadedReviewWorkspace, loadReviewWorkspace, maybeAutoApplyAllForRun, navigate, openDialog])
+  }, [applyLoadedReviewWorkspace, loadReviewWorkspace, maybeAutoApplyAllForRun, navigate])
 
   const startReview = useCallback(async () => {
     if (isReviewing) {
@@ -1241,12 +1240,12 @@ export default function App() {
       form.append('contract_type_hint', serverConfig?.contract_type_hint ?? 'service_agreement')
       form.append('analysis_scope', selectedAnalysisScope)
 
-      const resp = await contractReviewFetch('/api/reviews', { method: 'POST', body: form })
-      if (!resp.ok) {
-        throw await readApiError(resp, { title: '发起审查失败' })
+      let data: { run_id: string }
+      try {
+        data = await createReview(form)
+      } catch (error) {
+        throw toUserFacingError(error, { title: '发起审查失败' })
       }
-
-      const data = (await resp.json()) as { run_id: string }
       const previewFile = isRenderableDocxFile(file) ? file : null
       newRunIdRef.current = data.run_id
       writeSessionValue(NEW_RUN_ID_STORAGE_KEY, data.run_id)
@@ -1306,8 +1305,7 @@ export default function App() {
     ;(async () => {
       try {
         while (!cancelled && pollingSeqRef.current === seq) {
-          const resp = await fetchNoStore(`/api/reviews/${runId}`, { signal: abortController.signal })
-          const m = (await resp.json()) as ReviewMeta
+          const m = await getReviewStatus(runId, { signal: abortController.signal })
           if (cancelled) return
           setMeta(m)
           setIsReviewing(m.status === 'queued' || m.status === 'running')
@@ -1316,20 +1314,22 @@ export default function App() {
               entries,
               runId,
               (prev) => ({
-              ...prev,
-              file: prev.file || (isRenderableDocxFile(file) ? file : null),
-              meta: m,
-              file_name: prev.file_name || file?.name || m.file_name,
-              status: m.status,
-              summary: m.error || m.warning || m.step || m.status,
-              updated_at: resolveHistoryUpdatedAt({
+                ...prev,
+                file: prev.file || (isRenderableDocxFile(file) ? file : null),
+                meta: m,
+                file_name: prev.file_name || file?.name || m.file_name,
                 status: m.status,
-                remoteUpdatedAt: m.updated_at,
-                previousUpdatedAt: prev.updated_at
+                summary: m.error || m.warning || m.step || m.status,
+                updated_at: resolveHistoryUpdatedAt({
+                  status: m.status,
+                  remoteUpdatedAt: m.updated_at,
+                  previousUpdatedAt: prev.updated_at
+                }),
+                document_ready: Boolean(m.document_ready),
+                download_ready: Boolean(m.download_ready),
+                available: true
               }),
-              available: true
-            }),
-            (isRenderableDocxFile(file) ? file : null),
+              (isRenderableDocxFile(file) ? file : null),
               m
             )
           )
@@ -1352,6 +1352,8 @@ export default function App() {
                     file: preparedFile,
                     file_name: prev.file_name || m.file_name || preparedFile.name,
                     meta: m,
+                    document_ready: true,
+                    download_ready: Boolean(m.download_ready),
                     available: true
                   }),
                   preparedFile,
@@ -1361,19 +1363,20 @@ export default function App() {
             }
           }
           if (m.status === 'completed') {
-            const [docResp, resultResp] = await Promise.all([
-              fetchNoStore(`/api/reviews/${runId}/document`, { signal: abortController.signal }),
-              fetchNoStore(`/api/reviews/${runId}/result`, { signal: abortController.signal })
+            const shouldFetchDocument = Boolean(m.document_ready)
+            const [docResp, payload] = await Promise.all([
+              shouldFetchDocument
+                ? getReviewDocumentResponse(runId, { signal: abortController.signal })
+                : Promise.resolve(null),
+              getReviewResult(runId, { signal: abortController.signal })
             ])
-            if (!resultResp.ok) {
-              throw await readApiError(resultResp, { title: '加载审查结果失败' })
-            }
-            const payload = (await resultResp.json()) as ReviewResultPayload
-            const fetchedFile = await fileFromReviewDocumentResponse(
-              runId,
-              docResp,
-              m.working_file_name || m.file_name || file?.name || `${runId}.docx`
-            )
+            const fetchedFile = docResp
+              ? await fileFromReviewDocumentResponse(
+                  runId,
+                  docResp,
+                  m.working_file_name || m.file_name || file?.name || `${runId}.docx`
+                )
+              : null
             const nextFile = fetchedFile || (isRenderableDocxFile(file) ? file : null)
             if (cancelled) return
             applyWorkspaceFile(nextFile, { preserveReviewSide: true })
@@ -1398,6 +1401,8 @@ export default function App() {
                     remoteUpdatedAt: m.updated_at,
                     previousUpdatedAt: prev.updated_at
                   }),
+                  document_ready: Boolean(m.document_ready && nextFile),
+                  download_ready: Boolean(payload.download_ready),
                   available: true
                 }),
                 nextFile,
@@ -1444,6 +1449,8 @@ export default function App() {
                   remoteUpdatedAt: failedMeta.updated_at,
                   previousUpdatedAt: prev.updated_at
                 }),
+                document_ready: Boolean(prev.document_ready),
+                download_ready: Boolean(prev.download_ready),
                 available: true
               }),
               (isRenderableDocxFile(file) ? file : null),
@@ -1469,16 +1476,13 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const resp = await contractReviewFetch('/api/config')
-        if (resp.ok) {
-          const config = (await resp.json()) as { review_side: string; contract_type_hint: string; analysis_scope?: AnalysisScopeOption | string }
-          setServerConfig({
-            review_side: config.review_side,
-            contract_type_hint: config.contract_type_hint,
-            analysis_scope: normalizeAnalysisScopeOption(config.analysis_scope)
-          })
-          setSelectedAnalysisScope(normalizeAnalysisScopeOption(config.analysis_scope))
-        }
+        const config = await getContractReviewConfig()
+        setServerConfig({
+          review_side: config.review_side,
+          contract_type_hint: config.contract_type_hint,
+          analysis_scope: normalizeAnalysisScopeOption(config.analysis_scope)
+        })
+        setSelectedAnalysisScope(normalizeAnalysisScopeOption(config.analysis_scope))
       } catch {
         // ignore config fetch errors, use backend defaults
       }
@@ -1503,8 +1507,8 @@ export default function App() {
           runId: routeRunId,
           file: cached?.file ?? null,
           meta: cached?.meta ?? snapshot?.meta ?? null,
-          result: cached?.result ?? snapshot?.result ?? null,
-          fileName: cached?.file_name || snapshot?.meta?.file_name || null
+          result: cached?.result ?? null,
+          fileName: cached?.file_name || snapshot?.fileName || snapshot?.meta?.file_name || null
         })
 
         if (cancelled) return
@@ -1515,7 +1519,7 @@ export default function App() {
           meta: nextMeta,
           result: nextResult,
           effectiveStatus,
-          fallbackFileName: cached?.file_name || snapshot?.meta?.file_name || routeRunId
+          fallbackFileName: cached?.file_name || snapshot?.fileName || snapshot?.meta?.file_name || routeRunId
         })
 
         await maybeAutoApplyAllForRun({
@@ -1554,14 +1558,11 @@ export default function App() {
     let cancelled = false
     const refreshCompletedResult = async () => {
       try {
-        const [statusResp, resultResp] = await Promise.all([
-          fetchNoStore(`/api/reviews/${runId}`),
-          fetchNoStore(`/api/reviews/${runId}/result`)
+        const [nextMeta, nextResult] = await Promise.all([
+          getReviewStatus(runId),
+          getReviewResult(runId)
         ])
-        if (!statusResp.ok || !resultResp.ok || cancelled) return
-
-        const nextMeta = (await statusResp.json()) as ReviewMeta
-        const nextResult = (await resultResp.json()) as ReviewResultPayload
+        if (cancelled) return
         if (cancelled) return
 
         setMeta(nextMeta)
@@ -1686,14 +1687,7 @@ export default function App() {
       const isPreview = String(runId).startsWith('preview_')
 
       if (!isPreview) {
-        const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'rejected' })
-        })
-        if (!resp.ok) {
-          throw await readApiError(resp, { title: '更新风险状态失败' })
-        }
+        await patchRiskStatus(runId, riskId, 'rejected')
       }
       mergeUpdatedRisk(riskId, { status: 'rejected', ai_rewrite_decision: 'rejected' })
       editorRef.current?.removeSuggestionInsertComment(riskId)
@@ -1706,15 +1700,7 @@ export default function App() {
       if (!runId) throw new Error('当前没有可操作的 run_id')
       let handledByPayload = false
       if (!String(runId).startsWith('preview_')) {
-        const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status })
-        })
-        if (!resp.ok) {
-          throw await readApiError(resp, { title: '更新风险状态失败' })
-        }
-        const payload = (await resp.json()) as { item?: any }
+        const payload = await patchRiskStatus(runId, riskId, status)
         if (payload.item) {
           mergeUpdatedRisk(riskId, payload.item)
           handledByPayload = true
@@ -1783,15 +1769,10 @@ export default function App() {
         let acceptedByAiEndpoint = false
         if (shouldApplyAi) {
           if (!isPreview) {
-            const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_accept`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ revised_text: acceptedRevisedText, target_text: acceptedTargetText || undefined })
+            const payload = await acceptRiskAi(runId, riskId, {
+              revisedText: acceptedRevisedText,
+              targetText: acceptedTargetText || undefined
             })
-            if (!resp.ok) {
-              throw await readApiError(resp, { title: '接受风险失败' })
-            }
-            const payload = (await resp.json()) as { item?: any }
             if (payload.item) mergeUpdatedRisk(riskId, payload.item)
             acceptedByAiEndpoint = true
           } else {
@@ -1874,15 +1855,10 @@ export default function App() {
         }
         if (shouldApplyAi) {
           if (!isPreview) {
-            const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_accept`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ revised_text: acceptedRevisedText, target_text: acceptedTargetText || undefined })
+            const payload = await acceptRiskAi(runId, riskId, {
+              revisedText: acceptedRevisedText,
+              targetText: acceptedTargetText || undefined
             })
-            if (!resp.ok) {
-              throw await readApiError(resp, { title: '接受风险失败' })
-            }
-            const payload = (await resp.json()) as { item?: any }
             if (payload.item) mergeUpdatedRisk(riskId, payload.item)
             acceptedByAiEndpoint = true
           } else {
@@ -2063,11 +2039,7 @@ export default function App() {
       // New backend endpoint (optional). If unavailable (404), we fall back to local persistence.
       // Even if we previously detected compat mode, we still probe once here so upgrades take effect.
 
-      const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_edit`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ revised_text: revisedText })
-      })
+      const resp = await editRiskAiResponse(runId, riskId, revisedText)
 
       if (resp.status === 404) {
         aiEndpointModeRef.current = 'compat'
@@ -2090,9 +2062,7 @@ export default function App() {
       if (!runId) throw new Error('当前没有可操作的 run_id')
 
       const tryNew = async () => {
-        const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_reject`, {
-          method: 'POST'
-        })
+        const resp = await rejectRiskAiResponse(runId, riskId)
         if (resp.status === 404) {
           const err: any = new Error('Not Found')
           err.code = 404
@@ -2131,13 +2101,7 @@ export default function App() {
   const onAiApplyRisk = useCallback(
     async (riskId: number | string) => {
       if (!runId) throw new Error('当前没有可操作的 run_id')
-      const resp = await contractReviewFetch(`/api/reviews/${runId}/risks/${encodeURIComponent(String(riskId))}/ai_apply`, {
-        method: 'POST'
-      })
-      if (!resp.ok) {
-        throw await readApiError(resp, { title: '生成 AI 改写失败' })
-      }
-      const payload = (await resp.json()) as { item?: any }
+      const payload = await applyRiskAi(runId, riskId)
       const updated = payload.item
       if (!updated) return
       const aiApply = updated.ai_apply || {}
@@ -2295,6 +2259,10 @@ export default function App() {
 
   const reviewProgressState = useMemo(() => computeReviewProgress(meta), [meta])
   const isDocInteractionLocked = Boolean(isReviewing && result == null)
+  const isResultReadOnly = Boolean(result?.readonly)
+  const documentEmptyMessage = result && !file && meta?.document_ready === false
+    ? '合同原件不可预览'
+    : '正在加载文档…'
   const reviewMainGridStyle = useMemo(
     () =>
       ({
@@ -2335,7 +2303,7 @@ export default function App() {
                 downloadUrl={result?.download_url || null}
                 onDownload={handleDownloadReviewedDocx}
                 onAcceptAllRisks={handleAcceptAllRisks}
-                canAcceptAllRisks={pendingRiskCount > 0}
+                canAcceptAllRisks={!isResultReadOnly && pendingRiskCount > 0}
                 onUndoLastAction={onUndoLastAction}
                 canUndoLastAction={Boolean(lastUndoAction?.riskIds.length)}
                 onActionError={showErrorDialog}
@@ -2359,6 +2327,7 @@ export default function App() {
                     onReadyChange={setDocEditorReady}
                     clauseTextByUid={clauseTextByUid}
                     className="docEditor"
+                    emptyMessage={documentEmptyMessage}
                     isInteractionLocked={isDocInteractionLocked}
                     lockLabel={reviewProgressState.label}
                     lockProgress={reviewProgressState.percent}
@@ -2394,6 +2363,7 @@ export default function App() {
                       onAiAcceptRisk={onAiAcceptRisk}
                       onAiEditRisk={onAiEditRisk}
                       onAiRejectRisk={onAiRejectRisk}
+                      readOnly={isResultReadOnly}
                     />
                   )}
                 </aside>

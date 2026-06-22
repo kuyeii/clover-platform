@@ -305,6 +305,7 @@ export function RiskPanel(props: {
   onAiAcceptRisk?: (riskId: number | string, revisedText?: string) => Promise<void>
   onAiEditRisk?: (riskId: number | string, revisedText: string) => Promise<void>
   onAiRejectRisk?: (riskId: number | string) => Promise<void>
+  readOnly?: boolean
 }) {
   const [editorRiskId, setEditorRiskId] = useState<string>('')
   const [editorTargetText, setEditorTargetText] = useState('')
@@ -446,6 +447,8 @@ export function RiskPanel(props: {
     return c
   }, [props.riskStats, props.result])
 
+  const isReadOnly = Boolean(props.readOnly || props.result?.readonly)
+
   return (
     <div className="riskRoot">
       <div className="paneHeader paneHeader--risk">
@@ -573,6 +576,7 @@ export function RiskPanel(props: {
                             className="btnSmall"
                             // Allow editing for succeeded AI suggestions, including delete-style rewrites whose revised_text is empty.
                             disabled={
+                              isReadOnly ||
                               !(
                                 String((r.ai_rewrite || r.ai_apply)?.state || '').toLowerCase() === 'succeeded' ||
                                 Boolean(
@@ -603,7 +607,7 @@ export function RiskPanel(props: {
 
                           <button
                             className="btnSmall"
-                            disabled={r.risk_id === undefined || r.risk_id === null}
+                            disabled={isReadOnly || r.risk_id === undefined || r.risk_id === null}
                             onClick={async () => {
                               if (r.risk_id === undefined || r.risk_id === null) return
                               try {
@@ -620,7 +624,7 @@ export function RiskPanel(props: {
 
                           <button
                             className="btnSmall btnSmall--primary"
-                            disabled={r.risk_id === undefined || r.risk_id === null}
+                            disabled={isReadOnly || r.risk_id === undefined || r.risk_id === null}
                             onClick={async () => {
                               if (r.risk_id === undefined || r.risk_id === null) return
                               snapshotRiskListScroll()

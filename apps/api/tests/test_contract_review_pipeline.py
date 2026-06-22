@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import sys
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -527,6 +528,10 @@ class ContractReviewPipelineTests(unittest.TestCase):
                 json.dumps({"placeholder_manifest": {token: {"entity_type": "name"}}}, ensure_ascii=False),
                 encoding="utf-8",
             )
+            (run_dir / "risk_result_ai_aggregated.json").write_text(
+                json.dumps({"version": 1, "groups": []}, ensure_ascii=False),
+                encoding="utf-8",
+            )
             payload = {
                 "risk_result": {
                     "risk_items": [
@@ -564,6 +569,394 @@ class ContractReviewPipelineTests(unittest.TestCase):
         self.assertEqual(ai_rewrite["revised_text"], "张三应补充授权")
         self.assertEqual(ai_rewrite["comment_text"], "将张三改写")
         self.assertEqual(ai_rewrite["rationale"], "张三相关说明")
+
+    def test_result_payload_uses_display_cache_after_first_restore(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            run_id = "run_display_cache"
+            run_dir = run_root / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "source.docx").write_bytes(b"docx")
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps([{"clause_uid": "c1", "clause_text": f"联系人 {token}", "source_excerpt": token}], ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "risk_result_validated.json").write_text(
+                json.dumps(
+                    {
+                        "is_valid": True,
+                        "risk_result": {
+                            "risk_items": [
+                                {"risk_id": "r1", "status": "pending", "clause_uid": "c1", "target_text": token}
+                            ]
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "name"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "risk_result_ai_aggregated.json").write_text(
+                json.dumps({"version": 1, "groups": []}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "_contract_review_pipt_enabled", return_value=True),
+                patch.object(service, "_read_meta", return_value={"status": "completed", "file_name": "demo.docx"}),
+                patch.object(service, "_can_export_reviewed_docx", return_value=True),
+                patch.object(
+                    service,
+                    "postprocess_payload",
+                    side_effect=lambda payload: {
+                        "text": str(payload["text"]).replace(token, "张三"),
+                        "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                    },
+                ) as postprocess,
+            ):
+                first = service._build_result_payload(run_id)
+                first_call_count = postprocess.call_count
+                second = service._build_result_payload(run_id)
+                clauses_display_exists = (run_dir / "merged_clauses.display.json").exists()
+                reviewed_display_exists = (run_dir / "risk_result_reviewed.display.json").exists()
+
+        self.assertEqual(first["merged_clauses"][0]["clause_text"], "联系人 张三")
+        self.assertEqual(first["risk_result_validated"]["risk_result"]["risk_items"][0]["target_text"], "张三")
+        self.assertEqual(second["merged_clauses"][0]["clause_text"], "联系人 张三")
+        self.assertEqual(postprocess.call_count, first_call_count)
+        self.assertGreater(first_call_count, 0)
+        self.assertTrue(clauses_display_exists)
+        self.assertTrue(reviewed_display_exists)
+
+    def test_history_completed_run_without_docx_is_not_document_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            upload_root = root / "uploads"
+            run_id = "run_no_preview_doc"
+            (run_root / run_id).mkdir(parents=True)
+
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "UPLOAD_ROOT", upload_root),
+            ):
+                item = service._to_history_item(
+                    {
+                        "run_id": run_id,
+                        "status": "completed",
+                        "document_ready": True,
+                        "download_ready": True,
+                    }
+                )
+
+        self.assertFalse(item["document_ready"])
+        self.assertFalse(item["download_ready"])
+
+    def test_result_payload_can_open_readonly_display_cache_when_canonical_files_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            run_id = "run_display_only"
+            run_dir = run_root / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "merged_clauses.display.json").write_text(
+                json.dumps([{"clause_uid": "c1", "clause_text": "甲方应付款。"}], ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "risk_result_reviewed.display.json").write_text(
+                json.dumps(
+                    {
+                        "is_valid": True,
+                        "risk_result": {
+                            "risk_items": [
+                                {"risk_id": "r1", "status": "pending", "issue": "付款期限不明确"}
+                            ]
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "UPLOAD_ROOT", root / "uploads"),
+                patch.object(service, "_read_meta", return_value={"status": "completed", "file_name": "demo.docx"}),
+                patch.object(service, "load_json_artifact_by_path", return_value=None),
+            ):
+                payload = service._build_result_payload(run_id)
+
+        self.assertTrue(payload["readonly"])
+        self.assertFalse(payload["download_ready"])
+        self.assertEqual(payload["merged_clauses"][0]["clause_text"], "甲方应付款。")
+        self.assertEqual(payload["risk_result_validated"]["risk_result"]["risk_items"][0]["issue"], "付款期限不明确")
+
+    def test_persist_reviewed_payload_refreshes_display_cache(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            run_id = "run_display_refresh"
+            run_dir = run_root / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "source.docx").write_bytes(b"docx")
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps([{"clause_uid": "c1", "clause_text": f"联系人 {token}", "source_excerpt": token}], ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "risk_result_validated.json").write_text(
+                json.dumps(
+                    {
+                        "is_valid": True,
+                        "risk_result": {
+                            "risk_items": [
+                                {"risk_id": "r1", "status": "pending", "clause_uid": "c1", "target_text": token}
+                            ]
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "pipt_context.json").write_text(
+                json.dumps({"placeholder_manifest": {token: {"entity_type": "name"}}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            reviewed = {
+                "is_valid": True,
+                "risk_result": {
+                    "risk_items": [
+                        {"risk_id": "r1", "status": "accepted", "clause_uid": "c1", "target_text": token}
+                    ]
+                },
+            }
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "_contract_review_pipt_enabled", return_value=True),
+                patch.object(
+                    service,
+                    "postprocess_payload",
+                    side_effect=lambda payload: {
+                        "text": str(payload["text"]).replace(token, "张三"),
+                        "validation": {"missing_count": 0, "unexpected_count": 0, "unsupported_count": 0},
+                    },
+                ),
+            ):
+                service._persist_reviewed_payload(run_dir, reviewed)
+
+            display = json.loads((run_dir / "risk_result_reviewed.display.json").read_text(encoding="utf-8"))
+
+        item = display["risk_result"]["risk_items"][0]
+        self.assertEqual(item["status"], "accepted")
+        self.assertEqual(item["target_text"], "张三")
+
+    def test_reviewed_display_cache_refreshes_when_clauses_change(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            run_id = "run_display_clause_alias_refresh"
+            run_dir = run_root / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "source.docx").write_bytes(b"docx")
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps(
+                    [{"clause_uid": "c1", "display_clause_id": "1.1", "clause_text": "甲方应按期付款。"}],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "risk_result_validated.json").write_text(
+                json.dumps(
+                    {
+                        "is_valid": True,
+                        "risk_result": {
+                            "risk_items": [
+                                {
+                                    "risk_id": "r1",
+                                    "status": "pending",
+                                    "clause_uid": "c1",
+                                    "issue": "c1 付款期限不明确",
+                                }
+                            ]
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "risk_result_ai_aggregated.json").write_text(
+                json.dumps({"version": 1, "groups": []}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "_read_meta", return_value={"status": "completed", "file_name": "demo.docx"}),
+                patch.object(service, "_can_export_reviewed_docx", return_value=True),
+                patch.object(service, "load_json_artifact_by_path", return_value=None),
+                patch.object(service, "_contract_review_pipt_enabled", return_value=False),
+            ):
+                first = service._build_result_payload(run_id)
+                time.sleep(0.01)
+                (run_dir / "merged_clauses.json").write_text(
+                    json.dumps(
+                        [{"clause_uid": "c1", "display_clause_id": "2.1", "clause_text": "甲方应按期付款。"}],
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                second = service._build_result_payload(run_id)
+
+        self.assertIn("第1.1条", first["risk_result_validated"]["risk_result"]["risk_items"][0]["issue"])
+        self.assertIn("第2.1条", second["risk_result_validated"]["risk_result"]["risk_items"][0]["issue"])
+
+    def test_ai_aggregation_rebuilds_when_clauses_change(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            run_id = "run_aggregation_clause_refresh"
+            run_dir = run_root / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "source.docx").write_bytes(b"docx")
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps(
+                    [{"clause_uid": "c1", "display_clause_id": "1", "clause_text": "旧条款正文。"}],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            validated = {
+                "is_valid": True,
+                "risk_result": {
+                    "risk_items": [
+                        {
+                            "risk_id": "r1",
+                            "status": "pending",
+                            "risk_source_type": "anchored",
+                            "clause_uid": "c1",
+                            "target_text": "旧条款正文。",
+                            "issue": "付款期限不明确",
+                        },
+                        {
+                            "risk_id": "r2",
+                            "status": "pending",
+                            "risk_source_type": "multi_clause",
+                            "clause_uid": "c1",
+                            "target_text": "旧条款正文。",
+                            "issue": "违约责任不明确",
+                        },
+                    ]
+                },
+            }
+            (run_dir / "risk_result_validated.json").write_text(json.dumps(validated, ensure_ascii=False), encoding="utf-8")
+
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "_read_meta", return_value={"status": "completed", "file_name": "demo.docx"}),
+                patch.object(service, "_can_export_reviewed_docx", return_value=True),
+                patch.object(service, "load_json_artifact_by_path", return_value=None),
+                patch.object(service, "_contract_review_pipt_enabled", return_value=False),
+            ):
+                first = service._build_result_payload(run_id)
+                time.sleep(0.01)
+                (run_dir / "merged_clauses.json").write_text(
+                    json.dumps(
+                        [{"clause_uid": "c1", "display_clause_id": "1", "clause_text": "新条款正文。"}],
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                second = service._build_result_payload(run_id)
+
+        first_group = first["risk_result_ai_aggregated"]["groups"][0]
+        second_group = second["risk_result_ai_aggregated"]["groups"][0]
+        self.assertEqual(first_group["clause_text"], "旧条款正文。")
+        self.assertEqual(second_group["clause_text"], "新条款正文。")
+
+    def test_rewrite_inputs_use_current_aggregation_when_clauses_change(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_root = root / "runs"
+            run_id = "run_rewrite_aggregation_refresh"
+            run_dir = run_root / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "source.docx").write_bytes(b"docx")
+            (run_dir / "merged_clauses.json").write_text(
+                json.dumps(
+                    [{"clause_uid": "c1", "display_clause_id": "1", "clause_text": "旧条款正文。"}],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            validated = {
+                "is_valid": True,
+                "risk_result": {
+                    "risk_items": [
+                        {
+                            "risk_id": "r1",
+                            "status": "pending",
+                            "risk_source_type": "anchored",
+                            "clause_uid": "c1",
+                            "target_text": "旧条款正文。",
+                            "issue": "付款期限不明确",
+                        },
+                        {
+                            "risk_id": "r2",
+                            "status": "pending",
+                            "risk_source_type": "multi_clause",
+                            "clause_uid": "c1",
+                            "target_text": "旧条款正文。",
+                            "issue": "违约责任不明确",
+                        },
+                    ]
+                },
+            }
+            reviewed = {
+                "is_valid": True,
+                "risk_result": {
+                    "risk_items": [
+                        {
+                            "risk_id": "r1",
+                            "status": "pending",
+                            "risk_source_type": "aggregated",
+                            "aggregate_id": "agg_c1_r1",
+                            "clause_uid": "c1",
+                            "target_text": "旧条款正文。",
+                            "issue": "付款期限不明确",
+                        }
+                    ]
+                },
+            }
+            (run_dir / "risk_result_validated.json").write_text(json.dumps(validated, ensure_ascii=False), encoding="utf-8")
+            (run_dir / "risk_result_reviewed.json").write_text(json.dumps(reviewed, ensure_ascii=False), encoding="utf-8")
+
+            with (
+                patch.object(service, "RUN_ROOT", run_root),
+                patch.object(service, "_read_meta", return_value={"review_side": "甲方", "contract_type_hint": "服务合同"}),
+                patch.object(service, "load_json_artifact_by_path", return_value=None),
+            ):
+                service._load_or_sync_ai_aggregation_file(run_dir=run_dir, validated=validated, reviewed=reviewed)
+                time.sleep(0.01)
+                (run_dir / "merged_clauses.json").write_text(
+                    json.dumps(
+                        [{"clause_uid": "c1", "display_clause_id": "1", "clause_text": "新条款正文。"}],
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                inputs = service._build_rewrite_inputs(
+                    run_id=run_id,
+                    run_dir=run_dir,
+                    risk=reviewed["risk_result"]["risk_items"][0],
+                )
+
+        self.assertEqual(inputs["clause_text"], "新条款正文。")
 
     def test_contract_review_pipt_can_be_disabled_to_compatibility_mode(self) -> None:
         with tempfile.TemporaryDirectory() as td:

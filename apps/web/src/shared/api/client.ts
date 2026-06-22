@@ -16,6 +16,8 @@ export type RequestOptions = {
   body?: unknown;
   signal?: AbortSignal;
   credentials?: RequestCredentials;
+  cache?: RequestCache;
+  throwOnError?: boolean;
   unwrapEnvelope?: boolean;
 };
 
@@ -123,14 +125,15 @@ export class ApiClient {
             ? options.body
             : JSON.stringify(options.body),
       credentials: options.credentials ?? "include",
+      cache: options.cache,
       signal: options.signal,
     });
 
-    if (!response.ok) {
+    if (!response.ok && response.status === 401) {
+      this.onUnauthorized?.();
+    }
+    if (options.throwOnError !== false && !response.ok) {
       const error = await buildApiError(response);
-      if (error.status === 401) {
-        this.onUnauthorized?.();
-      }
       throw error;
     }
 
@@ -160,6 +163,7 @@ export class ApiClient {
             ? options.body
             : JSON.stringify(options.body),
       credentials: options.credentials ?? "include",
+      cache: options.cache,
       signal: options.signal,
     });
 
