@@ -848,6 +848,8 @@ def _finalize_single_content_result(
     finally:
         db.close()
     content, referenced_images = _normalize_referenced_images(content)
+    if _count_visible_chars(content) <= 0:
+        raise RuntimeError("内容工作流未返回可用正文")
     placeholder_issues = sorted(find_illegal_pipt_bidder_placeholders(content))
     unresolved_placeholders = _unresolved_placeholder_tokens(replace_report)
     if unresolved_placeholders:
@@ -1816,20 +1818,30 @@ def _persist_content_result_to_project(
         existing = generated.get(section_id) if isinstance(generated.get(section_id), dict) else {}
         if status == "done":
             content = str(payload.get("content") or "")
-            next_state = {
-                **existing,
-                "status": "done",
-                "content": content,
-                "wordCount": int(payload.get("word_count") or payload.get("wordCount") or _count_visible_chars(content)),
-                "qualityScore": payload.get("quality_score"),
-                "feedback": payload.get("feedback"),
-                "diagramError": payload.get("diagram_error"),
-                "previousContent": None,
-                "previousWordCount": None,
-            }
-            next_state.pop("error", None)
-            next_state.pop("stage", None)
-            generated[section_id] = next_state
+            if _count_visible_chars(content) <= 0:
+                generated[section_id] = {
+                    **existing,
+                    "status": "error",
+                    "content": str(existing.get("content") or ""),
+                    "wordCount": int(existing.get("wordCount") or existing.get("word_count") or 0),
+                    "error": error or "内容工作流未返回可用正文",
+                    "stage": None,
+                }
+            else:
+                next_state = {
+                    **existing,
+                    "status": "done",
+                    "content": content,
+                    "wordCount": int(payload.get("word_count") or payload.get("wordCount") or _count_visible_chars(content)),
+                    "qualityScore": payload.get("quality_score"),
+                    "feedback": payload.get("feedback"),
+                    "diagramError": payload.get("diagram_error"),
+                    "previousContent": None,
+                    "previousWordCount": None,
+                }
+                next_state.pop("error", None)
+                next_state.pop("stage", None)
+                generated[section_id] = next_state
         else:
             generated[section_id] = {
                 **existing,

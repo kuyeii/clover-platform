@@ -2554,6 +2554,43 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertIsNone(warning)
         self.assertEqual(report, [{"placeholder": token, "original": "张三", "status": "success"}])
 
+    def test_finalize_content_output_rejects_empty_body(self) -> None:
+        with patch.object(service, "_normalize_generated_markdown", side_effect=lambda content, _title: content):
+            with self.assertRaises(RuntimeError) as ctx:
+                service._finalize_legacy_content_output(
+                    "<think>搜索节点失败</think>",
+                    "实施方案",
+                    request_mapping_flat={},
+                )
+
+        self.assertEqual(str(ctx.exception), "内容工作流未返回可用正文")
+
+    def test_persist_content_result_downgrades_empty_done_to_error(self) -> None:
+        with (
+            patch.object(
+                service,
+                "get_project_payload",
+                return_value={
+                    "data": {
+                        "generatedContent": {
+                            "sec-1": {"status": "idle", "content": "", "wordCount": 0}
+                        }
+                    }
+                },
+            ),
+            patch.object(service, "patch_project_payload") as patch_project,
+        ):
+            service._persist_content_result_to_project(
+                "proj-1",
+                "sec-1",
+                {"content": "", "word_count": 0},
+                status="done",
+            )
+
+        generated = patch_project.call_args.args[1]["data_patch"]["generatedContent"]
+        self.assertEqual(generated["sec-1"]["status"], "error")
+        self.assertEqual(generated["sec-1"]["error"], "内容工作流未返回可用正文")
+
     def test_parse_group_content_results_keeps_placeholder_warning_sections(self) -> None:
         children = [
             {"section_id": "sec-1", "section_title": "第一节"},
@@ -3106,28 +3143,24 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertIn('"word_count": 4', body)
 
     def test_generate_outline_payload_returns_native_sections(self) -> None:
+        async def fake_run_outline_batches_native(**kwargs):
+            self.assertEqual(kwargs["max_diagrams"], 0)
+            self.assertTrue(kwargs["use_knowledge"])
+            return [
+                {
+                    "id": "h2-1",
+                    "title": "总体技术方案",
+                    "headingLevel": 2,
+                    "wordCount": 600,
+                    "writingHint": "总体说明",
+                    "keywords": ["建设", "实施"],
+                    "children": [{"id": "h2-1-1", "title": "建设思路", "headingLevel": 3, "wordCount": 600}],
+                }
+            ]
+
         with (
-            patch.object(service, "_get_workflow_key", return_value="app-structure"),
-            patch.object(
-                service,
-                "_call_dify_workflow",
-                new=AsyncMock(
-                    return_value={
-                        "data": {
-                            "outputs": {
-                                "structured_output": {
-                                    "outline": [
-                                        {
-                                            "title": "总体技术方案",
-                                            "children": [{"title": "建设思路", "writingHint": "覆盖技术要求与实施路径", "keywords": ["建设", "实施"]}],
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                ),
-            ),
+            patch.object(service, "run_outline_batches_native", new=fake_run_outline_batches_native),
+            patch.object(service, "_get_workflow_key") as workflow_key,
         ):
             payload = _run_async(
                 service.generate_outline_payload(
@@ -3140,17 +3173,14 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                 )
             )
 
+        workflow_key.assert_not_called()
         self.assertEqual(payload["sections"][0]["title"], "总体技术方案")
         self.assertEqual(payload["sections"][0]["children"][0]["title"], "建设思路")
 
     def test_generate_outline_payload_raises_when_quality_check_fails(self) -> None:
         with (
-            patch.object(service, "_get_workflow_key", return_value="app-structure"),
-            patch.object(
-                service,
-                "_call_dify_workflow",
-                new=AsyncMock(return_value={"data": {"outputs": {"structured_output": {"outline": []}}}}),
-            ),
+            patch.object(service, "run_outline_batches_native", new=AsyncMock(return_value=[])),
+            patch.object(service, "_get_workflow_key") as workflow_key,
         ):
             with self.assertRaises(Exception) as ctx:
                 _run_async(
@@ -3163,37 +3193,37 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
                     )
                 )
 
+        workflow_key.assert_not_called()
         self.assertEqual(getattr(ctx.exception, "status_code", None), 502)
 
     def test_generate_outline_stream_response_emits_stage_and_done_events_natively(self) -> None:
-        async def fake_stream(*args, **kwargs):
-            _ = args, kwargs
-            yield {"__stage__": "✍️ 生成大纲", "workflow_run_id": "run-1"}
-            yield {
-                "__finished__": True,
-                "outputs": {
-                    "structured_output": {
-                        "outline": [
-                            {
-                                "title": "总体技术方案",
-                                "children": [
-                                    {
-                                        "title": "建设目标",
-                                        "wordCount": 500,
-                                        "writingHint": "围绕建设目标、实施路径、交付要求与验收指标展开详细说明，确保方案结构完整且可执行。",
-                                        "keywords": ["建设目标", "实施路径", "验收指标"],
-                                    }
-                                ],
-                            }
-                        ]
-                    }
-                },
-                "workflow_run_id": "run-1",
-            }
+        async def fake_run_outline_batches_native(**kwargs):
+            self.assertEqual(kwargs["expected_total_words"], 600)
+            self.assertTrue(kwargs["use_knowledge"])
+            return [
+                {
+                    "id": "h2-1",
+                    "title": "总体技术方案",
+                    "headingLevel": 2,
+                    "wordCount": 500,
+                    "writingHint": "总体说明",
+                    "keywords": ["建设目标"],
+                    "children": [
+                        {
+                            "id": "h2-1-1",
+                            "title": "建设目标",
+                            "headingLevel": 3,
+                            "wordCount": 500,
+                            "writingHint": "围绕建设目标、实施路径、交付要求与验收指标展开详细说明，确保方案结构完整且可执行。",
+                            "keywords": ["建设目标", "实施路径", "验收指标"],
+                        }
+                    ],
+                }
+            ]
 
         with (
-            patch.object(service, "_get_workflow_key", return_value="app-structure"),
-            patch.object(service, "_call_dify_workflow_stream", new=fake_stream),
+            patch.object(service, "run_outline_batches_native", new=fake_run_outline_batches_native),
+            patch.object(service, "_get_workflow_key") as workflow_key,
         ):
             response = _run_async(
                 service.generate_outline_stream_response(
@@ -3207,44 +3237,40 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             )
             body = _run_async(_collect_streaming_response_text(response))
 
+        workflow_key.assert_not_called()
         self.assertEqual(response.media_type, "text/event-stream")
         self.assertIn('"stage": "✍️ 生成大纲"', body)
         self.assertIn('"done": true', body)
         self.assertIn('"title": "总体技术方案"', body)
         self.assertIn('"wordCount": 600', body)
 
-    def test_generate_outline_stream_response_falls_back_to_workflow_run_result(self) -> None:
-        async def fake_stream(*args, **kwargs):
-            _ = args, kwargs
-            yield {"__stage__": "✍️ 生成大纲", "workflow_run_id": "run-2"}
-            yield {"__finished__": True, "outputs": {}, "workflow_run_id": "run-2"}
-
-        fallback_payload = {
-            "data": {
-                "outputs": {
-                    "structured_output": {
-                        "outline": [
-                            {
-                                "title": "总体技术方案",
-                                "children": [
-                                    {
-                                        "title": "实施方案",
-                                        "wordCount": 480,
-                                        "writingHint": "说明实施组织、关键路径、资源投入与质量保障，覆盖建设全过程的执行安排与控制点。",
-                                        "keywords": ["实施方案", "资源投入", "质量保障"],
-                                    }
-                                ],
-                            }
-                        ]
-                    }
+    def test_generate_outline_stream_response_does_not_use_dify_fallback(self) -> None:
+        async def fake_run_outline_batches_native(**kwargs):
+            _ = kwargs
+            return [
+                {
+                    "id": "h2-1",
+                    "title": "总体技术方案",
+                    "headingLevel": 2,
+                    "wordCount": 480,
+                    "writingHint": "总体说明",
+                    "keywords": ["实施方案"],
+                    "children": [
+                        {
+                            "id": "h2-1-1",
+                            "title": "实施方案",
+                            "headingLevel": 3,
+                            "wordCount": 480,
+                            "writingHint": "说明实施组织、关键路径、资源投入与质量保障，覆盖建设全过程的执行安排与控制点。",
+                            "keywords": ["实施方案", "资源投入", "质量保障"],
+                        }
+                    ],
                 }
-            }
-        }
+            ]
 
         with (
-            patch.object(service, "_get_workflow_key", return_value="app-structure"),
-            patch.object(service, "_call_dify_workflow_stream", new=fake_stream),
-            patch.object(service, "_get_dify_workflow_run_result", new=AsyncMock(return_value=fallback_payload)) as fallback_mock,
+            patch.object(service, "run_outline_batches_native", new=fake_run_outline_batches_native),
+            patch.object(service, "_get_dify_workflow_run_result", new=AsyncMock()) as fallback_mock,
         ):
             response = _run_async(
                 service.generate_outline_stream_response(
@@ -3258,19 +3284,14 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             )
             body = _run_async(_collect_streaming_response_text(response))
 
-        fallback_mock.assert_awaited_once_with("app-structure", "run-2")
+        fallback_mock.assert_not_awaited()
         self.assertIn('"done": true', body)
         self.assertIn('"wordCount": 700', body)
 
     def test_generate_outline_stream_response_emits_error_when_quality_check_fails(self) -> None:
-        async def fake_stream(*args, **kwargs):
-            _ = args, kwargs
-            yield {"__finished__": True, "outputs": {"structured_output": {"outline": []}}, "workflow_run_id": "run-3"}
-
         with (
-            patch.object(service, "_get_workflow_key", return_value="app-structure"),
-            patch.object(service, "_call_dify_workflow_stream", new=fake_stream),
-            patch.object(service, "_get_dify_workflow_run_result", new=AsyncMock(return_value={})),
+            patch.object(service, "run_outline_batches_native", new=AsyncMock(return_value=[])),
+            patch.object(service, "_get_workflow_key") as workflow_key,
         ):
             response = _run_async(
                 service.generate_outline_stream_response(
@@ -3283,6 +3304,7 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             )
             body = _run_async(_collect_streaming_response_text(response))
 
+        workflow_key.assert_not_called()
         self.assertIn('"error": "大纲生成结构不完整，请重试：', body)
 
     def test_export_report_response_builds_pdf_natively(self) -> None:

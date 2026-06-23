@@ -5791,48 +5791,30 @@ def _resolve_outline_sections_from_outputs(
 
 async def _stream_native_outline_generation(
     *,
-    dify_key: str,
     inputs: Mapping[str, Any],
     seed_headings: list[dict],
     max_diagrams: int,
     expected_total_words: int,
+    use_knowledge: bool,
 ) -> Any:
-    workflow_run_id = ""
-    sections: list[dict] = []
-    used_fallback = False
-    async for chunk in _call_dify_workflow_stream(dify_key, inputs):
-        if not isinstance(chunk, dict):
-            continue
-        if chunk.get("__stage__"):
-            workflow_run_id = str(chunk.get("workflow_run_id") or workflow_run_id or "")
-            yield {"stage": str(chunk.get("__stage__") or "")}
-            continue
-        if chunk.get("__finished__"):
-            workflow_run_id = str(chunk.get("workflow_run_id") or workflow_run_id or "")
-            sections = _resolve_outline_sections_from_outputs(
-                chunk.get("outputs", {}),
-                seed_headings=seed_headings,
-                max_diagrams=max_diagrams,
-            )
-            break
+    trace_events: list[dict[str, Any]] = []
 
-    quality_report = evaluate_outline_quality(sections, seed_headings)
-    if workflow_run_id and (not sections or not quality_report["pass"]):
-        fallback_payload = await _get_dify_workflow_run_result(dify_key, workflow_run_id)
-        sections = _resolve_outline_sections_from_outputs(
-            fallback_payload.get("data", {}).get("outputs", {}) if isinstance(fallback_payload, dict) else {},
-            seed_headings=seed_headings,
-            max_diagrams=max_diagrams,
-        )
-        used_fallback = True
+    def emit_event(event: str, payload: dict[str, Any]) -> None:
+        if event == "execution_trace":
+            trace_events.append(dict(payload or {}))
 
+    yield {"stage": "✍️ 生成大纲"}
+    sections = await run_outline_batches_native(
+        batch_jobs=[{"batch_index": 1, "seed_headings": seed_headings, "inputs": dict(inputs)}],
+        expected_total_words=expected_total_words,
+        max_diagrams=max_diagrams,
+        use_knowledge=use_knowledge,
+        ensure_running=lambda: None,
+        emit_event=emit_event,
+    )
     quality_report = evaluate_outline_quality(sections, seed_headings)
     if not quality_report["pass"]:
-        logger.error(
-            "[generate_outline_stream] 结构校验失败: fallback_used=%s report=%s",
-            used_fallback,
-            quality_report,
-        )
+        logger.error("[generate_outline_stream] native 结构校验失败: %s", quality_report)
         raise PlatformError(
             code="OUTLINE_GENERATE_STREAM_FAILED",
             message="大纲生成结构不完整，请重试：" + "；".join(quality_report.get("issues") or []),
@@ -5840,7 +5822,7 @@ async def _stream_native_outline_generation(
         )
 
     normalize_outline_word_budget_dict(sections, expected_total_words)
-    yield {"done": True, "sections": sections}
+    yield {"done": True, "sections": sections, "execution_trace": trace_events}
 
 
 async def _extract_docanalysis_group_results(
@@ -7115,6 +7097,8 @@ def _finalize_legacy_content_output(
             section_title,
             strip_structural_numbering=strip_structural_numbering,
         )
+    if _count_visible_chars(content) <= 0:
+        raise RuntimeError("内容工作流未返回可用正文")
 
     content, replace_report = _resolve_body_placeholders(
         content=content,
@@ -8011,6 +7995,17 @@ def _persist_content_result_to_project(
     existing = generated.get(section_id) if isinstance(generated.get(section_id), dict) else {}
     if status == "done":
         content = str(payload.get("content") or "")
+        if _count_visible_chars(content) <= 0:
+            generated[section_id] = {
+                **existing,
+                "status": "error",
+                "content": str(existing.get("content") or ""),
+                "wordCount": int(existing.get("wordCount") or existing.get("word_count") or 0),
+                "error": error or "内容工作流未返回可用正文",
+                "stage": None,
+            }
+            patch_project_payload(project_id, {"data_patch": {"generatedContent": generated}})
+            return
         generated[section_id] = {
             **existing,
             "status": "done",
@@ -8067,6 +8062,9 @@ def _persist_group_content_result_to_project(
             continue
         content = str(row.get("content") or "")
         existing = generated.get(section_id) if isinstance(generated.get(section_id), dict) else {}
+        if _count_visible_chars(content) <= 0:
+            failed_by_id.setdefault(section_id, "批量正文结果正文为空")
+            continue
         generated[section_id] = {
             **existing,
             "status": "done",
@@ -8758,20 +8756,13 @@ async def re_extract_requirements_payload(body: Mapping[str, Any]) -> dict[str, 
 
 
 async def generate_outline_payload(body: Mapping[str, Any]) -> dict[str, Any]:
-    """同步生成标书大纲；入参为大纲生成 JSON，出参兼容 legacy generate-outline。"""
+    """同步生成标书大纲；直连 native outline，不依赖 Dify workflow key。"""
     payload = _json_object_body(body)
-    dify_key = _get_workflow_key("structure_generator")
-    if not dify_key:
-        raise PlatformError(
-            code="OUTLINE_GENERATE_FAILED",
-            message="大纲生成工作流 API Key 未配置，请在 .env 中设置 DIFY_WORKFLOW_STRUCTURE_GENERATOR",
-            status_code=500,
-        )
-
+    expected_total_words = _int_or_default(payload.get("expected_total_words"), default=0)
     bundle = build_outline_generation_bundle(
         requirements=payload.get("requirements", []) if isinstance(payload.get("requirements"), list) else [],
         analysis_context=str(payload.get("analysis_context") or ""),
-        expected_total_words=_int_or_default(payload.get("expected_total_words"), default=0),
+        expected_total_words=expected_total_words,
         scoring_details_json=str(payload.get("scoring_details_json") or ""),
         structure_heading_seed_json=str(payload.get("structure_heading_seed_json") or ""),
         technical_h2_bindings_json=str(payload.get("technical_h2_bindings_json") or ""),
@@ -8779,28 +8770,33 @@ async def generate_outline_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     )
     inputs = dict(bundle["inputs"])
     inputs["bid_type"] = str(payload.get("bid_type") or "tech")
-    inputs["use_knowledge"] = "true" if bool(payload.get("use_knowledge")) else "false"
+    use_knowledge = bool(payload.get("use_knowledge", True))
+    inputs["use_knowledge"] = "true" if use_knowledge else "false"
     enable_diagrams = bool(payload.get("enable_diagrams") and _diagram_generation_enabled())
     max_diagrams = _int_or_default(payload.get("max_diagrams"), default=0) if enable_diagrams else 0
     inputs["enable_diagrams"] = "true" if enable_diagrams else "false"
     inputs["max_diagrams"] = max_diagrams
 
     try:
-        dify_res = await _call_dify_workflow(dify_key, inputs)
+        sections_data = await run_outline_batches_native(
+            batch_jobs=[{"batch_index": 1, "seed_headings": bundle["seed_headings"], "inputs": inputs}],
+            expected_total_words=expected_total_words,
+            max_diagrams=max_diagrams,
+            use_knowledge=use_knowledge,
+            ensure_running=lambda: None,
+        )
     except Exception as exc:
         raise PlatformError(code="OUTLINE_GENERATE_FAILED", message=_format_dify_runtime_error(exc), status_code=500) from exc
 
-    structured_data = parse_dify_outputs(dify_res)
-    sections_raw = extract_outline_sections_raw(structured_data)
-    sections_data = build_seeded_outline_sections(sections_raw, bundle["seed_headings"], max_diagrams=max_diagrams)
     quality_report = evaluate_outline_quality(sections_data, bundle["seed_headings"])
     if not quality_report["pass"]:
-        logger.error("[generate_outline] 结构校验失败: %s", quality_report)
+        logger.error("[generate_outline] native 结构校验失败: %s", quality_report)
         raise PlatformError(
             code="OUTLINE_GENERATE_FAILED",
             message="大纲生成结构不完整，请重试：" + "；".join(quality_report.get("issues") or []),
             status_code=502,
         )
+    normalize_outline_word_budget_dict(sections_data, expected_total_words)
 
     if not enable_diagrams:
         for section in sections_data:
@@ -8819,16 +8815,8 @@ async def generate_outline_payload(body: Mapping[str, Any]) -> dict[str, Any]:
 
 
 async def generate_outline_stream_response(body: Mapping[str, Any]) -> Any:
-    """流式生成标书大纲；入参为大纲生成 JSON，出参保持 legacy SSE 协议。"""
+    """流式生成标书大纲；直连 native outline，不依赖 Dify workflow key。"""
     payload = _json_object_body(body)
-    dify_key = _get_workflow_key("structure_generator")
-    if not dify_key:
-        raise PlatformError(
-            code="OUTLINE_GENERATE_STREAM_FAILED",
-            message="大纲生成工作流 API Key 未配置，请在 .env 中设置 DIFY_WORKFLOW_STRUCTURE_GENERATOR",
-            status_code=500,
-        )
-
     bundle = build_outline_generation_bundle(
         requirements=payload.get("requirements", []) if isinstance(payload.get("requirements"), list) else [],
         analysis_context=str(payload.get("analysis_context") or ""),
@@ -8840,7 +8828,8 @@ async def generate_outline_stream_response(body: Mapping[str, Any]) -> Any:
     )
     inputs = dict(bundle["inputs"])
     inputs["bid_type"] = str(payload.get("bid_type") or "tech")
-    inputs["use_knowledge"] = "true" if bool(payload.get("use_knowledge")) else "false"
+    use_knowledge = bool(payload.get("use_knowledge", True))
+    inputs["use_knowledge"] = "true" if use_knowledge else "false"
     enable_diagrams = bool(payload.get("enable_diagrams") and _diagram_generation_enabled())
     max_diagrams = _int_or_default(payload.get("max_diagrams"), default=0) if enable_diagrams else 0
     inputs["enable_diagrams"] = "true" if enable_diagrams else "false"
@@ -8850,11 +8839,11 @@ async def generate_outline_stream_response(body: Mapping[str, Any]) -> Any:
     async def event_stream() -> Any:
         try:
             async for chunk in _stream_native_outline_generation(
-                dify_key=dify_key,
                 inputs=inputs,
                 seed_headings=bundle["seed_headings"],
                 max_diagrams=max_diagrams,
                 expected_total_words=expected_total_words,
+                use_knowledge=use_knowledge,
             ):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         except Exception as exc:
