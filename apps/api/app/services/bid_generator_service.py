@@ -74,6 +74,7 @@ from app.services.bid_outline_service import (
     normalize_outline_word_budget_dict,
     parse_dify_outputs,
 )
+from app.services.bid_outline_native_pipeline import run_outline_batches_native
 from app.services import bid_workflow_execution_adapter
 from app.services.bid_task_runtime_service import task_manager as native_task_manager
 from app.services.pipt_gateway_service import preprocess_internal_payload
@@ -1024,10 +1025,6 @@ async def cancel_task_payload(task_id: str, *, project_id: str | None = None) ->
 async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     """启动大纲后台任务；入参为大纲生成 JSON，出参为 task_id 响应。"""
     payload = _json_object_body(body)
-    dify_key = _get_workflow_key("structure_generator")
-    if not dify_key:
-        raise PlatformError(code="TASK_START_FAILED", message="大纲生成工作流 API Key 未配置", status_code=500)
-
     requirements = payload.get("requirements", []) if isinstance(payload.get("requirements"), list) else []
     bid_type = str(payload.get("bid_type") or "tech")
     use_knowledge = bool(payload.get("use_knowledge", True))
@@ -1065,7 +1062,7 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     )
 
     task_manager = _task_manager()
-    task_id = task_manager.create_task("outline", project_id, workflow_name="structure_generator")
+    task_id = task_manager.create_task("outline", project_id, workflow_name="native_outline")
     _persist_project_runtime(
         project_id,
         task_id=task_id,
@@ -1078,69 +1075,10 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     async def run_task() -> None:
         execution_trace: list[dict[str, Any]] = []
 
-        async def execute_outline_batch(
-            *,
-            batch_seed_headings: list[dict[str, Any]],
-            batch_index: int,
-            total_batches: int,
-            started_at: float,
-        ) -> list[dict[str, Any]]:
-            batch_bundle = build_outline_generation_bundle(
-                requirements=requirements,
-                analysis_context=analysis_context,
-                expected_total_words=expected_total_words,
-                scoring_details_json=scoring_details_json,
-                structure_heading_seed_json=_dump_structure_heading_seed_json_local(batch_seed_headings),
-                technical_h2_bindings_json=_dump_structure_heading_seed_json_local(batch_seed_headings),
-                technical_targets_json=technical_targets_json,
-            )
-            batch_inputs = dict(batch_bundle["inputs"])
-            batch_inputs["bid_type"] = bid_type
-            batch_inputs["use_knowledge"] = "true" if use_knowledge else "false"
-            batch_inputs["enable_diagrams"] = "true" if enable_diagrams else "false"
-            batch_inputs["max_diagrams"] = max_diagrams
-
-            execution_trace.append(
-                {
-                    "kind": "batch_started",
-                    "batch_index": int(batch_index),
-                    "total_batches": int(total_batches),
-                    "h2_count": len(batch_seed_headings or []),
-                    "at": datetime.utcnow().isoformat(),
-                    "elapsed_sec": int(max(0, time.monotonic() - started_at)),
-                }
-            )
-            _push_task_event(task_id, "execution_trace", execution_trace[-1])
-            outputs = await _collect_workflow_outputs(
-                task_id,
-                dify_key,
-                batch_inputs,
-                _r=None,
-                initial_stage=f"✍️ 第 {batch_index}/{total_batches} 批大纲生成中",
-            )
-            sections = _resolve_outline_sections_from_outputs(
-                outputs,
-                seed_headings=batch_seed_headings,
-                max_diagrams=0,
-            )
-            quality_report = evaluate_outline_quality(sections, batch_seed_headings)
-            if not quality_report.get("pass"):
-                raise RuntimeError(
-                    f"第 {batch_index}/{total_batches} 批大纲结构质量校验失败："
-                    + "; ".join(quality_report.get("issues") or [])
-                )
-            execution_trace.append(
-                {
-                    "kind": "batch_finished",
-                    "batch_index": int(batch_index),
-                    "total_batches": int(total_batches),
-                    "h2_count": len(batch_seed_headings or []),
-                    "at": datetime.utcnow().isoformat(),
-                    "elapsed_sec": int(max(0, time.monotonic() - started_at)),
-                }
-            )
-            _push_task_event(task_id, "execution_trace", execution_trace[-1])
-            return sections
+        def emit_native_event(event: str, payload: dict[str, Any]) -> None:
+            if event == "execution_trace":
+                execution_trace.append(dict(payload or {}))
+            _push_task_event(task_id, event, payload)
 
         try:
             started_at = time.monotonic()
@@ -1185,22 +1123,29 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                 batch_results: dict[int, list[dict[str, Any]]] = {}
                 batch_start_ts: dict[int, float] = {}
 
-                async def run_outline_batch(batch_index: int, batch_seed_headings: list[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:
-                    return (
-                        batch_index,
-                        await execute_outline_batch(
-                            batch_seed_headings=batch_seed_headings,
-                            batch_index=batch_index,
-                            total_batches=total_batches,
-                            started_at=started_at,
-                        ),
-                    )
-
-                batch_tasks = [
-                    asyncio.create_task(run_outline_batch(batch_index, batch_seed_headings))
-                    for batch_index, batch_seed_headings in enumerate(outline_batches, start=1)
-                ]
+                batch_jobs: list[dict[str, Any]] = []
                 for batch_index, batch_seed_headings in enumerate(outline_batches, start=1):
+                    batch_bundle = build_outline_generation_bundle(
+                        requirements=requirements,
+                        analysis_context=analysis_context,
+                        expected_total_words=expected_total_words,
+                        scoring_details_json=scoring_details_json,
+                        structure_heading_seed_json=_dump_structure_heading_seed_json_local(batch_seed_headings),
+                        technical_h2_bindings_json=_dump_structure_heading_seed_json_local(batch_seed_headings),
+                        technical_targets_json=technical_targets_json,
+                    )
+                    batch_inputs = dict(batch_bundle["inputs"])
+                    batch_inputs["bid_type"] = bid_type
+                    batch_inputs["use_knowledge"] = "true" if use_knowledge else "false"
+                    batch_inputs["enable_diagrams"] = "true" if enable_diagrams else "false"
+                    batch_inputs["max_diagrams"] = max_diagrams
+                    batch_jobs.append(
+                        {
+                            "batch_index": batch_index,
+                            "seed_headings": batch_seed_headings,
+                            "inputs": batch_inputs,
+                        }
+                    )
                     batch_start_ts[batch_index] = time.monotonic()
                     _push_task_event(
                         task_id,
@@ -1217,9 +1162,9 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                 try:
                     task_manager.update_stage(task_id, f"✍️ 并发生成 {total_batches} 批大纲")
                     _emit_outline_stage_event_local(task_id, f"✍️ 并发生成 {total_batches} 批大纲", elapsed_sec=int(time.monotonic() - started_at))
-                    for done in asyncio.as_completed(batch_tasks):
-                        _ensure_task_running(task_id)
-                        batch_index, batch_sections = await done
+
+                    async def on_native_batch_done(batch_index: int, batch_sections: list[dict[str, Any]]) -> None:
+                        nonlocal completed_batches
                         batch_results[batch_index] = batch_sections
                         completed_batches += 1
                         _push_task_event(
@@ -1278,11 +1223,19 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                                 },
                             },
                         )
+
+                    await run_outline_batches_native(
+                        batch_jobs=batch_jobs,
+                        expected_total_words=expected_total_words,
+                        max_diagrams=0,
+                        use_knowledge=use_knowledge,
+                        ensure_running=lambda: _ensure_task_running(task_id),
+                        on_batch_done=on_native_batch_done,
+                        emit_event=emit_native_event,
+                    )
+                except asyncio.CancelledError:
+                    raise
                 except Exception:
-                    for pending in batch_tasks:
-                        if not pending.done():
-                            pending.cancel()
-                    await asyncio.gather(*batch_tasks, return_exceptions=True)
                     raise
 
                 sections = [
@@ -1310,17 +1263,13 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
                 _sync_project_runtime_from_task(task_manager.get_task(task_id))
                 return
 
-            outputs = await _collect_workflow_outputs(
-                task_id,
-                dify_key,
-                inputs,
-                _r=None,
-                initial_stage="✍️ 生成大纲",
-            )
-            sections = _resolve_outline_sections_from_outputs(
-                outputs,
-                seed_headings=bundle["seed_headings"],
+            sections = await run_outline_batches_native(
+                batch_jobs=[{"batch_index": 1, "seed_headings": bundle["seed_headings"], "inputs": inputs}],
+                expected_total_words=expected_total_words,
                 max_diagrams=max_diagrams if enable_diagrams else 0,
+                use_knowledge=use_knowledge,
+                ensure_running=lambda: _ensure_task_running(task_id),
+                emit_event=emit_native_event,
             )
             quality_report = evaluate_outline_quality(sections, bundle["seed_headings"])
             if not quality_report.get("pass"):
@@ -1445,7 +1394,6 @@ async def start_outline_task_payload(body: Mapping[str, Any]) -> dict[str, Any]:
             )
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
         except asyncio.CancelledError:
-            await _best_effort_stop_dify_by_task_id(task_id)
             logger.info("[Task %s] 大纲生成任务被用户取消", task_id)
             task_manager.set_cancelled(task_id)
             _sync_project_runtime_from_task(task_manager.get_task(task_id))
@@ -8414,6 +8362,8 @@ def _task_dify_task_ids(task: Any) -> list[str]:
 async def _stop_dify_workflows_for_task(task: Any) -> tuple[bool, str]:
     workflow_name = _task_workflow_name(task)
     if not workflow_name:
+        return False, "not_applicable"
+    if workflow_name == "native_outline":
         return False, "not_applicable"
     dify_key = _get_workflow_key(workflow_name)
     if not dify_key:

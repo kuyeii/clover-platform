@@ -1783,6 +1783,19 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
         self.assertEqual(calls[0][1], {"Authorization": "Bearer workflow-key"})
         self.assertEqual(calls[0][2], {"user": "pro-engine-backend"})
 
+    def test_stop_dify_workflows_for_native_outline_is_not_applicable(self) -> None:
+        task = SimpleNamespace(
+            task_type="outline",
+            workflow_name="native_outline",
+            dify_task_id="dify-should-not-stop",
+            dify_task_ids=["dify-should-not-stop"],
+        )
+        with patch.object(service, "_get_workflow_key", side_effect=AssertionError("native outline must not read Dify key")):
+            stopped, status = _run_async(service._stop_dify_workflows_for_task(task))
+
+        self.assertFalse(stopped)
+        self.assertEqual(status, "not_applicable")
+
     def test_start_outline_task_payload_runs_natively_and_sets_partial_and_result(self) -> None:
         class FakeTaskManager:
             def __init__(self) -> None:
@@ -1823,39 +1836,47 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             def get_task(self, task_id: str) -> SimpleNamespace:
                 return SimpleNamespace(status=self.status, current_stage="✅ 大纲结构已就绪")
 
-        async def fake_stream(*args, **kwargs):
-            _ = args, kwargs
-            yield {"dify_task_id": "dify-outline-1"}
-            yield {"__stage__": "✍️ 生成大纲", "workflow_run_id": "run-outline-1"}
-            yield {
-                "__finished__": True,
-                "outputs": {
-                    "structured_output": {
-                        "outline": [
-                            {
-                                "title": "总体技术方案",
-                                "children": [
-                                    {
-                                        "title": "建设目标",
-                                        "wordCount": 500,
-                                        "writingHint": "围绕建设目标展开",
-                                        "keywords": ["建设目标"],
-                                    }
-                                ],
-                            }
-                        ]
-                    }
-                },
-                "workflow_run_id": "run-outline-1",
-            }
+        async def fake_run_outline_batches_native(**kwargs):
+            self.assertEqual(kwargs["batch_jobs"][0]["batch_index"], 1)
+            self.assertEqual(kwargs["batch_jobs"][0]["seed_headings"][0]["title"], "总体技术方案")
+            kwargs["ensure_running"]()
+            kwargs["emit_event"]("execution_trace", {"kind": "native_batch_finished", "batch_index": 1})
+            return [
+                {
+                    "id": "h2-1",
+                    "title": "总体技术方案",
+                    "headingLevel": 2,
+                    "wordCount": 600,
+                    "writingHint": "围绕建设目标展开",
+                    "keywords": ["建设目标"],
+                    "relatedAnalysisIds": [],
+                    "needDiagram": False,
+                    "diagramBrief": "",
+                    "diagramPlan": {},
+                    "children": [
+                        {
+                            "id": "h2-1_h3_1",
+                            "title": "建设目标",
+                            "headingLevel": 3,
+                            "wordCount": 600,
+                            "writingHint": "围绕建设目标展开",
+                            "keywords": ["建设目标"],
+                            "relatedAnalysisIds": [],
+                            "needDiagram": False,
+                            "diagramBrief": "",
+                            "diagramPlan": {},
+                        }
+                    ],
+                }
+            ]
 
         task_manager = FakeTaskManager()
 
         with (
             patch.object(service, "_task_manager", return_value=task_manager),
             patch.object(service, "_ensure_project_slot_native", new=AsyncMock(return_value=None)),
-            patch.object(service, "_get_workflow_key", side_effect=lambda name: "outline-key" if name == "structure_generator" else ""),
-            patch.object(service, "_call_dify_workflow_stream", new=fake_stream),
+            patch.object(service, "_get_workflow_key", side_effect=AssertionError("outline start must not read Dify workflow key")),
+            patch.object(service, "run_outline_batches_native", new=fake_run_outline_batches_native),
             patch.object(service, "_persist_project_runtime", return_value=None),
             patch.object(service, "_sync_project_runtime_from_task", return_value=None),
         ):
@@ -1872,12 +1893,13 @@ class BidGeneratorProjectServiceTests(unittest.TestCase):
             )
             _run_async(_await_task(task_manager.async_task))
         self.assertEqual(payload, {"task_id": "task-outline-1"})
-        self.assertEqual(task_manager.created, [("outline", "proj-1", "structure_generator")])
+        self.assertEqual(task_manager.created, [("outline", "proj-1", "native_outline")])
         self.assertEqual(task_manager.partial_result["phase"], "h3_meta_generating")
         self.assertEqual(task_manager.result["done"], True)
         self.assertEqual(task_manager.result["phase"], "outline_finalized")
         self.assertEqual(task_manager.result["sections"][0]["title"], "总体技术方案")
         self.assertEqual(task_manager.result["sections"][0]["wordCount"], 600)
+        self.assertIn({"kind": "native_batch_finished", "batch_index": 1}, task_manager.result["execution_trace"])
 
     def test_start_extract_task_payload_delegates_multipart_arguments(self) -> None:
         upload = SimpleNamespace(filename="demo.docx")
