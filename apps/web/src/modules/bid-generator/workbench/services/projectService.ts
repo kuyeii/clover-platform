@@ -307,6 +307,19 @@ export function buildInitialOutlineFromTechnicalHeadings(analysisV2?: AnalysisV2
 }
 
 /**
+ * 判断大纲是否已经从“仅 H2 骨架”升级为可用结果。
+ * 取消/异常收敛时不能只看 outline.length，否则生成前置骨架会被误判为 outline_ready。
+ */
+export function hasCompletedOutline(outline?: OutlineSection[] | null): boolean {
+    if (!Array.isArray(outline) || outline.length === 0) return false;
+    return outline.some((section) => {
+        const children = Array.isArray(section.children) ? section.children : [];
+        if (children.length > 0) return true;
+        return Number(section.wordCount || 0) > 0 || Boolean(String(section.writingHint || '').trim());
+    });
+}
+
+/**
  * 大纲生成专用：提炼解析报告中最高价值的节点，返回结构化上下文字符串。
  * 优先级：评分标准 > 技术要求 > 实施与交付约束 > 参数指标 > 项目背景 > 其他。
  * 总长度上限 4000 字符。
@@ -1814,7 +1827,7 @@ function recoverGeneratedContentState(
 
 function normalizeRecoveredProjectStatus(project: Project): ProjectStatus {
     if (project.status === 'generating_outline') {
-        return project.outline?.length ? 'outline_ready' : 'report_done';
+        return hasCompletedOutline(project.outline) ? 'outline_ready' : 'report_done';
     }
     if (project.status === 'generating_content') {
         return 'editing';

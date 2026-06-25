@@ -10,7 +10,7 @@ import { TechProposalGate } from './components/TechProposalGate';
 import { BidderInfoDialog } from './components/BidderInfoDialog';
 import { StageTopBar, getCurrentStageIndex, type StageId } from './components/StageTopBar';
 import type { BidderInfo, Project, TechProposalConfig } from './services/projectService';
-import { buildInitialOutlineFromTechnicalHeadings, projectService } from './services/projectService';
+import { buildInitialOutlineFromTechnicalHeadings, hasCompletedOutline, projectService } from './services/projectService';
 import { shouldBlockProjectNavigation } from './services/navigationPolicy';
 import { useState } from 'react';
 import { AlertTriangle, FileDown, FolderOpen, Loader2, Lock, Trash2 } from 'lucide-react';
@@ -452,7 +452,7 @@ export default function App() {
       }
 
       if (proj.status === 'generating_outline' && !(busyMeta.busy && busyMeta.activeTaskType === 'outline')) {
-        patch.status = proj.outline?.length ? 'outline_ready' : 'report_done';
+        patch.status = hasCompletedOutline(proj.outline) ? 'outline_ready' : 'report_done';
         shouldPatch = true;
       }
 

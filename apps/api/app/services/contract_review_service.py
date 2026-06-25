@@ -5228,7 +5228,7 @@ def _run_contract_review_native_pipeline(
     segment_bundle = split_into_segments(review_text)
     token_boundary_report = validate_pipt_token_boundaries(review_text, list(segment_bundle.get("segments") or []))
     if not token_boundary_report.get("valid", False):
-        raise ValueError(f"PIPT token 被合同分段切断: {token_boundary_report}")
+        raise ValueError(f"PIPT token 未被合同分段完整覆盖: {token_boundary_report}")
     _save_pipeline_stage_outputs(run_dir, extracted_text, cleaned_text, review_text, segment_bundle, token_boundary_report)
 
     _write_meta(run_id, {"status": "running", "step": "正在解析与拆分合同", "progress": 40})

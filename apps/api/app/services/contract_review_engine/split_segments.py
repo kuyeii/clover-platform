@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any
 
 
@@ -11,7 +12,6 @@ PIPT_TOKEN = re.compile(r"@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@")
 CHINESE_HEADING = re.compile(r"(?m)^[一二三四五六七八九十百]+、.*$")
 ARTICLE_HEADING = re.compile(r"(?m)^第[一二三四五六七八九十百0-9]+条.*$")
 ARABIC_HEADING = re.compile(r"(?m)^[0-9]+、.*$")
-
 
 
 def detect_heading_style(text: str) -> HeadingStyle | None:
@@ -61,7 +61,9 @@ def split_into_segments(text: str) -> dict[str, Any]:
     segments: list[dict[str, str]] = []
 
     for idx, match in enumerate(matches):
-        start = match.start()
+        # 仅在前置信息含 PIPT token 时合入第一段，避免新增 Dify 调用和改变正常分段行为。
+        prefix = text[: match.start()] if idx == 0 else ""
+        start = 0 if idx == 0 and PIPT_TOKEN.search(prefix) else match.start()
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
         segment_text = text[start:end].strip()
         title_line = match.group(0).strip()
@@ -96,14 +98,18 @@ def validate_pipt_token_boundaries(full_text: str, segments: list[dict[str, Any]
     校验合同分段没有切断 PIPT token。
     当前切分按标题边界执行，理论上不会切断 token；这里作为未来长度分片的防线。
     """
-    tokens = PIPT_TOKEN.findall(str(full_text or ""))
-    if not tokens:
+    full_token_counts = Counter(PIPT_TOKEN.findall(str(full_text or "")))
+    if not full_token_counts:
         return {"valid": True, "token_count": 0, "broken_tokens": [], "fragment_segments": []}
 
     segment_texts = [str(segment.get("segment_text") or "") for segment in segments if isinstance(segment, dict)]
+    segment_token_counts: Counter[str] = Counter()
+    for segment_text in segment_texts:
+        segment_token_counts.update(PIPT_TOKEN.findall(segment_text))
+
     broken_tokens: list[str] = []
-    for token in sorted(set(tokens)):
-        if not any(token in segment_text for segment_text in segment_texts):
+    for token, expected_count in sorted(full_token_counts.items()):
+        if segment_token_counts[token] < expected_count:
             broken_tokens.append(token)
 
     fragment_segments: list[dict[str, Any]] = []
@@ -131,7 +137,7 @@ def validate_pipt_token_boundaries(full_text: str, segments: list[dict[str, Any]
 
     return {
         "valid": not broken_tokens and not fragment_segments,
-        "token_count": len(set(tokens)),
+        "token_count": len(full_token_counts),
         "broken_tokens": broken_tokens,
         "fragment_segments": fragment_segments,
     }

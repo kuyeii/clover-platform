@@ -48,15 +48,17 @@ async def generate_outline_batch_native(
     use_knowledge: bool,
     ensure_running: EnsureRunning,
     emit_event: EmitEvent | None = None,
-    llm_client: BidOutlineLlmClient | None = None,
+    draft_llm_client: BidOutlineLlmClient | None = None,
+    review_llm_client: BidOutlineLlmClient | None = None,
 ) -> NativeOutlineBatchResult:
     """执行单批 native 大纲生成；入参为批次 inputs/种子，出参为归一化 sections。"""
-    llm = llm_client or BidOutlineLlmClient()
+    draft_llm = draft_llm_client or BidOutlineLlmClient(purpose="draft")
+    review_llm = review_llm_client or BidOutlineLlmClient(purpose="review")
     trace: list[dict[str, Any]] = []
     ensure_running()
     _emit(emit_event, "execution_trace", {"kind": "native_batch_generating", "batch_index": batch_index, "total_batches": total_batches})
 
-    draft = await llm.chat_json(build_generation_messages(inputs), temperature=0.2)
+    draft = await draft_llm.chat_json(build_generation_messages(inputs), temperature=0.2)
     ensure_running()
     parsed_stage = normalize_outline_parse_stage(
         draft,
@@ -76,7 +78,7 @@ async def generate_outline_batch_native(
         ensure_running()
 
     _emit(emit_event, "execution_trace", {"kind": "native_batch_reviewing", "batch_index": batch_index})
-    reviewed = await llm.chat_json(
+    reviewed = await review_llm.chat_json(
         build_review_messages(inputs, outline_json=outline_json, knowledge_context=knowledge_context),
         temperature=0.15,
     )
@@ -113,7 +115,8 @@ async def run_outline_batches_native(
 ) -> list[dict[str, Any]]:
     """并发执行 native 大纲批次；入参为批次任务列表，出参按批次顺序合并 sections。"""
     semaphore = asyncio.Semaphore(native_outline_max_concurrency())
-    llm_client = BidOutlineLlmClient()
+    draft_llm_client = BidOutlineLlmClient(purpose="draft")
+    review_llm_client = BidOutlineLlmClient(purpose="review")
     total_batches = len(batch_jobs)
 
     async def run_one(job: dict[str, Any]) -> NativeOutlineBatchResult:
@@ -129,7 +132,8 @@ async def run_outline_batches_native(
                 use_knowledge=use_knowledge,
                 ensure_running=ensure_running,
                 emit_event=emit_event,
-                llm_client=llm_client,
+                draft_llm_client=draft_llm_client,
+                review_llm_client=review_llm_client,
             )
 
     tasks = [asyncio.create_task(run_one(job)) for job in batch_jobs]
@@ -360,8 +364,14 @@ def _clean_keywords(values: Any, title: str) -> list[str]:
     items: list[str] = []
     for item in _ensure_list(values):
         text = str(item or "").strip()
-        if text and text not in {"项目", "方案", "系统", "报告"} and text not in items:
+        if text and text not in {"项目", "方案", "系统", "报告", "章节", "内容", "响应情况"} and text not in items:
             items.append(text)
+    if _is_self_generated_h2(title):
+        for fallback in ("逐条响应策略", "偏离控制", "符合性闭环", "采购需求响应"):
+            if fallback not in items:
+                items.append(fallback)
+            if len(items) >= 4:
+                break
     if not items:
         core = re.sub(r"^[一二三四五六七八九十0-9\.、\-\s]+", "", str(title or "")).strip()
         if core:

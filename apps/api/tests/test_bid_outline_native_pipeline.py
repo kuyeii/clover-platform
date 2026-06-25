@@ -13,6 +13,8 @@ if API_ROOT_VALUE not in sys.path:
 
 from app.services import bid_outline_native_pipeline as pipeline
 from app.services import bid_outline_knowledge
+from app.services.bid_model_manifest import get_bid_model_completion_params, get_bid_model_node
+from app.services.bid_outline_llm import BidOutlineLlmClient, get_bid_outline_llm_config
 
 
 def test_normalize_outline_stages_preserve_fixed_h2_and_response_self_generation() -> None:
@@ -67,6 +69,30 @@ def test_normalize_outline_stages_preserve_fixed_h2_and_response_self_generation
     assert structured["outline"][0]["children"][0]["title"] == "技术路线"
     assert structured["outline"][1]["children"] == []
     assert structured["outline"][1]["generatesFromSelf"] is True
+    assert len(structured["outline"][1]["keywords"]) >= 2
+
+
+def test_response_special_outline_keywords_are_completed_before_quality_check() -> None:
+    seed_headings = [{"id": "h2-response", "title": "响应情况", "generation_strategy": "response_special"}]
+    sections = pipeline.build_seeded_outline_sections(
+        [
+            {
+                "title": "响应情况",
+                "wordCount": 800,
+                "keywords": ["响应情况"],
+                "writingHint": "围绕采购需求逐条响应，说明关键条款符合性、偏离控制和闭环措施，避免编造参数或承诺。",
+                "children": [],
+            }
+        ],
+        seed_headings,
+        max_diagrams=0,
+    )
+    quality = pipeline.evaluate_outline_quality(sections, seed_headings)
+
+    assert sections[0]["children"] == []
+    assert sections[0]["generatesFromSelf"] is True
+    assert len(sections[0]["keywords"]) >= 2
+    assert quality["pass"] is True
 
 
 def test_run_outline_batches_native_respects_concurrency_and_keeps_result_order() -> None:
@@ -205,5 +231,166 @@ def test_retrieve_outline_knowledge_uses_dify_dataset_retrieve_payload() -> None
         assert payload["retrieval_model"]["top_k"] == 2
         assert payload["retrieval_model"]["reranking_enable"] is False
         assert calls[0]["headers"]["Authorization"] == "Bearer dataset-key"
+
+    asyncio.run(run_case())
+
+
+def test_bid_outline_llm_config_reuses_dashscope_env_when_specific_env_missing() -> None:
+    with patch.dict(
+        pipeline.os.environ,
+        {
+            "BID_OUTLINE_LLM_BASE_URL": "",
+            "BID_OUTLINE_LLM_API_KEY": "",
+            "BID_OUTLINE_LLM_MODEL": "",
+            "DIFY_TONGYI_DASHSCOPE_API_KEY": "dashscope-key",
+        },
+        clear=False,
+    ):
+        config = get_bid_outline_llm_config("review")
+
+    assert config.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert config.api_key == "dashscope-key"
+    assert config.model == "qwen3.6-flash"
+    assert config.temperature == 0.15
+    assert config.top_p == 0.7
+    assert config.enable_thinking is False
+
+
+def test_bid_outline_draft_llm_config_matches_dsl_defaults() -> None:
+    with patch.dict(
+        pipeline.os.environ,
+        {
+            "BID_OUTLINE_LLM_BASE_URL": "",
+            "BID_OUTLINE_LLM_API_KEY": "",
+            "BID_OUTLINE_LLM_MODEL": "",
+            "BID_OUTLINE_LLM_TEMPERATURE": "",
+            "DIFY_TONGYI_DASHSCOPE_API_KEY": "dashscope-key",
+            "DIFY_TONGYI_DASHSCOPE_MODEL": "qwen3.6-flash",
+        },
+        clear=False,
+    ):
+        config = get_bid_outline_llm_config("draft")
+
+    assert config.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert config.api_key == "dashscope-key"
+    assert config.model == "Kimi-K2.5"
+    assert config.temperature == 0.2
+    assert config.top_p == 0.7
+    assert config.enable_thinking is True
+
+
+def test_bid_model_manifest_records_outline_dsl_models() -> None:
+    draft_node = get_bid_model_node("ProEngine_Structure_Generate", "outline_draft")
+    review_node = get_bid_model_node("ProEngine_Structure_Generate", "outline_review")
+    draft_params = get_bid_model_completion_params("ProEngine_Structure_Generate", "outline_draft")
+    review_params = get_bid_model_completion_params("ProEngine_Structure_Generate", "outline_review")
+
+    assert draft_node["default_model"] == "Kimi-K2.5"
+    assert draft_node["env_prefix"] == "BID_OUTLINE_DRAFT_LLM"
+    assert draft_params["enable_thinking"] is True
+    assert draft_params["temperature"] == 0.2
+    assert draft_params["top_p"] == 0.7
+    assert review_node["default_model"] == "qwen3.6-flash"
+    assert review_node["env_prefix"] == "BID_OUTLINE_REVIEW_LLM"
+    assert review_params["enable_thinking"] is False
+    assert review_params["temperature"] == 0.15
+    assert review_params["top_p"] == 0.7
+
+
+def test_bid_outline_llm_config_specific_env_takes_precedence() -> None:
+    with patch.dict(
+        pipeline.os.environ,
+        {
+            "BID_OUTLINE_LLM_BASE_URL": "https://relay.local/v1",
+            "BID_OUTLINE_LLM_API_KEY": "outline-key",
+            "BID_OUTLINE_LLM_MODEL": "outline-model",
+            "DIFY_TONGYI_DASHSCOPE_API_KEY": "dashscope-key",
+        },
+        clear=False,
+    ):
+        config = get_bid_outline_llm_config("review")
+
+    assert config.base_url == "https://relay.local/v1"
+    assert config.api_key == "outline-key"
+    assert config.model == "outline-model"
+
+
+def test_bid_outline_lifecycle_specific_env_takes_precedence() -> None:
+    with patch.dict(
+        pipeline.os.environ,
+        {
+            "BID_OUTLINE_LLM_BASE_URL": "https://shared.local/v1",
+            "BID_OUTLINE_LLM_API_KEY": "shared-key",
+            "BID_OUTLINE_LLM_MODEL": "",
+            "BID_OUTLINE_DRAFT_LLM_BASE_URL": "https://draft.local/v1",
+            "BID_OUTLINE_DRAFT_LLM_API_KEY": "draft-key",
+            "BID_OUTLINE_DRAFT_LLM_MODEL": "Kimi-K2.5",
+            "BID_OUTLINE_REVIEW_LLM_MODEL": "qwen3.6-flash",
+        },
+        clear=False,
+    ):
+        draft = get_bid_outline_llm_config("draft")
+        review = get_bid_outline_llm_config("review")
+
+    assert draft.base_url == "https://draft.local/v1"
+    assert draft.api_key == "draft-key"
+    assert draft.model == "Kimi-K2.5"
+    assert review.base_url == "https://shared.local/v1"
+    assert review.api_key == "shared-key"
+    assert review.model == "qwen3.6-flash"
+
+
+def test_bid_outline_chat_payload_keeps_dsl_generation_params() -> None:
+    async def run_case() -> None:
+        calls: list[dict[str, object]] = []
+
+        class FakeResponse:
+            status_code = 200
+            text = ""
+
+            def json(self) -> dict[str, object]:
+                return {"choices": [{"message": {"content": "{\"outline\": []}"}}]}
+
+            def raise_for_status(self) -> None:
+                return None
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs) -> None:
+                return None
+
+            async def __aenter__(self) -> "FakeClient":
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            async def post(self, url: str, *, headers: dict[str, str], json: dict[str, object]) -> FakeResponse:
+                calls.append({"url": url, "headers": headers, "json": json})
+                return FakeResponse()
+
+        with (
+            patch.dict(
+                pipeline.os.environ,
+                {
+                    "BID_OUTLINE_LLM_BASE_URL": "https://relay.local/v1",
+                    "BID_OUTLINE_LLM_API_KEY": "outline-key",
+                    "BID_OUTLINE_LLM_MODEL": "",
+                    "BID_OUTLINE_LLM_TOP_P": "",
+                    "BID_OUTLINE_DRAFT_LLM_MODEL": "Kimi-K2.5",
+                },
+                clear=False,
+            ),
+            patch("app.services.bid_outline_llm.httpx.AsyncClient", FakeClient),
+        ):
+            client = BidOutlineLlmClient(purpose="draft")
+            parsed = await client.chat_json([{"role": "user", "content": "x"}])
+
+        assert parsed == {"outline": []}
+        payload = calls[0]["json"]
+        assert payload["model"] == "Kimi-K2.5"
+        assert payload["temperature"] == 0.2
+        assert payload["top_p"] == 0.7
+        assert payload["enable_thinking"] is True
+        assert payload["response_format"] == {"type": "json_object"}
 
     asyncio.run(run_case())

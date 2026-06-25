@@ -136,6 +136,44 @@ class ContractReviewPipelineTests(unittest.TestCase):
         self.assertFalse(report["valid"])
         self.assertIn(token, report["broken_tokens"])
 
+    def test_split_segments_merges_pipt_prefix_without_extra_segment(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        text = (
+            f"甲方：{token}\n\n"
+            "一、主体\n联系人信息。\n"
+            "二、付款\n付款条款。\n"
+            "三、违约\n违约责任。"
+        )
+
+        segments = split_into_segments(text)
+        report = validate_pipt_token_boundaries(text, list(segments["segments"]))
+
+        self.assertEqual(segments["segment_count"], 3)
+        self.assertEqual(segments["segments"][0]["segment_id"], "segment_1")
+        self.assertEqual(segments["segments"][0]["segment_title"], "一、主体")
+        self.assertIn(f"甲方：{token}", segments["segments"][0]["segment_text"])
+        self.assertTrue(report["valid"])
+
+    def test_split_segments_keeps_normal_prefix_behavior_without_pipt(self) -> None:
+        text = "合同编号：A-001\n\n一、主体\n正文。\n二、付款\n正文。\n三、违约\n正文。"
+
+        segments = split_into_segments(text)
+
+        self.assertEqual(segments["segment_count"], 3)
+        self.assertEqual(segments["segments"][0]["segment_title"], "一、主体")
+        self.assertNotIn("合同编号", segments["segments"][0]["segment_text"])
+
+    def test_validate_pipt_token_boundaries_detects_missing_duplicate_occurrence(self) -> None:
+        token = "@@PIPT:v1:e000001:k11111111@@"
+        report = validate_pipt_token_boundaries(
+            f"甲方：{token}\n乙方：{token}",
+            [{"segment_id": "segment_1", "segment_text": f"甲方：{token}"}],
+        )
+
+        self.assertFalse(report["valid"])
+        self.assertEqual(report["token_count"], 1)
+        self.assertIn(token, report["broken_tokens"])
+
     def test_restore_payload_for_source_docx_restores_clause_lists_with_document_manifest(self) -> None:
         token = "@@PIPT:v1:e000001:k11111111@@"
         with tempfile.TemporaryDirectory() as td:

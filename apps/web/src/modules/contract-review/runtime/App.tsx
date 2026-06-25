@@ -880,7 +880,7 @@ export default function App() {
 
   const applyWorkspaceFile = useCallback((nextFile: File | null, options?: { preserveReviewSide?: boolean }) => {
     setFile(nextFile)
-    if (!options?.preserveReviewSide) {
+    if (!nextFile && !options?.preserveReviewSide) {
       setSelectedReviewSide(null)
     }
   }, [])

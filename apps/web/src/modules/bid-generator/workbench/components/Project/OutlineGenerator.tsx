@@ -17,6 +17,7 @@ import type { Project, OutlineSection, OutlineSubSection, TechProposalConfig } f
 import {
   projectService,
   buildInitialOutlineFromTechnicalHeadings,
+  hasCompletedOutline,
 } from '../../services/projectService';
 import {
   extractCoreWritingIntent,
@@ -394,12 +395,17 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
   ) => {
     const fresh = projectService.getById(project.id);
     const currentRuntime = fresh?.taskRuntime;
+    const terminalStatus = options?.status ?? (
+      options?.outline
+        ? (hasCompletedOutline(options.outline) ? 'outline_ready' : 'report_done')
+        : undefined
+    );
     const taskId = currentRuntime?.taskType === 'outline'
       ? (currentRuntime.taskId || '')
       : (localStorage.getItem(taskKey) || connectedTaskRef.current || '');
     const updated = projectService.update(project.id, {
       ...(options?.outline ? { outline: sanitizeOutlineSections(options.outline) } : {}),
-      ...(options?.status ? { status: options.status } : {}),
+      ...(terminalStatus ? { status: terminalStatus } : {}),
       taskRuntime: {
         ...(currentRuntime || {}),
         state: runtimeState,
@@ -412,6 +418,12 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
       },
     });
     if (updated) onConfirm(updated);
+  };
+
+  const resolveCancelledStatus = (): Project['status'] => {
+    const fresh = projectService.getById(project.id);
+    const latestOutline = fresh?.outline || sections;
+    return hasCompletedOutline(latestOutline) ? 'outline_ready' : 'report_done';
   };
 
   /* ─── 检测下游是否已有技术方案正文 ─── */
@@ -550,7 +562,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                 setIsCancelling(false);
                 setIsStarting(false);
                 persistTerminalRuntime('failed', {
-                  status: sections.length > 0 ? 'outline_ready' : 'report_done',
+                  status: resolveCancelledStatus(),
                   message: String(data.error || ''),
                   progress: 0,
                 });
@@ -565,7 +577,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                 setIsCancelling(false);
                 setIsStarting(false);
                 persistTerminalRuntime('cancelled', {
-                  status: sections.length > 0 ? 'outline_ready' : 'report_done',
+                  status: resolveCancelledStatus(),
                   message: '',
                   progress: 0,
                 });
@@ -725,7 +737,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
             setIsCancelling(false);
             setIsStarting(false);
             persistTerminalRuntime('cancelled', {
-              status: sections.length > 0 ? 'outline_ready' : 'report_done',
+              status: resolveCancelledStatus(),
               message: '',
               progress: 0,
             });
@@ -740,7 +752,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
             setIsCancelling(false);
             setIsStarting(false);
             persistTerminalRuntime(st?.state === 'timed_out' ? 'timed_out' : 'failed', {
-              status: sections.length > 0 ? 'outline_ready' : 'report_done',
+              status: resolveCancelledStatus(),
               message: st?.error || '',
               progress: 0,
             });
@@ -789,7 +801,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
             setIsCancelling(false);
             setIsStarting(false);
             persistTerminalRuntime('cancelled', {
-              status: sections.length > 0 ? 'outline_ready' : 'report_done',
+              status: resolveCancelledStatus(),
               message: '',
               progress: 0,
             });
@@ -806,7 +818,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
         connectedTaskRef.current = '';
         setIsDone(true);
         persistTerminalRuntime('failed', {
-          status: sections.length > 0 ? 'outline_ready' : 'report_done',
+          status: resolveCancelledStatus(),
           message: e?.message || '',
           progress: 0,
         });
@@ -855,7 +867,7 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
         setError(e?.message || '大纲生成失败');
         setIsDone(true);
         persistTerminalRuntime('failed', {
-          status: sections.length > 0 ? 'outline_ready' : 'report_done',
+          status: resolveCancelledStatus(),
           message: e?.message || '大纲生成失败',
           progress: 0,
         });
@@ -1005,11 +1017,6 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
   const isSubSectionPending = (child: OutlineSubSection): boolean => (
     isActuallyGenerating && (child.wordCount <= 0 || !String(child.writingHint || '').trim())
   );
-  const selectedSectionPending = selectedSection
-    ? (selectedSection._isSubSection
-      ? isSubSectionPending(selectedSection as OutlineSubSection)
-      : isSectionPending(selectedSection as OutlineSection))
-    : false;
   useEffect(() => {
     onBusyChange?.(isActuallyGenerating);
     return () => { onBusyChange?.(false); };
@@ -1083,6 +1090,19 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
               setIsCancelling(true);
               setCurrentStage('正在取消任务...');
               setError(null);
+              projectService.update(project.id, {
+                status: 'generating_outline',
+                taskRuntime: {
+                  ...(projectService.getById(project.id)?.taskRuntime || {}),
+                  state: 'cancelling',
+                  taskId,
+                  taskType: 'outline',
+                  message: '正在取消任务',
+                  progress: stagePercent,
+                  cancellable: false,
+                  updatedAt: new Date().toISOString(),
+                },
+              });
               try {
                 await projectService.cancelTask(taskId, project.id);
               } catch {
@@ -1277,11 +1297,6 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
         {/* 右栏：详情编辑面板 */}
         <div className="flex-1 overflow-y-auto bg-gray-50">
           {selectedSection ? (
-            selectedSectionPending ? (
-              <div className="h-full min-h-[28rem] flex items-center justify-center px-8 py-6">
-                <TaskLoadingState title="正在生成当前章节内容" />
-              </div>
-            ) : (
             <div className="max-w-2xl mx-auto px-8 py-6 space-y-6">
               {/* 标题 + 字数 */}
               <div className="flex-1">
@@ -1527,7 +1542,6 @@ export function OutlineGenerator({ project, onConfirm, onBusyChange, isLocked }:
                 </div>
               )}
             </div>
-            )
           ) : (
             isActuallyGenerating ? (
               <TaskLoadingState title="正在生成大纲结构" className="py-20" />

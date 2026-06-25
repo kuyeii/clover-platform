@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from app.services.bid_model_manifest import get_bid_model_completion_params, get_bid_model_node
+
 
 class BidOutlineLlmError(RuntimeError):
     def __init__(self, message: str, *, code: str = "BID_OUTLINE_LLM_REQUEST_FAILED") -> None:
@@ -20,18 +22,22 @@ class BidOutlineLlmConfig:
     base_url: str
     api_key: str
     model: str
+    purpose: str = "review"
     timeout_seconds: float = 300.0
     max_retries: int = 2
     temperature: float = 0.2
+    top_p: float = 0.7
+    enable_thinking: bool | None = None
 
     @property
     def configured(self) -> bool:
         return bool(self.base_url and self.api_key and self.model)
 
 
-def _env_float(name: str, fallback: float) -> float:
+def _env_float(name: str, fallback: float, *, minimum: float | None = 1.0) -> float:
     try:
-        return max(1.0, float(os.environ.get(name, str(fallback)).strip()))
+        value = float(os.environ.get(name, str(fallback)).strip())
+        return max(minimum, value) if minimum is not None else value
     except (TypeError, ValueError):
         return fallback
 
@@ -43,23 +49,86 @@ def _env_int(name: str, fallback: int) -> int:
         return fallback
 
 
-def get_bid_outline_llm_config() -> BidOutlineLlmConfig:
-    """读取标书大纲直连模型配置；返回 OpenAI-compatible chat/completions 参数。"""
+def _env_bool(name: str, fallback: bool | None) -> bool | None:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return fallback
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _purpose_prefix(purpose: str) -> str:
+    return "BID_OUTLINE_DRAFT_LLM" if str(purpose or "").strip().lower() == "draft" else "BID_OUTLINE_REVIEW_LLM"
+
+
+def _outline_node_key(purpose: str) -> str:
+    return "outline_draft" if str(purpose or "").strip().lower() == "draft" else "outline_review"
+
+
+def get_bid_outline_llm_config(purpose: str = "review") -> BidOutlineLlmConfig:
+    """读取标书大纲直连模型配置；入参为 draft/review，出参为 DSL 等价模型参数。"""
+    normalized_purpose = "draft" if str(purpose or "").strip().lower() == "draft" else "review"
+    prefix = _purpose_prefix(normalized_purpose)
+    node_key = _outline_node_key(normalized_purpose)
+    node = get_bid_model_node("ProEngine_Structure_Generate", node_key)
+    completion_params = get_bid_model_completion_params("ProEngine_Structure_Generate", node_key)
+    default_model = str(node.get("default_model") or ("Kimi-K2.5" if normalized_purpose == "draft" else "qwen3.6-flash"))
+    default_temperature = float(completion_params.get("temperature", 0.2 if normalized_purpose == "draft" else 0.15))
+    default_top_p = float(completion_params.get("top_p", 0.7))
+    default_enable_thinking = completion_params.get("enable_thinking", True if normalized_purpose == "draft" else False)
+
+    base_url = (
+        os.environ.get(f"{prefix}_BASE_URL", "").strip().rstrip("/")
+        or os.environ.get("BID_OUTLINE_LLM_BASE_URL", "").strip().rstrip("/")
+    )
+    api_key = (
+        os.environ.get(f"{prefix}_API_KEY", "").strip()
+        or os.environ.get("BID_OUTLINE_LLM_API_KEY", "").strip()
+    )
+    model = (
+        os.environ.get(f"{prefix}_MODEL", "").strip()
+        or os.environ.get("BID_OUTLINE_LLM_MODEL", "").strip()
+    )
+    if not (base_url and api_key):
+        dashscope_key = os.environ.get("DIFY_TONGYI_DASHSCOPE_API_KEY", "").strip()
+        if dashscope_key:
+            base_url = base_url or os.environ.get(
+                "DIFY_TONGYI_DASHSCOPE_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ).strip().rstrip("/")
+            api_key = api_key or dashscope_key
+            if normalized_purpose == "review":
+                model = model or os.environ.get("DIFY_TONGYI_DASHSCOPE_MODEL", "").strip()
+    model = model or default_model
+
+    temperature = _env_float(
+        f"{prefix}_TEMPERATURE",
+        _env_float("BID_OUTLINE_LLM_TEMPERATURE", default_temperature, minimum=0.0),
+        minimum=0.0,
+    )
+    top_p = _env_float(
+        f"{prefix}_TOP_P",
+        _env_float("BID_OUTLINE_LLM_TOP_P", default_top_p, minimum=0.0),
+        minimum=0.0,
+    )
+    enable_thinking = _env_bool(f"{prefix}_ENABLE_THINKING", _env_bool("BID_OUTLINE_LLM_ENABLE_THINKING", default_enable_thinking))
     return BidOutlineLlmConfig(
-        base_url=os.environ.get("BID_OUTLINE_LLM_BASE_URL", "").strip().rstrip("/"),
-        api_key=os.environ.get("BID_OUTLINE_LLM_API_KEY", "").strip(),
-        model=os.environ.get("BID_OUTLINE_LLM_MODEL", "").strip(),
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        purpose=normalized_purpose,
         timeout_seconds=_env_float("BID_OUTLINE_LLM_TIMEOUT_SECONDS", 300.0),
         max_retries=_env_int("BID_OUTLINE_LLM_MAX_RETRIES", 2),
-        temperature=_env_float("BID_OUTLINE_LLM_TEMPERATURE", 0.2),
+        temperature=temperature,
+        top_p=top_p,
+        enable_thinking=enable_thinking,
     )
 
 
 class BidOutlineLlmClient:
     """标书大纲 OpenAI-compatible 异步客户端；入参为 messages，出参为模型文本。"""
 
-    def __init__(self, config: BidOutlineLlmConfig | None = None) -> None:
-        self.config = config or get_bid_outline_llm_config()
+    def __init__(self, config: BidOutlineLlmConfig | None = None, *, purpose: str = "review") -> None:
+        self.config = config or get_bid_outline_llm_config(purpose)
 
     async def chat_json(
         self,
@@ -87,7 +156,8 @@ class BidOutlineLlmClient:
     ) -> str:
         if not self.config.configured:
             raise BidOutlineLlmError(
-                "标书大纲直连模型尚未配置，请设置 BID_OUTLINE_LLM_BASE_URL、BID_OUTLINE_LLM_API_KEY、BID_OUTLINE_LLM_MODEL。",
+                "标书大纲直连模型尚未配置，请设置 BID_OUTLINE_LLM_BASE_URL、BID_OUTLINE_LLM_API_KEY、BID_OUTLINE_LLM_MODEL；"
+                "或复用 DIFY_TONGYI_DASHSCOPE_API_KEY。",
                 code="BID_OUTLINE_LLM_NOT_CONFIGURED",
             )
 
@@ -96,7 +166,10 @@ class BidOutlineLlmClient:
             "model": self.config.model,
             "messages": messages,
             "temperature": self.config.temperature if temperature is None else temperature,
+            "top_p": self.config.top_p,
         }
+        if self.config.enable_thinking is not None:
+            payload["enable_thinking"] = self.config.enable_thinking
         if response_format:
             payload["response_format"] = response_format
         headers = {"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"}

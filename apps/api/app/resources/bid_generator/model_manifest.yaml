@@ -1,0 +1,409 @@
+version: 1
+description: >
+  标书生成 Dify DSL 转 Python 的模型节点清单。每个节点维护 DSL 默认模型、
+  completion 参数，以及 Python 直连模型时使用的环境变量命名。
+source_workflow_dir: legacy/bid-generator/dify/workflows
+
+shared_env:
+  generic_openai_compatible:
+    base_url: BID_LLM_BASE_URL
+    api_key: BID_LLM_API_KEY
+    model: BID_LLM_MODEL
+  dashscope_fallback:
+    base_url: DIFY_TONGYI_DASHSCOPE_BASE_URL
+    api_key: DIFY_TONGYI_DASHSCOPE_API_KEY
+    model: DIFY_TONGYI_DASHSCOPE_MODEL
+  dataset:
+    base_url: DIFY_API_BASE_URL
+    api_key: DIFY_DATASET_API_KEY
+
+workflows:
+  ProEngine_Structure_Generate:
+    python_package: app.services.bid_outline_native_pipeline
+    nodes:
+      outline_draft:
+        type: llm
+        dsl_node_id: "1772166340802"
+        dsl_title: LLM大纲生成
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_OUTLINE_DRAFT_LLM
+        env_vars:
+          base_url: BID_OUTLINE_DRAFT_LLM_BASE_URL
+          api_key: BID_OUTLINE_DRAFT_LLM_API_KEY
+          model: BID_OUTLINE_DRAFT_LLM_MODEL
+          temperature: BID_OUTLINE_DRAFT_LLM_TEMPERATURE
+          top_p: BID_OUTLINE_DRAFT_LLM_TOP_P
+          enable_thinking: BID_OUTLINE_DRAFT_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: true
+          response_format: json_object
+          temperature: 0.2
+          top_p: 0.7
+      outline_review:
+        type: llm
+        dsl_node_id: "1772519593341"
+        dsl_title: LLM大纲润色
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: qwen3.6-flash
+        env_prefix: BID_OUTLINE_REVIEW_LLM
+        env_vars:
+          base_url: BID_OUTLINE_REVIEW_LLM_BASE_URL
+          api_key: BID_OUTLINE_REVIEW_LLM_API_KEY
+          model: BID_OUTLINE_REVIEW_LLM_MODEL
+          temperature: BID_OUTLINE_REVIEW_LLM_TEMPERATURE
+          top_p: BID_OUTLINE_REVIEW_LLM_TOP_P
+          enable_thinking: BID_OUTLINE_REVIEW_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          response_format: json_object
+          temperature: 0.15
+          top_p: 0.7
+      outline_knowledge:
+        type: knowledge_retrieval
+        dsl_node_id: "1773216435745"
+        dsl_title: 知识检索
+        dataset_id_env: BID_OUTLINE_DATASET_ID
+        dataset_api_base_url_env: DIFY_API_BASE_URL
+        dataset_api_key_env: DIFY_DATASET_API_KEY
+        retrieval_mode: multiple
+        top_k: 2
+        reranking_enable: false
+        reranking_model: netease-youdao/bce-reranker-base_v1
+        reranking_model_env: BID_OUTLINE_RERANKING_MODEL
+
+  ProEngine_DocAnalysis:
+    python_package: app.services.bid_doc_analysis_native_pipeline
+    nodes:
+      doc_single_extract:
+        type: llm
+        dsl_node_id: llm_single_node
+        dsl_title: LLM 单节点提取
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_DOC_ANALYSIS_SINGLE_LLM
+        env_vars:
+          base_url: BID_DOC_ANALYSIS_SINGLE_LLM_BASE_URL
+          api_key: BID_DOC_ANALYSIS_SINGLE_LLM_API_KEY
+          model: BID_DOC_ANALYSIS_SINGLE_LLM_MODEL
+          temperature: BID_DOC_ANALYSIS_SINGLE_LLM_TEMPERATURE
+          top_p: BID_DOC_ANALYSIS_SINGLE_LLM_TOP_P
+        completion_params:
+          temperature: 0.05
+          top_p: 0.7
+      doc_extract:
+        type: llm
+        dsl_node_id: llm_node
+        dsl_title: LLM 提取
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_DOC_ANALYSIS_LLM
+        env_vars:
+          base_url: BID_DOC_ANALYSIS_LLM_BASE_URL
+          api_key: BID_DOC_ANALYSIS_LLM_API_KEY
+          model: BID_DOC_ANALYSIS_LLM_MODEL
+          temperature: BID_DOC_ANALYSIS_LLM_TEMPERATURE
+          top_p: BID_DOC_ANALYSIS_LLM_TOP_P
+        completion_params:
+          temperature: 0.05
+          top_p: 0.7
+
+  ProEngine_Content_Writer:
+    python_package: app.services.bid_content_native_pipeline
+    nodes:
+      content_with_search:
+        type: llm
+        dsl_node_id: "1772166340802"
+        dsl_title: LLM WITH SEARXNG
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_CONTENT_WITH_SEARCH_LLM
+        env_vars:
+          base_url: BID_CONTENT_WITH_SEARCH_LLM_BASE_URL
+          api_key: BID_CONTENT_WITH_SEARCH_LLM_API_KEY
+          model: BID_CONTENT_WITH_SEARCH_LLM_MODEL
+          temperature: BID_CONTENT_WITH_SEARCH_LLM_TEMPERATURE
+          top_p: BID_CONTENT_WITH_SEARCH_LLM_TOP_P
+        completion_params:
+          temperature: 0.3
+          top_p: 0.8
+      content_without_search:
+        type: llm
+        dsl_node_id: "17722555721840"
+        dsl_title: LLM WITHOUT SEARXNG
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_CONTENT_WITHOUT_SEARCH_LLM
+        env_vars:
+          base_url: BID_CONTENT_WITHOUT_SEARCH_LLM_BASE_URL
+          api_key: BID_CONTENT_WITHOUT_SEARCH_LLM_API_KEY
+          model: BID_CONTENT_WITHOUT_SEARCH_LLM_MODEL
+          temperature: BID_CONTENT_WITHOUT_SEARCH_LLM_TEMPERATURE
+          top_p: BID_CONTENT_WITHOUT_SEARCH_LLM_TOP_P
+        completion_params:
+          temperature: 0.3
+          top_p: 0.8
+      content_knowledge:
+        type: knowledge_retrieval
+        dsl_node_id: "1772253257587"
+        dsl_title: 知识检索
+        dataset_id_env: BID_CONTENT_DATASET_ID
+        dataset_api_base_url_env: DIFY_API_BASE_URL
+        dataset_api_key_env: DIFY_DATASET_API_KEY
+        retrieval_mode: multiple
+        top_k: 4
+      placeholder_repair:
+        type: llm
+        dsl_node_id: placeholder_repair_llm
+        dsl_title: 快速占位符修复
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_PLACEHOLDER_REPAIR_LLM
+        env_vars:
+          base_url: BID_PLACEHOLDER_REPAIR_LLM_BASE_URL
+          api_key: BID_PLACEHOLDER_REPAIR_LLM_API_KEY
+          model: BID_PLACEHOLDER_REPAIR_LLM_MODEL
+          temperature: BID_PLACEHOLDER_REPAIR_LLM_TEMPERATURE
+          top_p: BID_PLACEHOLDER_REPAIR_LLM_TOP_P
+          enable_thinking: BID_PLACEHOLDER_REPAIR_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0
+          top_p: 0.1
+
+  ProEngine_Content_Group_Writer:
+    python_package: app.services.bid_content_group_native_pipeline
+    nodes:
+      group_content_with_search:
+        type: llm
+        dsl_node_id: llm_with_search
+        dsl_title: LLM WITH SEARXNG
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_CONTENT_GROUP_WITH_SEARCH_LLM
+        env_vars:
+          base_url: BID_CONTENT_GROUP_WITH_SEARCH_LLM_BASE_URL
+          api_key: BID_CONTENT_GROUP_WITH_SEARCH_LLM_API_KEY
+          model: BID_CONTENT_GROUP_WITH_SEARCH_LLM_MODEL
+          temperature: BID_CONTENT_GROUP_WITH_SEARCH_LLM_TEMPERATURE
+          top_p: BID_CONTENT_GROUP_WITH_SEARCH_LLM_TOP_P
+          enable_thinking: BID_CONTENT_GROUP_WITH_SEARCH_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0.2
+          top_p: 0.8
+      group_content_without_search:
+        type: llm
+        dsl_node_id: llm_without_search
+        dsl_title: LLM WITHOUT SEARXNG
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_CONTENT_GROUP_WITHOUT_SEARCH_LLM
+        env_vars:
+          base_url: BID_CONTENT_GROUP_WITHOUT_SEARCH_LLM_BASE_URL
+          api_key: BID_CONTENT_GROUP_WITHOUT_SEARCH_LLM_API_KEY
+          model: BID_CONTENT_GROUP_WITHOUT_SEARCH_LLM_MODEL
+          temperature: BID_CONTENT_GROUP_WITHOUT_SEARCH_LLM_TEMPERATURE
+          top_p: BID_CONTENT_GROUP_WITHOUT_SEARCH_LLM_TOP_P
+          enable_thinking: BID_CONTENT_GROUP_WITHOUT_SEARCH_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0.2
+          top_p: 0.8
+      group_content_knowledge:
+        type: knowledge_retrieval
+        dsl_node_id: knowledge_node
+        dsl_title: 知识检索
+        dataset_id_env: BID_CONTENT_GROUP_DATASET_ID
+        dataset_api_base_url_env: DIFY_API_BASE_URL
+        dataset_api_key_env: DIFY_DATASET_API_KEY
+        retrieval_mode: multiple
+        top_k: 4
+      placeholder_repair:
+        type: llm
+        dsl_node_id: placeholder_repair_llm
+        dsl_title: 快速占位符修复
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_PLACEHOLDER_REPAIR_LLM
+        env_vars:
+          base_url: BID_PLACEHOLDER_REPAIR_LLM_BASE_URL
+          api_key: BID_PLACEHOLDER_REPAIR_LLM_API_KEY
+          model: BID_PLACEHOLDER_REPAIR_LLM_MODEL
+          temperature: BID_PLACEHOLDER_REPAIR_LLM_TEMPERATURE
+          top_p: BID_PLACEHOLDER_REPAIR_LLM_TOP_P
+          enable_thinking: BID_PLACEHOLDER_REPAIR_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0
+          top_p: 0.1
+
+  ProEngine_Response_Content_Writer:
+    python_package: app.services.bid_response_content_native_pipeline
+    nodes:
+      response_writer:
+        type: llm
+        dsl_node_id: llm_response
+        dsl_title: LLM RESPONSE WRITER
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_RESPONSE_CONTENT_LLM
+        env_vars:
+          base_url: BID_RESPONSE_CONTENT_LLM_BASE_URL
+          api_key: BID_RESPONSE_CONTENT_LLM_API_KEY
+          model: BID_RESPONSE_CONTENT_LLM_MODEL
+          temperature: BID_RESPONSE_CONTENT_LLM_TEMPERATURE
+          top_p: BID_RESPONSE_CONTENT_LLM_TOP_P
+          enable_thinking: BID_RESPONSE_CONTENT_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0.2
+          top_p: 0.8
+      placeholder_repair:
+        type: llm
+        dsl_node_id: placeholder_repair_llm
+        dsl_title: 快速占位符修复
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_PLACEHOLDER_REPAIR_LLM
+        env_vars:
+          base_url: BID_PLACEHOLDER_REPAIR_LLM_BASE_URL
+          api_key: BID_PLACEHOLDER_REPAIR_LLM_API_KEY
+          model: BID_PLACEHOLDER_REPAIR_LLM_MODEL
+          temperature: BID_PLACEHOLDER_REPAIR_LLM_TEMPERATURE
+          top_p: BID_PLACEHOLDER_REPAIR_LLM_TOP_P
+          enable_thinking: BID_PLACEHOLDER_REPAIR_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0
+          top_p: 0.1
+
+  ProEngine_Content_Rewrite:
+    python_package: app.services.bid_content_rewrite_native_pipeline
+    nodes:
+      rewrite_review:
+        type: llm
+        dsl_node_id: llm_review
+        dsl_title: LLM REVIEW
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_CONTENT_REWRITE_REVIEW_LLM
+        env_vars:
+          base_url: BID_CONTENT_REWRITE_REVIEW_LLM_BASE_URL
+          api_key: BID_CONTENT_REWRITE_REVIEW_LLM_API_KEY
+          model: BID_CONTENT_REWRITE_REVIEW_LLM_MODEL
+          temperature: BID_CONTENT_REWRITE_REVIEW_LLM_TEMPERATURE
+          top_p: BID_CONTENT_REWRITE_REVIEW_LLM_TOP_P
+          enable_thinking: BID_CONTENT_REWRITE_REVIEW_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0.15
+          top_p: 0.7
+      rewrite_generate:
+        type: llm
+        dsl_node_id: llm_rewrite
+        dsl_title: LLM REWRITE
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_CONTENT_REWRITE_GENERATE_LLM
+        env_vars:
+          base_url: BID_CONTENT_REWRITE_GENERATE_LLM_BASE_URL
+          api_key: BID_CONTENT_REWRITE_GENERATE_LLM_API_KEY
+          model: BID_CONTENT_REWRITE_GENERATE_LLM_MODEL
+          temperature: BID_CONTENT_REWRITE_GENERATE_LLM_TEMPERATURE
+          top_p: BID_CONTENT_REWRITE_GENERATE_LLM_TOP_P
+          enable_thinking: BID_CONTENT_REWRITE_GENERATE_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0.2
+          top_p: 0.8
+      placeholder_repair:
+        type: llm
+        dsl_node_id: placeholder_repair_llm
+        dsl_title: 快速占位符修复
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_PLACEHOLDER_REPAIR_LLM
+        env_vars:
+          base_url: BID_PLACEHOLDER_REPAIR_LLM_BASE_URL
+          api_key: BID_PLACEHOLDER_REPAIR_LLM_API_KEY
+          model: BID_PLACEHOLDER_REPAIR_LLM_MODEL
+          temperature: BID_PLACEHOLDER_REPAIR_LLM_TEMPERATURE
+          top_p: BID_PLACEHOLDER_REPAIR_LLM_TOP_P
+          enable_thinking: BID_PLACEHOLDER_REPAIR_LLM_ENABLE_THINKING
+        completion_params:
+          enable_thinking: false
+          temperature: 0
+          top_p: 0.1
+
+  ProEngine_Diagram_Generator:
+    python_package: app.services.bid_diagram_native_pipeline
+    nodes:
+      diagram_layout:
+        type: llm
+        dsl_node_id: llm_planner
+        dsl_title: LLM 规划布局
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: qwen3.6-flash
+        env_prefix: BID_DIAGRAM_PLANNER_LLM
+        env_vars:
+          base_url: BID_DIAGRAM_PLANNER_LLM_BASE_URL
+          api_key: BID_DIAGRAM_PLANNER_LLM_API_KEY
+          model: BID_DIAGRAM_PLANNER_LLM_MODEL
+          temperature: BID_DIAGRAM_PLANNER_LLM_TEMPERATURE
+          top_p: BID_DIAGRAM_PLANNER_LLM_TOP_P
+        completion_params:
+          temperature: 0.08
+          top_p: 0.7
+      diagram_svg_render:
+        type: llm
+        dsl_node_id: llm_renderer
+        dsl_title: LLM SVG 渲染
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_DIAGRAM_RENDERER_LLM
+        env_vars:
+          base_url: BID_DIAGRAM_RENDERER_LLM_BASE_URL
+          api_key: BID_DIAGRAM_RENDERER_LLM_API_KEY
+          model: BID_DIAGRAM_RENDERER_LLM_MODEL
+          temperature: BID_DIAGRAM_RENDERER_LLM_TEMPERATURE
+          top_p: BID_DIAGRAM_RENDERER_LLM_TOP_P
+        completion_params:
+          temperature: 0.12
+          top_p: 0.75
+
+  ProEngine_Diagram_Generator_Mermaid:
+    python_package: app.services.bid_diagram_mermaid_native_pipeline
+    nodes:
+      diagram_layout:
+        type: llm
+        dsl_node_id: llm_planner
+        dsl_title: LLM 规划布局
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: qwen3.6-flash
+        env_prefix: BID_DIAGRAM_PLANNER_LLM
+        env_vars:
+          base_url: BID_DIAGRAM_PLANNER_LLM_BASE_URL
+          api_key: BID_DIAGRAM_PLANNER_LLM_API_KEY
+          model: BID_DIAGRAM_PLANNER_LLM_MODEL
+          temperature: BID_DIAGRAM_PLANNER_LLM_TEMPERATURE
+          top_p: BID_DIAGRAM_PLANNER_LLM_TOP_P
+        completion_params:
+          temperature: 0.08
+          top_p: 0.7
+      diagram_mermaid_render:
+        type: llm
+        dsl_node_id: llm_renderer
+        dsl_title: LLM Mermaid 渲染
+        provider: langgenius/openai_api_compatible/openai_api_compatible
+        default_model: Kimi-K2.5
+        env_prefix: BID_DIAGRAM_RENDERER_LLM
+        env_vars:
+          base_url: BID_DIAGRAM_RENDERER_LLM_BASE_URL
+          api_key: BID_DIAGRAM_RENDERER_LLM_API_KEY
+          model: BID_DIAGRAM_RENDERER_LLM_MODEL
+          temperature: BID_DIAGRAM_RENDERER_LLM_TEMPERATURE
+          top_p: BID_DIAGRAM_RENDERER_LLM_TOP_P
+        completion_params:
+          temperature: 0.12
+          top_p: 0.75
