@@ -16,6 +16,7 @@ DEFAULT_TARGET_ENTITIES = ["name", "phone", "id_number", "email", "addr", "bank"
 PIPT_TASK_MODULES = [
     {"code": "contract-review", "name": "合同"},
     {"code": "bid-generator", "name": "标书"},
+    {"code": "knowledge-base", "name": "知识库"},
 ]
 
 BUILTIN_ENTITY_TYPES = [
@@ -39,6 +40,10 @@ DEFAULT_TASK_CONFIGS = {
     "bid-generator": {
         "enabled": True,
         "enabled_entity_types": ["name", "phone", "email", "id_number"],
+    },
+    "knowledge-base": {
+        "enabled": True,
+        "enabled_entity_types": list(DEFAULT_TARGET_ENTITIES),
     },
 }
 

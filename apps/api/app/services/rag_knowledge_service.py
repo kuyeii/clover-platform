@@ -816,7 +816,7 @@ async def sync_knowledge_document_to_dify(document_id: str) -> dict[str, Any]:
             preprocess_payload,
             {
                 "text": source_text,
-                "module_code": "rag-web-search",
+                "module_code": "knowledge-base",
                 "purpose": "knowledge_sync",
                 "mode": "strong",
                 "enabled": True,

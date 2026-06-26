@@ -366,7 +366,7 @@ def _filter_redaction_artifact_risks(
     return next_payload, filtered
 
 
-def _prepare_contract_review_document_pipt(*, run_id: str, run_dir: Path, cleaned_text: str) -> tuple[str, dict[str, Any]]:
+def _prepare_contract_review_document_pipt(*, run_id: str, run_dir: Path, cleaned_text: str, source_file_name: str = "") -> tuple[str, dict[str, Any]]:
     request_id = _contract_review_document_pipt_request_id(run_id)
     enabled = _contract_review_pipt_enabled()
     mode = "strong" if enabled else "compatibility"
@@ -380,6 +380,7 @@ def _prepare_contract_review_document_pipt(*, run_id: str, run_dir: Path, cleane
                 "mode": mode,
                 "enabled": enabled,
                 "target_entities": _contract_review_pipt_target_entities(),
+                "source_file_name": source_file_name,
             }
         )
         review_text = str(payload.get("text") or payload.get("desensitized_text") or cleaned_text or "")
@@ -391,6 +392,7 @@ def _prepare_contract_review_document_pipt(*, run_id: str, run_dir: Path, cleane
             "mode": str(payload.get("mode") or mode),
             "request_id": request_id,
             "purpose": "contract_review_document_preprocess",
+            "source_file_name": source_file_name,
             "input_text_hash": payload.get("input_text_hash") or _hash_text(cleaned_text),
             "output_text_hash": payload.get("output_text_hash") or _hash_text(review_text),
             "mapping_table_count": int(payload.get("mapping_table_count") or len(payload.get("mapping_table") or {})),
@@ -5223,6 +5225,7 @@ def _run_contract_review_native_pipeline(
         run_id=run_id,
         run_dir=run_dir,
         cleaned_text=cleaned_text,
+        source_file_name=source_docx.name,
     )
     runner.set_pipt_workflow_fields(_contract_review_pipt_workflow_fields_from_context(pipt_context))
     segment_bundle = split_into_segments(review_text)

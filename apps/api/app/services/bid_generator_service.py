@@ -2576,6 +2576,7 @@ async def start_extract_task_payload(
                         project_id=normalized_project_id,
                         task_id=task_id,
                         profile_name=desensitize_profile,
+                        source_file_name=effective_filename,
                     )
                     text_for_dify = str(desensitized.get("text") or text_for_dify[:300000])
                     mapping_table = _string_mapping(desensitized.get("mapping_table"))
@@ -6371,7 +6372,7 @@ def _load_desensitize_profile(profile_name: str) -> dict[str, Any]:
     return default_profile if isinstance(default_profile, dict) else {}
 
 
-def _run_bid_pipt_preprocess(*, text: str, project_id: str, task_id: str, profile_name: str) -> dict[str, Any]:
+def _run_bid_pipt_preprocess(*, text: str, project_id: str, task_id: str, profile_name: str, source_file_name: str = "") -> dict[str, Any]:
     profile = _load_desensitize_profile(profile_name)
     try:
         from app.services.pipt_config_service import get_module_pipt_runtime_config
@@ -6397,6 +6398,7 @@ def _run_bid_pipt_preprocess(*, text: str, project_id: str, task_id: str, profil
             "enabled": enabled,
             "request_id": f"{project_id}:{task_id}",
             "target_entities": target_entities,
+            "source_file_name": source_file_name,
             "llm_mode": os.environ.get("PIPT_LLM_MODE_EXTRACT", "verify_only"),
         }
     )
@@ -8314,6 +8316,7 @@ def _prepare_extract_document(
                 project_id=project_id or cache_id,
                 task_id=task_id or "extract",
                 profile_name=desensitize_profile,
+                source_file_name=effective_filename,
             )
             text_for_dify = str(desensitized.get("text") or text_for_dify[:300000])
             mapping_table = _string_mapping(desensitized.get("mapping_table"))
@@ -8326,6 +8329,7 @@ def _prepare_extract_document(
 
     return {
         "cache_id": cache_id,
+        "effective_filename": effective_filename,
         "pdf_url": pdf_url,
         "pages_text": pages_text,
         "raw_image_map": raw_image_map if isinstance(raw_image_map, dict) else {},
@@ -8652,6 +8656,7 @@ async def extract_requirements_stream_response(
                         project_id=normalized_project_id or str(prepared["cache_id"]),
                         task_id="projects_extract_stream",
                         profile_name=desensitize_profile,
+                        source_file_name=str(prepared.get("effective_filename") or file.filename or ""),
                     )
                     text_for_dify = str(desensitized.get("text") or text_for_dify[:300000])
                     mapping_table = _string_mapping(desensitized.get("mapping_table"))

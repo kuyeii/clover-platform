@@ -10,6 +10,7 @@ GENERIC_TERMS = {
     "投标人", "响应人", "采购人", "招标人", "代理机构", "联系人", "联系方式",
     "法定代表人", "授权代表", "负责人", "经办人", "签字", "盖章", "日期",
     "技术方案", "商务条款", "服务方案", "响应文件", "投标文件", "招标文件",
+    "哈希", "某先生", "某女士",
 }
 
 ORG_SUFFIXES = (
@@ -24,7 +25,12 @@ ORG_ABBR_ALLOWLIST = {
     "中国移动", "中国电信", "中国联通", "中石油", "中石化", "中海油", "工商银行",
     "建设银行", "农业银行", "中国银行", "交通银行", "邮储银行", "招商银行",
     "华为", "腾讯", "阿里", "百度", "字节", "平安",
+    "南湖实验室", "之江实验室", "良渚实验室", "湖畔实验室", "西湖实验室",
+    "瓯江实验室", "天目山实验室", "白马湖实验室", "甬江实验室", "湘江实验室",
+    "鹏城实验室", "张江实验室", "松山湖材料实验室", "崂山实验室", "紫金山实验室",
 }
+
+PSEUDONYM_NAME_RE = re.compile(r"^某(?:先生|女士|老师|经理|主任|总)?$")
 
 ORG_NEGATIVE_SUFFIXES = (
     "部门", "小组", "方案", "平台", "系统", "模块", "功能", "服务", "流程", "阶段",
@@ -98,6 +104,8 @@ def _evaluate_entity(text: str, entity: Any) -> dict[str, Any]:
 
 
 def _evaluate_name(text: str, entity: Any, value: str, confidence: float) -> dict[str, Any]:
+    if PSEUDONYM_NAME_RE.fullmatch(value):
+        return {"keep": False, "reason": "name_pseudonym_placeholder"}
     if not CN_NAME_RE.fullmatch(value):
         return {"keep": False, "reason": "name_not_cn_2_4"}
     if any(marker in value for marker in ("公司", "项目", "文件", "方案", "系统", "单位")):

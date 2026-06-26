@@ -218,7 +218,10 @@ def list_pipt_gateway_mappings(
     module_code: str | None = None,
     purpose: str | None = None,
     entity_type: str | None = None,
-    limit: int = 100,
+    file_name: str | None = None,
+    page: int = 1,
+    page_size: int | None = None,
+    limit: int | None = None,
     user: dict[str, Any] = Depends(require_pipt_gateway_admin_access),
 ):
     _ = user
@@ -229,6 +232,9 @@ def list_pipt_gateway_mappings(
             module_code=module_code,
             purpose=purpose,
             entity_type=entity_type,
+            file_name=file_name,
+            page=page,
+            page_size=page_size,
             limit=limit,
         ),
     )

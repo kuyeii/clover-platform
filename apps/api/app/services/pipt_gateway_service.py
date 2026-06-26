@@ -26,6 +26,8 @@ STRONG_PIPT_RE = re.compile(r"@@PIPT:v1:e\d{6}:k[a-f0-9]{8}@@")
 LEGACY_PIPT_RE = re.compile(r"\{\{__PIPT_[a-z_]+_\d+__\}\}")
 BIDDER_RE = re.compile(r"\{\{__BIDDER_[A-Z_]+__\}\}")
 GATEWAY_EVENT_MAX_LIMIT = 500
+GATEWAY_MAPPING_DEFAULT_PAGE_SIZE = 50
+GATEWAY_MAPPING_MAX_PAGE_SIZE = 200
 DEFAULT_TARGET_ENTITIES = ["name", "phone", "id_number", "email", "addr", "bank", "car_id", "ip", "org", "credit_code"]
 
 
@@ -573,15 +575,21 @@ def list_gateway_mappings_payload(
     module_code: str | None = None,
     purpose: str | None = None,
     entity_type: str | None = None,
-    limit: int = 100,
+    file_name: str | None = None,
+    page: int = 1,
+    page_size: int | None = None,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     """
     查询 PIPT mapping vault 明细；该接口会返回敏感原文，仅允许管理员后台使用。
     不读取事件 details，不把原文写回事件日志。
     """
-    bounded_limit = _bounded_limit(limit)
+    effective_page_size = page_size if page_size is not None else limit
+    bounded_page_size = _bounded_mapping_page_size(effective_page_size)
+    current_page = _positive_int(page, 1)
+    offset = (current_page - 1) * bounded_page_size
     filters = []
-    params: dict[str, Any] = {"limit": bounded_limit}
+    params: dict[str, Any] = {"limit": bounded_page_size, "offset": offset}
     for key, value in (
         ("request_id", request_id),
         ("module_code", module_code),
@@ -593,6 +601,10 @@ def list_gateway_mappings_payload(
             continue
         filters.append(f"{key} = :{key}")
         params[key] = normalized
+    file_name_query = str(file_name or "").strip()
+    if file_name_query:
+        filters.append("source_file_name ILIKE :file_name")
+        params["file_name"] = f"%{file_name_query}%"
     where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
     try:
         with get_engine().begin() as conn:
@@ -604,17 +616,32 @@ def list_gateway_mappings_payload(
                     status_code=500,
                     details={"table": "core.pipt_gateway_mappings"},
                 )
+            _ensure_mapping_source_file_name_column(conn)
+            total = int(
+                conn.execute(
+                    text(
+                        f"""
+                        SELECT COUNT(*)
+                        FROM core.pipt_gateway_mappings
+                        {where_sql}
+                        """
+                    ),
+                    params,
+                ).scalar_one()
+                or 0
+            )
             rows = conn.execute(
                 text(
                     f"""
                     SELECT id, request_id, module_code, purpose, placeholder, entity_type,
                            original_text_enc, original_text_hash, placeholder_protocol,
-                           encryption_status, expires_at, created_at,
+                           source_file_name, encryption_status, expires_at, created_at,
                            (expires_at IS NOT NULL AND expires_at <= now()) AS expired
                     FROM core.pipt_gateway_mappings
                     {where_sql}
                     ORDER BY created_at DESC
                     LIMIT :limit
+                    OFFSET :offset
                     """
                 ),
                 params,
@@ -647,6 +674,7 @@ def list_gateway_mappings_payload(
                 "original_text": original_text,
                 "original_text_hash": row.get("original_text_hash"),
                 "placeholder_protocol": str(row.get("placeholder_protocol") or ""),
+                "source_file_name": str(row.get("source_file_name") or ""),
                 "encryption_status": str(row.get("encryption_status") or "plaintext"),
                 "decrypt_status": decrypt_status,
                 "expired": bool(row.get("expired")),
@@ -654,10 +682,17 @@ def list_gateway_mappings_payload(
                 "created_at": _iso_value(row.get("created_at")),
             }
         )
+    total_pages = max(1, (total + bounded_page_size - 1) // bounded_page_size) if bounded_page_size else 1
     return {
         "items": items,
         "count": len(items),
-        "limit": bounded_limit,
+        "total": total,
+        "page": current_page,
+        "page_size": bounded_page_size,
+        "limit": bounded_page_size,
+        "total_pages": total_pages,
+        "has_prev": current_page > 1,
+        "has_next": current_page * bounded_page_size < total,
         "decrypted_count": decrypted_count,
         "failed_count": failed_count,
         "contains_plaintext": any(item["encryption_status"] == "plaintext" for item in items),
@@ -829,6 +864,7 @@ def _preprocess_strong_payload(
     purpose: str,
     source_text: str,
 ) -> dict[str, Any]:
+    source_file_name = _source_file_name(data)
     target_entities = _target_entities(data.get("target_entities"), module_code=module_code)
     llm_mode = _llm_mode(data.get("llm_mode"))
     result = desensitize_with_platform_recognizer(
@@ -873,6 +909,7 @@ def _preprocess_strong_payload(
         purpose=purpose,
         mapping_table=mapping_table,
         placeholder_manifest=placeholder_manifest,
+        source_file_name=source_file_name,
     )
     if mapping_table and not vault_persisted:
         raise PlatformError(
@@ -914,6 +951,7 @@ def _preprocess_strong_payload(
             details={
                 "mode": "strong",
                 "enabled": True,
+                "source_file_name": source_file_name,
                 "mapping_table_count": len(mapping_table),
                 "historical_reuse_count": historical_reuse_count,
                 "current_document_global_replace_count": current_document_global_replace_count,
@@ -1055,6 +1093,40 @@ def _safe_count(item: dict[str, Any], parent_key: str, child_key: str) -> int:
     return _non_negative_int(parent.get(child_key))
 
 
+def _bounded_mapping_page_size(value: Any) -> int:
+    try:
+        parsed = int(value or GATEWAY_MAPPING_DEFAULT_PAGE_SIZE)
+    except (TypeError, ValueError):
+        parsed = GATEWAY_MAPPING_DEFAULT_PAGE_SIZE
+    return max(1, min(GATEWAY_MAPPING_MAX_PAGE_SIZE, parsed))
+
+
+def _positive_int(value: Any, fallback: int) -> int:
+    try:
+        parsed = int(value or fallback)
+    except (TypeError, ValueError):
+        parsed = fallback
+    return max(1, parsed)
+
+
+def _source_file_name(data: dict[str, Any]) -> str:
+    for key in ("source_file_name", "file_name", "filename", "document_name"):
+        value = str(data.get(key) or "").strip()
+        if value:
+            return value[:500]
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("source_file_name", "file_name", "filename", "document_name"):
+            value = str(metadata.get(key) or "").strip()
+            if value:
+                return value[:500]
+    return ""
+
+
+def _ensure_mapping_source_file_name_column(conn: Any) -> None:
+    conn.execute(text("ALTER TABLE core.pipt_gateway_mappings ADD COLUMN IF NOT EXISTS source_file_name TEXT NULL"))
+
+
 def _persist_mapping_vault(
     *,
     request_id: str,
@@ -1062,6 +1134,7 @@ def _persist_mapping_vault(
     purpose: str,
     mapping_table: dict[str, Any],
     placeholder_manifest: dict[str, Any],
+    source_file_name: str = "",
 ) -> bool:
     if not mapping_table:
         return True
@@ -1071,6 +1144,7 @@ def _persist_mapping_vault(
             if not exists:
                 logger.warning("PIPT gateway mapping table is missing; vault skipped")
                 return False
+            _ensure_mapping_source_file_name_column(conn)
             for placeholder, original in mapping_table.items():
                 ttl_seconds = _vault_ttl_seconds(module_code=module_code, purpose=purpose)
                 token = str(placeholder or "").strip()
@@ -1086,18 +1160,19 @@ def _persist_mapping_vault(
                         """
                         INSERT INTO core.pipt_gateway_mappings (
                           request_id, module_code, purpose, placeholder, entity_type,
-                          original_text_enc, original_text_hash, placeholder_protocol,
+                          original_text_enc, original_text_hash, placeholder_protocol, source_file_name,
                           encryption_status, expires_at
                         )
                         VALUES (
                           :request_id, :module_code, :purpose, :placeholder, :entity_type,
-                          :original_text_enc, :original_text_hash, :placeholder_protocol,
+                          :original_text_enc, :original_text_hash, :placeholder_protocol, :source_file_name,
                           :encryption_status, :expires_at
                         )
                         ON CONFLICT (request_id, placeholder) DO UPDATE SET
                           original_text_enc = EXCLUDED.original_text_enc,
                           original_text_hash = EXCLUDED.original_text_hash,
                           entity_type = EXCLUDED.entity_type,
+                          source_file_name = EXCLUDED.source_file_name,
                           encryption_status = EXCLUDED.encryption_status,
                           expires_at = EXCLUDED.expires_at
                         """
@@ -1111,6 +1186,7 @@ def _persist_mapping_vault(
                         "original_text_enc": _vault_encrypt(original_text),
                         "original_text_hash": _hash_text(original_text),
                         "placeholder_protocol": "strong" if STRONG_PIPT_RE.fullmatch(token) else "legacy",
+                        "source_file_name": source_file_name[:500] or None,
                         "encryption_status": _vault_encryption_status(),
                         "expires_at": _vault_expires_at(ttl_seconds),
                     },
@@ -1165,7 +1241,7 @@ def _restore_from_vault(*, request_id: str, text_value: str) -> tuple[str, int]:
 
 def _target_entities(value: Any, *, module_code: str | None = None) -> list[str]:
     strict_allowed = False
-    if module_code in {"contract-review", "bid-generator"}:
+    if module_code in {"contract-review", "bid-generator", "knowledge-base"}:
         try:
             from app.services.pipt_config_service import get_module_pipt_runtime_config
 

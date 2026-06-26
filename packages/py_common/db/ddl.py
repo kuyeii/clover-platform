@@ -153,6 +153,7 @@ CREATE_CORE_TABLE_SQLS: tuple[str, ...] = (
       original_text_enc TEXT NOT NULL,
       original_text_hash TEXT NOT NULL,
       placeholder_protocol VARCHAR(50) NOT NULL DEFAULT 'strong',
+      source_file_name TEXT NULL,
       encryption_status VARCHAR(50) NOT NULL DEFAULT 'plaintext',
       expires_at TIMESTAMPTZ NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -169,6 +170,10 @@ ALTER_CORE_TABLE_SQLS: tuple[str, ...] = (
     """
     ALTER TABLE core.pipt_gateway_mappings
     ADD COLUMN IF NOT EXISTS encryption_status VARCHAR(50) NOT NULL DEFAULT 'plaintext'
+    """,
+    """
+    ALTER TABLE core.pipt_gateway_mappings
+    ADD COLUMN IF NOT EXISTS source_file_name TEXT NULL
     """,
 )
 
@@ -191,6 +196,7 @@ CREATE_CORE_INDEX_SQLS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_request_id ON core.pipt_gateway_mappings(request_id)",
     "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_placeholder ON core.pipt_gateway_mappings(placeholder)",
     "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_module_code ON core.pipt_gateway_mappings(module_code)",
+    "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_source_file_name ON core.pipt_gateway_mappings(source_file_name)",
     "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_created_at ON core.pipt_gateway_mappings(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_pipt_gateway_mappings_expires_at ON core.pipt_gateway_mappings(expires_at)",
 )
