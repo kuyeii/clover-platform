@@ -41,7 +41,7 @@ class Settings:
     dify_aggregate_rewrite_workflow_api_key: str = os.getenv("DIFY_AGGREGATE_REWRITE_WORKFLOW_API_KEY", "")
     review_side: str = os.getenv("REVIEW_SIDE", "")  # 必须设置：supplier=供应商视角，customer=采购方视角
     contract_type_hint: str = os.getenv("CONTRACT_TYPE_HINT", "service_agreement")
-    request_timeout_seconds: int = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "180"))
+    request_timeout_seconds: int = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "900"))
     dify_max_concurrency: int = int(os.getenv("DIFY_MAX_CONCURRENCY", "6"))
     clause_split_max_concurrency: int = int(os.getenv("CLAUSE_SPLIT_MAX_CONCURRENCY", "3"))
     run_root: Path = Path(os.getenv("RUN_ROOT", "data/runs"))

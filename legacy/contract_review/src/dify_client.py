@@ -16,7 +16,7 @@ class DifyWorkflowError(RuntimeError):
 class DifyWorkflowClient:
     base_url: str
     api_key: str
-    timeout_seconds: int = 180
+    timeout_seconds: int = 900
     connect_retry_attempts: int = 3
     connect_retry_delay_seconds: float = 1.0
 

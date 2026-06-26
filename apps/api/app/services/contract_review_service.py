@@ -5056,18 +5056,18 @@ def _build_pipeline_failure_meta(stderr: str, stdout: str = "") -> dict[str, Any
     if _is_dify_provider_missing_failure(raw_error):
         return {
             "status": "failed",
-            "step": "Dify 工作流配置错误",
+            "step": "审查流程配置错误",
             "progress": 100,
-            "error": "合同审查 Dify 工作流引用了当前 Dify 环境不存在的模型供应商。请在 Dify 控制台修复该工作流的模型 Provider 配置后重试。",
+            "error": "合同审查流程引用了当前环境不可用的模型服务。请联系管理员检查模型服务配置后重试。",
             "error_detail": raw_error,
             "error_code": "DIFY_WORKFLOW_PROVIDER_MISSING",
         }
     if _is_retryable_dify_connect_failure(stderr, stdout):
         return {
             "status": "failed",
-            "step": "Dify 工作流连接失败",
+            "step": "审查流程连接失败",
             "progress": 100,
-            "error": "Dify 工作流连接失败，系统已自动重试但仍未成功。请稍后重试，或联系管理员检查合同审查 Dify 服务地址和运行环境。",
+            "error": "审查流程连接失败，系统已自动重试但仍未成功。请稍后重试，或联系管理员检查合同审查服务地址和运行环境。",
             "error_detail": raw_error,
             "error_code": "DIFY_WORKFLOW_CONNECT_FAILED",
         }
@@ -5093,9 +5093,9 @@ def _build_pipeline_exception_failure_meta(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, DifyWorkflowError):
         return {
             "status": "failed",
-            "step": "Dify 工作流调用失败",
+            "step": "审查流程调用失败",
             "progress": 100,
-            "error": "合同审查 Dify 工作流调用失败。请检查工作流发布状态、模型配置和 API Key 后重试。",
+            "error": "合同审查流程调用失败。请检查审查流程发布状态、模型配置和访问凭据后重试。",
             "error_detail": raw_error,
             "error_code": "DIFY_WORKFLOW_FAILED",
         }
@@ -5104,7 +5104,7 @@ def _build_pipeline_exception_failure_meta(exc: Exception) -> dict[str, Any]:
             "status": "failed",
             "step": "合同审查配置缺失",
             "progress": 100,
-            "error": "合同审查运行配置缺失，请检查 Dify 工作流 API Key 和审查方配置。",
+            "error": "合同审查运行配置缺失，请检查审查流程访问凭据和审查方配置。",
             "error_detail": raw_error,
             "error_code": "CONTRACT_REVIEW_CONFIG_MISSING",
         }
@@ -5487,7 +5487,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
         run_id,
         {
             "status": "running",
-            "step": "文档已准备完成，正在启动 Dify 审查流程",
+            "step": "文档已准备完成，正在启动审查流程",
             "progress": 28,
             "document_ready": True,
         },
@@ -5501,7 +5501,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
                 run_id,
                 {
                     "status": "running",
-                    "step": f"Dify 工作流连接失败，正在重试审查流程（{attempt}/{max_pipeline_attempts}）",
+                    "step": f"审查流程连接失败，正在重试（{attempt}/{max_pipeline_attempts}）",
                     "progress": 35,
                 },
             )

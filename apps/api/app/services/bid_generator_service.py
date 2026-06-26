@@ -305,9 +305,21 @@ def _model_provider_diagnostics() -> dict[str, dict[str, str | int | bool]]:
     }
 
 
+def _get_dify_api_base_url() -> str:
+    """返回 Dify /v1 API 地址；兼容部署时误填服务根地址的情况。"""
+    raw_url = os.environ.get("DIFY_API_URL", "http://localhost/v1").strip() or "http://localhost/v1"
+    normalized = raw_url if "://" in raw_url else f"http://{raw_url}"
+    normalized = normalized.rstrip("/")
+    parsed = urlparse(normalized)
+    path = (parsed.path or "").rstrip("/")
+    if path.endswith("/v1"):
+        return normalized
+    return f"{normalized}/v1"
+
+
 def _dify_api_diagnostics() -> dict[str, str | int | bool]:
     """诊断标书后端到 Dify API 的基础连通配置，只检查主机解析。"""
-    raw_url = os.environ.get("DIFY_API_URL", "http://localhost/v1").strip() or "http://localhost/v1"
+    raw_url = _get_dify_api_base_url()
     parsed_url = raw_url if "://" in raw_url else f"http://{raw_url}"
     parsed = urlparse(parsed_url)
     host = parsed.hostname or ""
@@ -3039,7 +3051,7 @@ def get_kb_sync_status_payload(job_id: str) -> dict[str, Any]:
 
 async def get_knowledge_documents_payload() -> dict[str, Any]:
     """查询 Dify 知识库文档状态；出参兼容 legacy dataset_info/documents。"""
-    dify_url = os.getenv("DIFY_API_URL", "http://localhost/v1")
+    dify_url = _get_dify_api_base_url()
     dataset_id = os.getenv("DIFY_DATASET_ID", "")
     dataset_key = os.getenv("DIFY_DATASET_KEY", "")
     if not dataset_id or not dataset_key:
@@ -5640,7 +5652,7 @@ def _number_value(value: Any) -> int | float:
 
 
 async def _call_dify_workflow(api_key: str, inputs: Mapping[str, Any], max_retries: int = 2) -> dict[str, Any]:
-    dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+    dify_base = _get_dify_api_base_url()
     dify_url = f"{dify_base}/workflows/run"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -5668,7 +5680,7 @@ async def _call_dify_workflow(api_key: str, inputs: Mapping[str, Any], max_retri
 
 
 async def _call_dify_workflow_stream(api_key: str, inputs: Mapping[str, Any]) -> Any:
-    dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+    dify_base = _get_dify_api_base_url()
     dify_url = f"{dify_base}/workflows/run"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -5750,7 +5762,7 @@ async def _get_dify_workflow_run_result(api_key: str, workflow_run_id: str) -> d
     normalized_run_id = str(workflow_run_id or "").strip()
     if not normalized_run_id:
         return {}
-    dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+    dify_base = _get_dify_api_base_url()
     headers = {"Authorization": f"Bearer {api_key}"}
     async with httpx.AsyncClient(timeout=60) as client:
         response = await client.get(f"{dify_base}/workflows/run/{normalized_run_id}", headers=headers)
@@ -8370,7 +8382,7 @@ async def _stop_dify_workflows_for_task(task: Any) -> tuple[bool, str]:
     if not task_ids:
         return False, "not_bound"
 
-    dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+    dify_base = _get_dify_api_base_url()
     stopped = 0
     failed = 0
     async with httpx.AsyncClient(timeout=10) as client:

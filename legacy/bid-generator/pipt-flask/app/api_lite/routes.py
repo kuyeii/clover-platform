@@ -210,9 +210,21 @@ def _model_provider_diagnostics() -> dict:
     }
 
 
+def _get_dify_api_base_url() -> str:
+    """返回 Dify /v1 API 地址；兼容部署时误填服务根地址的情况。"""
+    raw_url = os.environ.get("DIFY_API_URL", "http://localhost/v1").strip() or "http://localhost/v1"
+    normalized = raw_url if "://" in raw_url else f"http://{raw_url}"
+    normalized = normalized.rstrip("/")
+    parsed = urlparse(normalized)
+    path = (parsed.path or "").rstrip("/")
+    if path.endswith("/v1"):
+        return normalized
+    return f"{normalized}/v1"
+
+
 def _dify_api_diagnostics() -> dict:
     """诊断标书后端到 Dify API 的基础连通配置，只检查主机解析。"""
-    raw_url = os.environ.get("DIFY_API_URL", "http://localhost/v1").strip() or "http://localhost/v1"
+    raw_url = _get_dify_api_base_url()
     parsed_url = raw_url if "://" in raw_url else f"http://{raw_url}"
     parsed = urlparse(parsed_url)
     host = parsed.hostname or ""
@@ -1983,7 +1995,7 @@ async def _call_dify_workflow(api_key: str, inputs: dict, max_retries: int = 2) 
     """通用 Dify 工作流调用（blocking 模式），自动重试最多 max_retries 次。
     Dify 地址从 DIFY_API_URL 环境变量读取。
     """
-    dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+    dify_base = _get_dify_api_base_url()
     dify_url = f"{dify_base}/workflows/run"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -4525,7 +4537,7 @@ async def generate_outline_stream(request: GenerateOutlineRequest):
                         if not sections_raw and run_id:
                             logger.info(f"[大纲SSE] 流式解析失败，fallback 调用 GET /workflows/run/{run_id}")
                             try:
-                                dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+                                dify_base = _get_dify_api_base_url()
                                 async with httpx.AsyncClient(timeout=60) as _fc:
                                     fb_resp = await _fc.get(
                                         f"{dify_base}/workflows/run/{run_id}",
@@ -4596,7 +4608,7 @@ async def _call_dify_workflow_stream(api_key: str, inputs: dict):
         "输出清洗": "🧹 输出清洗",
         "输出": "✅ 结果输出",
     }
-    dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+    dify_base = _get_dify_api_base_url()
     dify_url = f"{dify_base}/workflows/run"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -6284,7 +6296,7 @@ async def _run_kb_sync_subprocess(
 async def get_knowledge_documents():
     """透传请求前往 Dify 查询指定 Dataset 中已解析出的 Documents 列表"""
     import os
-    dify_url = os.getenv("DIFY_API_URL", "http://localhost/v1")
+    dify_url = _get_dify_api_base_url()
     dataset_id = os.getenv("DIFY_DATASET_ID", "")
     dataset_key = os.getenv("DIFY_DATASET_KEY", "")
 
@@ -6504,7 +6516,7 @@ async def _setup_knowledge_base(doc_text: str, project_id: str) -> tuple[str, st
         from src.config import DifyConfig
         from src.knowledge import KnowledgeManager
 
-        dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+        dify_base = _get_dify_api_base_url()
         config = DifyConfig(
             base_url=dify_base,
             api_key=dataset_api_key,
@@ -6569,7 +6581,7 @@ async def _cleanup_knowledge_base(dataset_id: str, document_id: str):
         from src.config import DifyConfig
         from src.knowledge import KnowledgeManager
 
-        dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+        dify_base = _get_dify_api_base_url()
         config = DifyConfig(base_url=dify_base, api_key=dataset_api_key, timeout=60)
         km = KnowledgeManager(config)
         await km.delete_document(document_id, dataset_id)

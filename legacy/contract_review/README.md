@@ -136,7 +136,7 @@ python app.py /path/to/contract.docx --run-id live_test_001 --resume
 | `REVIEW_SIDE` | 审查视角，常用 `supplier` 或 `customer` |
 | `CONTRACT_TYPE_HINT` | 合同类型提示，例如 `service_agreement` |
 | `ANALYSIS_SCOPE` | 审查范围，默认 `full_detail` |
-| `REQUEST_TIMEOUT_SECONDS` | Dify 请求超时时间 |
+| `REQUEST_TIMEOUT_SECONDS` | Dify 请求超时时间，默认 900 秒 |
 | `DIFY_MAX_CONCURRENCY` | 风险识别并发数 |
 | `CLAUSE_SPLIT_MAX_CONCURRENCY` | 条款切分并发数 |
 | `RUN_ROOT` | 运行产物目录，本地默认 `data/runs` |

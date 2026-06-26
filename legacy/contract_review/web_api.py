@@ -3964,9 +3964,9 @@ def _build_pipeline_failure_meta(stderr: str, stdout: str = "") -> dict[str, Any
     if _is_retryable_dify_connect_failure(stderr, stdout):
         return {
             "status": "failed",
-            "step": "Dify 工作流连接失败",
+            "step": "审查流程连接失败",
             "progress": 100,
-            "error": "Dify 工作流连接失败，系统已自动重试但仍未成功。请稍后重试，或联系管理员检查合同审查 Dify 服务地址和运行环境。",
+            "error": "审查流程连接失败，系统已自动重试但仍未成功。请稍后重试，或联系管理员检查合同审查服务地址和运行环境。",
             "error_detail": raw_error,
             "error_code": "DIFY_WORKFLOW_CONNECT_FAILED",
         }
@@ -4069,7 +4069,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
         run_id,
         {
             "status": "running",
-            "step": "文档已准备完成，正在启动 Dify 审查流程",
+            "step": "文档已准备完成，正在启动审查流程",
             "progress": 28,
             "document_ready": True,
         },
@@ -4087,7 +4087,7 @@ def _run_pipeline_impl(*, run_id: str, file_path: Path, file_name: str, review_s
                 run_id,
                 {
                     "status": "running",
-                    "step": f"Dify 工作流连接失败，正在重试审查流程（{attempt}/{max_pipeline_attempts}）",
+                    "step": f"审查流程连接失败，正在重试（{attempt}/{max_pipeline_attempts}）",
                     "progress": 35,
                 },
             )

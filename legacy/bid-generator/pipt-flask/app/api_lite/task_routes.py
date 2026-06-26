@@ -16,6 +16,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 import re
 
 import httpx
@@ -49,6 +50,18 @@ from .docanalysis_protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _get_dify_api_base_url() -> str:
+    """返回 Dify /v1 API 地址；兼容部署时误填服务根地址的情况。"""
+    raw_url = os.environ.get("DIFY_API_URL", "http://localhost/v1").strip() or "http://localhost/v1"
+    normalized = raw_url if "://" in raw_url else f"http://{raw_url}"
+    normalized = normalized.rstrip("/")
+    parsed = urlparse(normalized)
+    path = (parsed.path or "").rstrip("/")
+    if path.endswith("/v1"):
+        return normalized
+    return f"{normalized}/v1"
 
 
 def _unresolved_placeholder_tokens(replace_report: list[dict[str, Any]]) -> list[str]:
@@ -697,7 +710,7 @@ async def _collect_workflow_outputs(
     if not got_finished and workflow_run_id:
         logger.warning("[Task %s] 内容工作流未收到 finished，尝试 fallback GET /workflows/run/%s", task_id, workflow_run_id)
         try:
-            dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+            dify_base = _get_dify_api_base_url()
             async with httpx.AsyncClient(timeout=60) as fc:
                 fb_resp = await fc.get(
                     f"{dify_base}/workflows/run/{workflow_run_id}",
@@ -2462,7 +2475,7 @@ async def _execute_diagram_for_section(
                     break
         if not svg_content and workflow_run_id:
             try:
-                dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+                dify_base = _get_dify_api_base_url()
                 async with httpx.AsyncClient(timeout=60) as fc:
                     fb = await fc.get(
                         f"{dify_base}/workflows/run/{workflow_run_id}",
@@ -2960,7 +2973,7 @@ async def start_outline_task(request: dict):
                         if not sections_raw and run_id:
                             logger.info(f"[Task {task_id}] fallback GET run/{run_id}")
                             try:
-                                dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+                                dify_base = _get_dify_api_base_url()
                                 async with httpx.AsyncClient(timeout=60) as fc:
                                     fb = await fc.get(f"{dify_base}/workflows/run/{run_id}", headers={"Authorization": f"Bearer {dify_key}"})
                                     fb.raise_for_status()
@@ -4369,7 +4382,7 @@ async def _stop_dify_workflows(task) -> tuple[bool, str]:
         return False, "not_bound"
 
     import os, httpx
-    dify_base = os.environ.get("DIFY_API_URL", "http://localhost/v1").rstrip("/")
+    dify_base = _get_dify_api_base_url()
     stopped = 0
     failed = 0
     async with httpx.AsyncClient(timeout=10) as client:
